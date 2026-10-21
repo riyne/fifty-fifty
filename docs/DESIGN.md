@@ -206,7 +206,7 @@ Actual hours are not recorded anywhere; re-baselining needs Ryan's own time log.
 | | Scope | Est. h |
 |---|---|---|
 | M0 | Design doc, scaffold. **Done** | 3 |
-| M1 | Go module, compose (Postgres, Dex), migrations, sqlc, OIDC middleware, users/groups/join codes, CI skeleton. **M1.1 (module, compose, migrations, health), M1.2 (users/groups/memberships, sqlc, OIDC, fake issuer) and M1.3 (join codes, idempotency, rate limit, audit, first BOLA suite) done; M1.4 (CI) pending** | ~20 |
+| M1 | Go module, compose (Postgres, Dex), migrations, sqlc, OIDC middleware, users/groups/join codes, CI skeleton. **M1.1 (module, compose, migrations, health), M1.2 (users/groups/memberships, sqlc, OIDC, fake issuer) and M1.3 (join codes, idempotency, rate limit, audit, first BOLA suite) done (commit e611bb6). M1.4 (CI skeleton, GitHub Actions only) is deferred to just before M5 / going public, by Ryan's decision on 2026-10-20; M1 is otherwise complete** | ~20 |
 | M2 | Ledger core: expenses, claims, finalize, void, allocator, balances, simplification | ~25 |
 | M3 | Queue: leases, fencing, backoff, DLQ, kill-a-worker recovery test and benchmark | ~20 |
 | M4 | Settlement: idempotency, mock provider, async execution, reconciliation | ~20 |
@@ -233,7 +233,7 @@ Cut order if late: M7, then accuracy eval, then mobile polish.
 - Object storage for receipts: filesystem volume vs MinIO (decide at M6).
 - License (decide before going public).
 - Whether `LISTEN/NOTIFY` is worth adding (decide after M3 benchmark).
-- CI scope (M1.4): whether to build GitHub Actions at all now, and how much (see CLAIMS row 8, which lists lint, tests, govulncheck, secret scan; claim only what is built).
+- CI (M1.4), deferred to just before M5 / going public. Build the minimal version then: tests against a Postgres service with `TEST_DATABASE_URL` set and skips treated as failures, `go vet`, gofmt, `govulncheck`, and a check that `make generate` leaves no diff. golangci-lint (not installed) and secret scanning after that. CLAIMS row 8 stays `planned` and must list only what is actually built. Until then `make test` is the only gate and nothing enforces it.
 - Cleanup of expired `idempotency_keys` rows (they are ignored once expired but never deleted): periodic job, add with the queue in M3.
 - Lock timeout on the idempotency claim: a concurrent duplicate waits on the unique index with no timeout if the first request stalls. Self-inflicted per user; add `lock_timeout` when hardening.
 - Pagination for `GET /v1/groups` and the join-code list (currently `LIMIT 100`).
@@ -241,4 +241,3 @@ Cut order if late: M7, then accuracy eval, then mobile polish.
 - Automated PKCE login test against Dex (login is only exercised by `scripts/dev-token.sh`; CLAIMS row 6 stays `planned` until then).
 - Tests skip silently without `TEST_DATABASE_URL` (34 skip with no database). Whatever runs tests in CI must set it and fail on skips.
 - Rate limit is per api process; revisit if more than one api instance is ever run.
-- First commit: fill the Commit column in CLAIMS.md for every row marked `built` (currently row 7).
