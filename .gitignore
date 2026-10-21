@@ -1,0 +1,35 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local Claude instructions (not pushed)
+CLAUDE.md
+
+# Secrets and local config (never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Go
+/bin/
+*.test
+*.out
+coverage.*
+
+# Node / Expo (mobile/)
+node_modules/
+.expo/
+dist/
+web-build/
+ios/Pods/
+android/.gradle/
+android/build/
+
+# Local data
+/data/
+/tmp/
+
+# NOTE: bench/results/ is intentionally NOT ignored. Raw benchmark output is committed.
