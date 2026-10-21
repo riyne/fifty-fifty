@@ -1,0 +1,304 @@
+openapi: 3.0.3
+info:
+  title: Fifty Fifty API
+  version: 0.0.0
+  description: Group expense splitting. Synthetic data only; settlement is simulated.
+security:
+  - bearerAuth: []
+paths:
+  /healthz:
+    get:
+      summary: Liveness. Does not touch dependencies.
+      security: []
+      responses:
+        "200":
+          description: Process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [ok] }
+  /readyz:
+    get:
+      summary: Readiness. Checks Postgres connectivity.
+      security: []
+      responses:
+        "200":
+          description: Database reachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, db]
+                properties:
+                  status: { type: string, enum: [ok] }
+                  db: { type: string, enum: [up] }
+        "503":
+          description: Database unreachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, db]
+                properties:
+                  status: { type: string, enum: [unavailable] }
+                  db: { type: string, enum: [down] }
+  /v1/me:
+    get:
+      summary: The authenticated user. Provisions the user on first valid token.
+      responses:
+        "200":
+          description: Current user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/groups:
+    get:
+      summary: Groups the caller belongs to (newest first, at most 100).
+      responses:
+        "200":
+          description: Groups.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [groups]
+                properties:
+                  groups:
+                    type: array
+                    items: { $ref: "#/components/schemas/Group" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      summary: Create a group. The caller becomes its owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, currency]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100, description: Trimmed before validation. }
+                currency: { type: string, enum: [CAD, USD] }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /v1/groups/{id}:
+    get:
+      summary: A group and its members. 404 if it does not exist or the caller is not a member (indistinguishable by design).
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: Group detail.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Group"
+                  - type: object
+                    required: [members]
+                    properties:
+                      members:
+                        type: array
+                        items:
+                          type: object
+                          required: [user_id, display_name, role, joined_at]
+                          properties:
+                            user_id: { type: string, format: uuid }
+                            display_name: { type: string }
+                            role: { type: string, enum: [owner, member] }
+                            joined_at: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/groups/{id}/join-codes:
+    parameters:
+      - { $ref: "#/components/parameters/GroupId" }
+    post:
+      summary: Create a join code (owner only). The plaintext code is returned once and never again.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                max_uses: { type: integer, minimum: 1, maximum: 50, default: 5 }
+                expires_in_hours: { type: integer, minimum: 1, maximum: 168, default: 72 }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatedJoinCode" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    get:
+      summary: List the group's join codes (owner only). Metadata only, never the code.
+      responses:
+        "200":
+          description: Join codes, newest first, at most 100.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [join_codes]
+                properties:
+                  join_codes:
+                    type: array
+                    items: { $ref: "#/components/schemas/JoinCode" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/groups/{id}/join-codes/{codeId}:
+    delete:
+      summary: Revoke a join code (owner only). Idempotent.
+      parameters:
+        - { $ref: "#/components/parameters/GroupId" }
+        - { name: codeId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { description: Revoked (or already revoked). }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/join:
+    post:
+      summary: Join a group with a code. Requires Idempotency-Key; rate limited per user.
+      description: >
+        Responses with status below 500 are stored under the key for 24 hours and replayed
+        (header Idempotent-Replayed: true), including 404 for an unusable code. The same key
+        with a different code is 422. Invalid, expired, revoked and used-up codes are
+        indistinguishable (all 404).
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code]
+              properties:
+                code: { type: string, example: ABCD-EFGH-JKMN, description: "12 characters; case, hyphens and spaces are ignored." }
+      responses:
+        "200":
+          description: Already a member; no use consumed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        "201":
+          description: Joined.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Group" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/KeyReuse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+components:
+  parameters:
+    GroupId:
+      { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 1-255 visible ASCII characters, e.g. a UUID. Scoped per user; kept 24 hours.
+      schema: { type: string, minLength: 1, maxLength: 255 }
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: OIDC token (RS256) from the configured issuer; audience must be the api's client id.
+  schemas:
+    JoinCode:
+      type: object
+      required: [id, max_uses, uses, expires_at, revoked_at, created_at, status]
+      properties:
+        id: { type: string, format: uuid }
+        max_uses: { type: integer }
+        uses: { type: integer }
+        expires_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        status: { type: string, enum: [active, exhausted, expired, revoked] }
+    CreatedJoinCode:
+      type: object
+      required: [id, code, max_uses, expires_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, example: ABCD-EFGH-JKMN, description: Shown once. Only a hash is stored. }
+        max_uses: { type: integer }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+    Me:
+      type: object
+      required: [id, email, display_name]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        display_name: { type: string }
+    Group:
+      type: object
+      required: [id, name, currency, role, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        currency: { type: string, enum: [CAD, USD] }
+        role: { type: string, enum: [owner, member], description: The caller's role. }
+        created_at: { type: string, format: date-time }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+  responses:
+    Unauthorized:
+      description: Missing, invalid, or expired token.
+      headers:
+        WWW-Authenticate: { schema: { type: string, enum: [Bearer] } }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: Malformed or invalid request body.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found (or not visible to the caller).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The caller can see the group but is not allowed to do this (not the owner).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    KeyReuse:
+      description: The Idempotency-Key was already used with a different request.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Rate limited.
+      headers:
+        Retry-After: { schema: { type: integer }, description: Seconds until the next attempt may succeed. }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

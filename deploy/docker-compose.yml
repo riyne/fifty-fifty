@@ -1,0 +1,28 @@
+name: fifty-fifty
+
+# Local development only. Credentials here are throwaway and the data is synthetic.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: fifty
+      POSTGRES_PASSWORD: fifty
+      POSTGRES_DB: fifty
+    ports:
+      # 5433 on the host so it cannot collide with a local Postgres on 5432.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fifty -d fifty"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  dex:
+    build: ./dex
+    ports:
+      - "127.0.0.1:5556:5556"
+
+volumes:
+  pgdata:

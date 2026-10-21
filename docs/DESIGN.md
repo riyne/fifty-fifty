@@ -35,6 +35,11 @@ The ledger records IOUs between friends, not real funds. Never describe it as a 
 | Security | Baseline in section 9; RLS as a post-benchmark stretch (M7); envelope encryption cut |
 | Mobile | React Native + Expo (TypeScript), 3-4 screens, thin client, iOS Simulator + Android emulator only |
 | CI | GitHub Actions |
+| Authz shape (M1.2) | Memberships carry a role (`owner` \| `member`; creator is owner). Group-scoped reads go through one query that joins `memberships`, so fetch and authorization are the same statement; non-member and nonexistent both return an identical 404. Users are provisioned on first valid token (read first, race-safe insert only for new users). Tokens are verified by `go-oidc` (RS256 only) against the issuer's JWKS; tests use an in-process fake issuer that the unmodified verifier checks, so there is no bypass path. Integration tests need Postgres (`TEST_DATABASE_URL`); they skip when unset, so CI must set it |
+| Join codes (M1.3) | 12 random Crockford-base32 chars (60 bits), shown once, stored as unsalted SHA-256 (fine for a high-entropy random secret; protection is expiry + use limit + rate limit, not hash cost). Owner-only create/list/revoke; defaults 5 uses / 72 h, max 50 / 168 h. Redemption locks the code row (`FOR UPDATE`) and spends a use only when the user is actually added. Unknown, expired, revoked and used-up codes are indistinguishable (404). Member-but-not-owner gets 403; non-member gets 404. Redeeming requires `Idempotency-Key` |
+| Rate limiting (M1.3) | In-memory token bucket per user on `POST /v1/join` (burst 10, then 1 per 6 s). Per api process and reset on restart; correct for the single-instance deployment, multiplies with replicas. README must say so |
+| Audit (M1.3) | `audit_events` written in the same transaction as the action: `join_code.created`, `join_code.revoked`, `member.joined`. No secrets in `data`. Failed redemptions are not audited (rate limiter + logs instead) |
+| Toolchain (M1.1) | Module `github.com/riyne/fifty-fifty`; Go 1.27.3; Postgres 17 (host port 5433); Dex v2.46.0 (config baked into image, no bind mounts); goose v3.29.0 pinned in the separate `tools/go.mod` module and run via `go tool -modfile=tools/go.mod goose` (keeps its large dependency tree out of the app module and out of govulncheck scope) |
 | Repo | Private until M5 numbers and README exist, then public |
 
 ## 3. Architecture
@@ -51,17 +56,35 @@ docker-compose services:
 
 Mobile app (`mobile/`, Expo) talks only to `api` and Dex (system browser for login).
 
-Repo layout (sketch):
+Repo layout. Built (as of M1.3):
 
-    api/openapi.yaml
-    cmd/{api,worker,mockllm,mockpay,stress}/
-    internal/{auth,groups,expenses,ledger,queue,receipts,settlements,...}/
-    migrations/
-    deploy/docker-compose.yml  deploy/dex/
+    api/openapi.yaml                 the spec; test/bola reads it to check authz coverage
+    cmd/api/                         HTTP server entrypoint
+    internal/auth/                   OIDC verifier + middleware + first-login provisioning
+    internal/auth/authtest/          in-process fake issuer (tests only; nothing in prod imports it)
+    internal/db/                     sqlc output (committed) + queries/*.sql (source)
+    internal/groups/                 group + join-code handlers
+    internal/httpapi/                root handler, health, /v1 wiring
+    internal/httpx/                  JSON read/write helpers
+    internal/idempotency/            idempotency-key helper (claim-in-transaction)
+    internal/joincode/               join code generate/normalize/hash
+    internal/ratelimit/              in-memory per-user token bucket
+    internal/teststack/              whole api in-process for integration tests
+    internal/testutil/               test DB pool (TEST_DATABASE_URL), unique subjects
+    migrations/                      goose SQL migrations (sqlc reads these as its schema)
+    deploy/docker-compose.yml        Postgres 17 + Dex; deploy/dex/ (config baked into image)
+    scripts/dev-token.sh             real Auth Code + PKCE login against Dex, prints an ID token
+    tools/go.mod                     separate module pinning goose and sqlc
+    sqlc.yaml  Makefile
+    test/bola/                       BOLA suite
+
+Planned, not built yet:
+
+    cmd/{worker,mockllm,mockpay,stress}/
+    internal/{expenses,ledger,queue,receipts,settlements,...}/
     bench/   (scripts, raw results committed, methodology)
-    test/    (concurrency, bola, rls suites)
+    test/    (concurrency, rls suites)
     mobile/
-    docs/
 
 ## 4. Domain model (conceptual)
 
@@ -104,6 +127,7 @@ Idempotency: required `Idempotency-Key` header on create-expense, finalize, void
 - Same key + same fingerprint: replay the stored response (a concurrent duplicate waits on the unique index and then replays).
 - Same key + different fingerprint: 422.
 - Keys expire after 24 h.
+- Implemented (M1.3) as `internal/idempotency`: the key row is claimed in the same transaction as the operation and completed before commit, so effects, stored response and key commit or roll back together (no "in progress" state). Every response below 500 is stored and replayed, including business-rule 4xx (Stripe model: a key's first outcome is final). 5xx and errors roll back and are not stored, since the transaction is atomic and a retry should be able to succeed. Validation errors, 401 and 429 are rejected before the key is claimed. Handlers that return a non-2xx result must not have written anything they don't want committed.
 
 Negative controls: the version check, row locks, and idempotency check can each be disabled only in a test binary built with the `unsafe_controls` tag. There is no runtime flag in the production binary.
 
@@ -177,10 +201,12 @@ Test layers: unit (allocator property tests), integration against real Postgres,
 
 ## 11. Milestones (estimates are rough; re-baseline after M1)
 
+Actual hours are not recorded anywhere; re-baselining needs Ryan's own time log.
+
 | | Scope | Est. h |
 |---|---|---|
-| M0 | Design doc, scaffold | 3 |
-| M1 | Go module, compose (Postgres, Dex), migrations, sqlc, OIDC middleware, users/groups/join codes, CI skeleton | ~20 |
+| M0 | Design doc, scaffold. **Done** | 3 |
+| M1 | Go module, compose (Postgres, Dex), migrations, sqlc, OIDC middleware, users/groups/join codes, CI skeleton. **M1.1 (module, compose, migrations, health), M1.2 (users/groups/memberships, sqlc, OIDC, fake issuer) and M1.3 (join codes, idempotency, rate limit, audit, first BOLA suite) done; M1.4 (CI) pending** | ~20 |
 | M2 | Ledger core: expenses, claims, finalize, void, allocator, balances, simplification | ~25 |
 | M3 | Queue: leases, fencing, backoff, DLQ, kill-a-worker recovery test and benchmark | ~20 |
 | M4 | Settlement: idempotency, mock provider, async execution, reconciliation | ~20 |
@@ -205,7 +231,14 @@ Cut order if late: M7, then accuracy eval, then mobile polish.
 ## 13. Open items
 
 - Object storage for receipts: filesystem volume vs MinIO (decide at M6).
-- GitHub username / Go module path (needed at M1).
 - License (decide before going public).
-- Go version pin (decide at M1).
 - Whether `LISTEN/NOTIFY` is worth adding (decide after M3 benchmark).
+- CI scope (M1.4): whether to build GitHub Actions at all now, and how much (see CLAIMS row 8, which lists lint, tests, govulncheck, secret scan; claim only what is built).
+- Cleanup of expired `idempotency_keys` rows (they are ignored once expired but never deleted): periodic job, add with the queue in M3.
+- Lock timeout on the idempotency claim: a concurrent duplicate waits on the unique index with no timeout if the first request stalls. Self-inflicted per user; add `lock_timeout` when hardening.
+- Pagination for `GET /v1/groups` and the join-code list (currently `LIMIT 100`).
+- Automated test for the `OIDC_DISCOVERY_URL` issuer/discovery split (implemented, untested; matters when the api runs in a container or the mobile client arrives).
+- Automated PKCE login test against Dex (login is only exercised by `scripts/dev-token.sh`; CLAIMS row 6 stays `planned` until then).
+- Tests skip silently without `TEST_DATABASE_URL` (34 skip with no database). Whatever runs tests in CI must set it and fail on skips.
+- Rate limit is per api process; revisit if more than one api instance is ever run.
+- First commit: fill the Commit column in CLAIMS.md for every row marked `built` (currently row 7).

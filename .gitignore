@@ -5,6 +5,7 @@
 
 # Local Claude instructions (not pushed)
 CLAUDE.md
+.claude/settings.local.json
 
 # Secrets and local config (never commit)
 .env

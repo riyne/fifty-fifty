@@ -1,0 +1,40 @@
+# Dex for local development. Static synthetic users only.
+# All three users have the password "password". Never use this config anywhere real.
+#
+# The issuer URL must be identical from every vantage point that validates tokens
+# (see docs/DESIGN.md section 9, "OIDC issuer mismatch"). Revisit when the mobile
+# client and the containerized api are added.
+issuer: http://localhost:5556/dex
+
+storage:
+  type: memory # tokens and sessions are lost on restart; fine for dev
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+enablePasswordDB: true
+
+staticClients:
+  - id: fifty-fifty
+    name: Fifty Fifty
+    public: true # public client: Auth Code + PKCE, no secret
+    redirectURIs:
+      # Placeholder. Real redirect URIs are set when the login flow is built (M1.2 / M8).
+      - http://localhost:8080/callback
+
+staticPasswords:
+  - email: alice@example.com
+    hash: "$2a$10$teSEim0RrCd94a.j6Bmm..lBUsbF79z2VbqNby/WdJKTqMn8aAZYC"
+    username: alice
+    userID: 6f1f4f0e-0a1b-4c5d-8e21-000000000001
+  - email: bob@example.com
+    hash: "$2a$10$teSEim0RrCd94a.j6Bmm..lBUsbF79z2VbqNby/WdJKTqMn8aAZYC"
+    username: bob
+    userID: 6f1f4f0e-0a1b-4c5d-8e21-000000000002
+  - email: carol@example.com
+    hash: "$2a$10$teSEim0RrCd94a.j6Bmm..lBUsbF79z2VbqNby/WdJKTqMn8aAZYC"
+    username: carol
+    userID: 6f1f4f0e-0a1b-4c5d-8e21-000000000003
