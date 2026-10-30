@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -99,12 +103,12 @@ func TestRequeue_PrintsTheRequeuedIDs(t *testing.T) {
 }
 
 func TestParseRun(t *testing.T) {
-	cfg, err := parseRun([]string{"--concurrency", "8", "--lease", "10s", "--poll", "250ms", "--grace", "5s"}, &bytes.Buffer{})
-	if err != nil || cfg.Concurrency != 8 || cfg.Lease != 10*time.Second || cfg.PollInterval != 250*time.Millisecond || cfg.ShutdownGrace != 5*time.Second {
+	cfg, addr, err := parseRun([]string{"--concurrency", "8", "--lease", "10s", "--poll", "250ms", "--grace", "5s", "--metrics-addr", "127.0.0.1:9102"}, &bytes.Buffer{})
+	if err != nil || addr != "127.0.0.1:9102" || cfg.Concurrency != 8 || cfg.Lease != 10*time.Second || cfg.PollInterval != 250*time.Millisecond || cfg.ShutdownGrace != 5*time.Second {
 		t.Errorf("%+v, %v", cfg, err)
 	}
-	cfg, err = parseRun(nil, &bytes.Buffer{})
-	if err != nil || cfg.Concurrency != 4 || cfg.Lease != 30*time.Second {
+	cfg, addr, err = parseRun(nil, &bytes.Buffer{})
+	if err != nil || addr != "" || cfg.Concurrency != 4 || cfg.Lease != 30*time.Second {
 		t.Errorf("defaults: %+v, %v", cfg, err)
 	}
 }
@@ -115,5 +119,43 @@ func TestHandlersCoverTheSchedule(t *testing.T) {
 	h := handlers(nil)
 	if _, ok := h[worker.CleanupSchedule.Kind]; !ok {
 		t.Errorf("no handler for the scheduled kind %q", worker.CleanupSchedule.Kind)
+	}
+}
+
+func TestServeMetrics_ServesOnlyMetricsAndStopsWithTheContext(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		serveMetrics(ctx, ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "up 1\n") }))
+	}()
+
+	base := "http://" + ln.Addr().String()
+	get := func(path string) (int, string) {
+		resp, err := http.Get(base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	if code, body := get("/metrics"); code != 200 || body != "up 1\n" {
+		t.Errorf("/metrics: %d %q", code, body)
+	}
+	for _, p := range []string{"/", "/metrics/extra", "/debug/pprof/"} {
+		if code, _ := get(p); code != 404 {
+			t.Errorf("%s: %d, want 404", p, code)
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the metrics server did not stop when its context was canceled")
 	}
 }

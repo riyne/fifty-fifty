@@ -154,3 +154,26 @@ VALUES (
 )
 ON CONFLICT (dedupe_key) DO NOTHING
 RETURNING id;
+
+-- QueueStats is the per-kind picture of everything that is not finished, in one
+-- statement (so one snapshot). The states are disjoint:
+--   ready    queued and due: waiting only for a worker
+--   delayed  queued for later (a retry backing off, or a scheduled job)
+--   running  running with a live lease
+--   expired  running but its lease has run out: waiting to be taken over or reaped
+--   dead     dead-lettered
+-- oldest_ready_age_seconds is how long the longest-waiting ready job has been due:
+-- the queueing delay a new job would face at worst, and the number to alert on.
+-- It reads only jobs_claim_idx and jobs_dead_idx (never the finished rows).
+-- name: QueueStats :many
+SELECT kind,
+       count(*) FILTER (WHERE state = 'queued' AND run_at <= now())::bigint  AS ready,
+       count(*) FILTER (WHERE state = 'queued' AND run_at > now())::bigint   AS delayed,
+       count(*) FILTER (WHERE state = 'running' AND run_at > now())::bigint  AS running,
+       count(*) FILTER (WHERE state = 'running' AND run_at <= now())::bigint AS expired,
+       count(*) FILTER (WHERE state = 'dead')::bigint                        AS dead,
+       COALESCE(extract(epoch FROM now() - min(run_at) FILTER (WHERE state = 'queued' AND run_at <= now())), 0)::float8
+           AS oldest_ready_age_seconds
+FROM jobs
+WHERE state IN ('queued', 'running') OR state = 'dead'
+GROUP BY kind;

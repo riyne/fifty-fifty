@@ -64,6 +64,8 @@ type Config struct {
 	PeriodicInterval time.Duration // how often to make sure each periodic job exists; default 1m
 	ShutdownGrace    time.Duration // how long in-flight jobs may finish after shutdown begins; default 20s
 
+	Metrics *Metrics // optional; counts job outcomes for the metrics endpoint
+
 	Backoff queue.Backoff // retry delay policy; default queue.DefaultBackoff
 	Rand    queue.Rand    // default queue.SystemRand
 	Logger  *slog.Logger  // default slog.Default()
@@ -273,10 +275,12 @@ func (w *worker) runJob(c queue.Claimed) {
 
 	switch {
 	case err == nil:
+		w.cfg.Metrics.finish(c.Kind, OutcomeSucceeded, c.Attempt)
 		log.Info("job succeeded", "took", time.Since(start))
 	case errors.Is(err, queue.ErrLeaseLost) || errors.Is(context.Cause(jobCtx), queue.ErrLeaseLost):
 		// Someone else holds the job now and nothing of ours was committed. Not a
 		// failure to report: the other holder's attempt is the one that counts.
+		w.cfg.Metrics.finish(c.Kind, OutcomeLeaseLost, c.Attempt)
 		log.Warn("lease lost; abandoning job", "took", time.Since(start))
 	default:
 		w.fail(c, err, log)
@@ -352,13 +356,17 @@ func (w *worker) fail(c queue.Claimed, cause error, log *slog.Logger) {
 	state, err := queue.Fail(ctx, w.cfg.Pool, c, p)
 	switch {
 	case errors.Is(err, queue.ErrLeaseLost):
+		w.cfg.Metrics.finish(c.Kind, OutcomeLeaseLost, c.Attempt)
 		log.Warn("job failed but the lease was already lost", "err", cause)
 	case err != nil:
 		// The lease will expire and the job will be claimed again: no job is lost.
+		// Not counted: what happens to the job is decided by the next claim.
 		log.Error("could not report job failure", "err", err, "cause", cause)
 	case state == queue.StateDead:
+		w.cfg.Metrics.finish(c.Kind, OutcomeDead, c.Attempt)
 		log.Error("job failed on its last attempt; dead-lettered", "err", cause)
 	default:
+		w.cfg.Metrics.finish(c.Kind, OutcomeRetry, c.Attempt)
 		log.Warn("job failed; will retry", "err", cause, "retry_in", p.RetryIn)
 	}
 }
