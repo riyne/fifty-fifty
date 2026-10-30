@@ -12,6 +12,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/queue"
 	"github.com/riyne/fifty-fifty/internal/testutil"
+	"github.com/riyne/fifty-fifty/internal/worker"
 )
 
 func TestParseRequeue(t *testing.T) {
@@ -48,7 +49,7 @@ func TestParseRequeue(t *testing.T) {
 
 func TestRun_RejectsOtherCommands(t *testing.T) {
 	var out bytes.Buffer
-	for _, args := range [][]string{nil, {"run"}, {"frobnicate"}} {
+	for _, args := range [][]string{nil, {"frobnicate"}, {"run", "--nope"}, {"run", "extra"}} {
 		if err := run(context.Background(), args, &out, &out); !errors.Is(err, errUsage) {
 			t.Errorf("%v: err = %v", args, err)
 		}
@@ -94,5 +95,25 @@ func TestRequeue_PrintsTheRequeuedIDs(t *testing.T) {
 	out.Reset()
 	if err := requeue(ctx, pool, queue.RequeueParams{Kind: kind}, &out); err != nil || out.Len() != 0 {
 		t.Errorf("second run printed %q, %v", out.String(), err)
+	}
+}
+
+func TestParseRun(t *testing.T) {
+	cfg, err := parseRun([]string{"--concurrency", "8", "--lease", "10s", "--poll", "250ms", "--grace", "5s"}, &bytes.Buffer{})
+	if err != nil || cfg.Concurrency != 8 || cfg.Lease != 10*time.Second || cfg.PollInterval != 250*time.Millisecond || cfg.ShutdownGrace != 5*time.Second {
+		t.Errorf("%+v, %v", cfg, err)
+	}
+	cfg, err = parseRun(nil, &bytes.Buffer{})
+	if err != nil || cfg.Concurrency != 4 || cfg.Lease != 30*time.Second {
+		t.Errorf("defaults: %+v, %v", cfg, err)
+	}
+}
+
+// Every kind the binary can run has a handler, and the periodic schedule only names
+// kinds that have one (worker.Run refuses otherwise).
+func TestHandlersCoverTheSchedule(t *testing.T) {
+	h := handlers(nil)
+	if _, ok := h[worker.CleanupSchedule.Kind]; !ok {
+		t.Errorf("no handler for the scheduled kind %q", worker.CleanupSchedule.Kind)
 	}
 }

@@ -130,16 +130,10 @@ func TestRetry_RepeatedCrashesEndDeadViaTheReaper(t *testing.T) {
 	if got := claim(t, pool, kind, 1); len(got) != 0 {
 		t.Fatalf("a job past its last attempt was claimed: %+v", got)
 	}
-	reaped, err := queue.ReapExhausted(ctx, pool)
-	if err != nil {
+	// Reaping is global; a worker in another test process may get there first. Either
+	// way the job must end dead, with its attempts intact.
+	if _, err := queue.ReapExhausted(ctx, pool); err != nil {
 		t.Fatal(err)
-	}
-	found := false
-	for _, r := range reaped {
-		found = found || r == id
-	}
-	if !found {
-		t.Fatalf("reaper did not dead-letter the job: %v", reaped)
 	}
 	if row := getJob(t, pool, id); row.State != queue.StateDead || row.Attempts != 3 {
 		t.Errorf("row = %+v", row)

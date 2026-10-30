@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/db"
 )
@@ -59,29 +60,11 @@ type NewJob struct {
 // Enqueue inserts a queued job in tx and returns its id. The job exists for
 // other transactions only if and when tx commits.
 func Enqueue(ctx context.Context, tx pgx.Tx, j NewJob) (uuid.UUID, error) {
-	if l := len(j.Kind); l < 1 || l > MaxKindLen {
-		return uuid.Nil, fmt.Errorf("%w: kind must be 1-%d bytes, got %d", ErrInvalidJob, MaxKindLen, l)
+	payload, maxAttempts, err := prepare(j)
+	if err != nil {
+		return uuid.Nil, err
 	}
-	if j.MaxAttempts < 0 || j.MaxAttempts > math.MaxInt32 {
-		return uuid.Nil, fmt.Errorf("%w: max attempts out of range", ErrInvalidJob)
-	}
-	maxAttempts := j.MaxAttempts
-	if maxAttempts == 0 {
-		maxAttempts = DefaultMaxAttempts
-	}
-
-	payload := []byte(`{}`)
-	if j.Payload != nil {
-		var err error
-		if payload, err = json.Marshal(j.Payload); err != nil {
-			return uuid.Nil, fmt.Errorf("%w: payload: %v", ErrInvalidJob, err)
-		}
-		if !bytes.HasPrefix(payload, []byte("{")) {
-			return uuid.Nil, fmt.Errorf("%w: payload must be a JSON object", ErrInvalidJob)
-		}
-	}
-
-	arg := db.InsertJobParams{Kind: j.Kind, Payload: payload, MaxAttempts: int32(maxAttempts)}
+	arg := db.InsertJobParams{Kind: j.Kind, Payload: payload, MaxAttempts: maxAttempts}
 	if !j.RunAt.IsZero() {
 		arg.RunAt = &j.RunAt
 	}
@@ -90,4 +73,65 @@ func Enqueue(ctx context.Context, tx pgx.Tx, j NewJob) (uuid.UUID, error) {
 		return uuid.Nil, fmt.Errorf("insert job: %w", err)
 	}
 	return row.ID, nil
+}
+
+// prepare validates j and returns its payload JSON and effective max attempts.
+func prepare(j NewJob) (payload []byte, maxAttempts int32, err error) {
+	if l := len(j.Kind); l < 1 || l > MaxKindLen {
+		return nil, 0, fmt.Errorf("%w: kind must be 1-%d bytes, got %d", ErrInvalidJob, MaxKindLen, l)
+	}
+	if j.MaxAttempts < 0 || j.MaxAttempts > math.MaxInt32 {
+		return nil, 0, fmt.Errorf("%w: max attempts out of range", ErrInvalidJob)
+	}
+	maxAttempts = int32(j.MaxAttempts)
+	if maxAttempts == 0 {
+		maxAttempts = DefaultMaxAttempts
+	}
+
+	payload = []byte(`{}`)
+	if j.Payload != nil {
+		if payload, err = json.Marshal(j.Payload); err != nil {
+			return nil, 0, fmt.Errorf("%w: payload: %v", ErrInvalidJob, err)
+		}
+		if !bytes.HasPrefix(payload, []byte("{")) {
+			return nil, 0, fmt.Errorf("%w: payload must be a JSON object", ErrInvalidJob)
+		}
+	}
+	return payload, maxAttempts, nil
+}
+
+// PeriodicJob is work that should happen once per period, however many workers
+// are running.
+type PeriodicJob struct {
+	Kind        string
+	Every       time.Duration // the period, at least one second
+	Payload     any           // as NewJob.Payload
+	MaxAttempts int           // as NewJob.MaxAttempts
+}
+
+// EnqueuePeriodic makes sure a job exists for the current period of p, and
+// reports whether this call created it. The period is floor(now / Every) on the
+// database clock, so any number of workers calling this, in any order, produce
+// exactly one job per period; a period whose job was lost or dead-lettered is not
+// repaired, the next period simply gets a new one.
+//
+// It takes the pool: there is no row to be atomic with, and it is safe to repeat.
+func EnqueuePeriodic(ctx context.Context, pool *pgxpool.Pool, p PeriodicJob) (created bool, err error) {
+	if p.Every < time.Second {
+		return false, fmt.Errorf("%w: period must be at least one second", ErrInvalidJob)
+	}
+	payload, maxAttempts, err := prepare(NewJob{Kind: p.Kind, Payload: p.Payload, MaxAttempts: p.MaxAttempts})
+	if err != nil {
+		return false, err
+	}
+	_, err = db.New(pool).InsertPeriodicJob(ctx, db.InsertPeriodicJobParams{
+		Kind: p.Kind, Payload: payload, MaxAttempts: maxAttempts, EverySeconds: p.Every.Seconds(),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil // this period already has its job
+	}
+	if err != nil {
+		return false, fmt.Errorf("insert periodic job: %w", err)
+	}
+	return true, nil
 }

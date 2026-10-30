@@ -32,7 +32,7 @@ SET state            = 'running',
     run_at           = now() + make_interval(secs => $1::float8)
 FROM candidates
 WHERE jobs.id = candidates.id
-RETURNING jobs.id, jobs.kind, jobs.payload, jobs.state, jobs.attempts, jobs.max_attempts, jobs.run_at, jobs.lease_token, jobs.lease_expires_at, jobs.last_error, jobs.created_at, jobs.finished_at
+RETURNING jobs.id, jobs.kind, jobs.payload, jobs.state, jobs.attempts, jobs.max_attempts, jobs.run_at, jobs.lease_token, jobs.lease_expires_at, jobs.last_error, jobs.created_at, jobs.finished_at, jobs.dedupe_key
 `
 
 type ClaimJobsParams struct {
@@ -84,6 +84,7 @@ func (q *Queries) ClaimJobs(ctx context.Context, arg ClaimJobsParams) ([]Job, er
 			&i.LastError,
 			&i.CreatedAt,
 			&i.FinishedAt,
+			&i.DedupeKey,
 		); err != nil {
 			return nil, err
 		}
@@ -201,7 +202,7 @@ VALUES (
     $3,
     COALESCE($4::timestamptz, now())
 )
-RETURNING id, kind, payload, state, attempts, max_attempts, run_at, lease_token, lease_expires_at, last_error, created_at, finished_at
+RETURNING id, kind, payload, state, attempts, max_attempts, run_at, lease_token, lease_expires_at, last_error, created_at, finished_at, dedupe_key
 `
 
 type InsertJobParams struct {
@@ -234,8 +235,46 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) (Job, erro
 		&i.LastError,
 		&i.CreatedAt,
 		&i.FinishedAt,
+		&i.DedupeKey,
 	)
 	return i, err
+}
+
+const insertPeriodicJob = `-- name: InsertPeriodicJob :one
+INSERT INTO jobs (kind, payload, max_attempts, run_at, dedupe_key)
+VALUES (
+    $1,
+    $2,
+    $3,
+    now(),
+    $1::text || ':' || floor(extract(epoch FROM now()) / $4::float8)::bigint
+)
+ON CONFLICT (dedupe_key) DO NOTHING
+RETURNING id
+`
+
+type InsertPeriodicJobParams struct {
+	Kind         string
+	Payload      []byte
+	MaxAttempts  int32
+	EverySeconds float64
+}
+
+// InsertPeriodicJob enqueues the job for the current period, unless one exists.
+// The period number is computed here, on the database clock, so workers whose own
+// clocks disagree still agree on which period it is: floor(epoch / every). The
+// partial-conflict clause makes concurrent callers collide on dedupe_key; exactly
+// one gets a row back, the others get none.
+func (q *Queries) InsertPeriodicJob(ctx context.Context, arg InsertPeriodicJobParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, insertPeriodicJob,
+		arg.Kind,
+		arg.Payload,
+		arg.MaxAttempts,
+		arg.EverySeconds,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const reapExhaustedJobs = `-- name: ReapExhaustedJobs :many

@@ -81,6 +81,7 @@ type Job struct {
 	LastError      pgtype.Text
 	CreatedAt      time.Time
 	FinishedAt     *time.Time
+	DedupeKey      pgtype.Text
 }
 
 type JoinCode struct {

@@ -25,3 +25,26 @@ WHERE user_id = $1 AND key = $2 AND expires_at > now();
 UPDATE idempotency_keys
 SET response_status = $3, response_body = $4
 WHERE user_id = $1 AND key = $2;
+
+-- DeleteExpiredIdempotencyKeys removes up to `batch` expired keys. Expired keys
+-- are already ignored by every reader; this only reclaims the space.
+--
+-- The outer `expires_at <= now()` looks redundant next to the subquery's and is
+-- not. ClaimIdempotencyKey takes over an expired row by UPDATEing it back to
+-- live. If that happens between this statement choosing the row and deleting it,
+-- the DELETE waits for the claim's transaction and then sees the NEW version of
+-- the row. Postgres re-checks the DELETE's own conditions on that version, but
+-- not the subquery's, so without the outer condition it would delete a key that
+-- a request in flight has just re-claimed. (The subquery's own condition is
+-- equivalent once the outer one exists, since ORDER BY puts expired keys first; it
+-- stays so the subquery says what it selects.)
+-- name: DeleteExpiredIdempotencyKeys :execrows
+DELETE FROM idempotency_keys
+WHERE expires_at <= now()
+  AND (user_id, key) IN (
+      SELECT user_id, key
+      FROM idempotency_keys
+      WHERE expires_at <= now()
+      ORDER BY expires_at
+      LIMIT sqlc.arg('batch')
+  );

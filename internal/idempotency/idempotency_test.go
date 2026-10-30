@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -201,5 +202,102 @@ func TestParseKey(t *testing.T) {
 		if (err == nil) != valid {
 			t.Errorf("ParseKey(%q): err=%v, valid=%v", key, err, valid)
 		}
+	}
+}
+
+// insertKey writes an idempotency row directly, expiring `age` from now (negative:
+// already expired).
+func insertKey(t *testing.T, pool *pgxpool.Pool, user uuid.UUID, key string, in string) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
+		 VALUES ($1, $2, '\x01', 200, '\x7b7d', now() + $3::interval)`, user, key, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeleteExpired_RemovesOnlyExpiredKeysAndRespectsTheBatch(t *testing.T) {
+	pool := testutil.Pool(t)
+	user := newUser(t, pool)
+	var expired, live []string
+	for i := range 7 {
+		k := uuid.NewString()
+		// Older than anything another test leaves behind, so these sort first and
+		// the batch below is made of them.
+		insertKey(t, pool, user, k, "-10 years -"+string(rune('0'+i))+" seconds")
+		expired = append(expired, k)
+	}
+	for range 3 {
+		k := uuid.NewString()
+		insertKey(t, pool, user, k, "1 hour")
+		live = append(live, k)
+	}
+
+	// The cleanup is global and the table shared, so another test's cleanup running
+	// at the same moment can take some of these rows: assert what holds either way.
+	n, err := idempotency.DeleteExpired(context.Background(), pool, 3)
+	if err != nil || n > 3 {
+		t.Fatalf("deleted %d, %v; one call must delete at most its batch of 3", n, err)
+	}
+	for { // until a call deletes nothing, as the worker does
+		n, err := idempotency.DeleteExpired(context.Background(), pool, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	for _, k := range expired {
+		if keyRows(t, pool, user, k) != 0 {
+			t.Errorf("expired key %s survived", k)
+		}
+	}
+	for _, k := range live {
+		if keyRows(t, pool, user, k) != 1 {
+			t.Errorf("live key %s was deleted", k)
+		}
+	}
+	for _, bad := range []int{0, -1} {
+		if _, err := idempotency.DeleteExpired(context.Background(), pool, bad); err == nil {
+			t.Errorf("batch %d accepted", bad)
+		}
+	}
+}
+
+// A request re-claims an expired key (Do's takeover) while the cleanup is deleting
+// it. The cleanup must wait for that request and then leave the now-live key alone;
+// deleting it would let the request's duplicate run twice.
+func TestDeleteExpired_DoesNotDeleteAKeyReclaimedInFlight(t *testing.T) {
+	pool := testutil.Pool(t)
+	ctx := context.Background()
+	user, key := newUser(t, pool), uuid.NewString()
+	insertKey(t, pool, user, key, "-10 years")
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if _, err := db.New(tx).ClaimIdempotencyKey(ctx, db.ClaimIdempotencyKeyParams{UserID: user, Key: key, Fingerprint: fp}); err != nil {
+		t.Fatalf("takeover of the expired key: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() { _, err := idempotency.DeleteExpired(ctx, pool, 1000); done <- err }()
+	select {
+	case err := <-done:
+		t.Fatalf("the cleanup finished (%v) without waiting for the in-flight claim of the row it was about to delete", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if keyRows(t, pool, user, key) != 1 {
+		t.Fatal("the cleanup deleted a key that a request had just re-claimed")
 	}
 }

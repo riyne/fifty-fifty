@@ -151,3 +151,18 @@ func Do(
 	}
 	return Outcome{Result: res}, nil
 }
+
+// DeleteExpired deletes up to batch expired keys and returns how many it deleted.
+// Callers loop until it returns less than batch. Expired keys are already ignored
+// by Do, so this only reclaims space, and it is safe to run while requests are in
+// flight (see the DeleteExpiredIdempotencyKeys query for the one race).
+func DeleteExpired(ctx context.Context, pool *pgxpool.Pool, batch int) (int64, error) {
+	if batch < 1 || batch > 1<<31-1 {
+		return 0, errors.New("batch must be between 1 and 2^31-1")
+	}
+	n, err := db.New(pool).DeleteExpiredIdempotencyKeys(ctx, int32(batch))
+	if err != nil {
+		return 0, fmt.Errorf("delete expired idempotency keys: %w", err)
+	}
+	return n, nil
+}

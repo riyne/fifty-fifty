@@ -137,3 +137,20 @@ WHERE state = 'dead'
   AND (cardinality(sqlc.arg('ids')::uuid[]) = 0 OR id = ANY(sqlc.arg('ids')::uuid[]))
   AND (sqlc.arg('kind')::text = '' OR kind = sqlc.arg('kind')::text)
 RETURNING id;
+
+-- InsertPeriodicJob enqueues the job for the current period, unless one exists.
+-- The period number is computed here, on the database clock, so workers whose own
+-- clocks disagree still agree on which period it is: floor(epoch / every). The
+-- partial-conflict clause makes concurrent callers collide on dedupe_key; exactly
+-- one gets a row back, the others get none.
+-- name: InsertPeriodicJob :one
+INSERT INTO jobs (kind, payload, max_attempts, run_at, dedupe_key)
+VALUES (
+    sqlc.arg('kind'),
+    sqlc.arg('payload'),
+    sqlc.arg('max_attempts'),
+    now(),
+    sqlc.arg('kind')::text || ':' || floor(extract(epoch FROM now()) / sqlc.arg('every_seconds')::float8)::bigint
+)
+ON CONFLICT (dedupe_key) DO NOTHING
+RETURNING id;

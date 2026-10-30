@@ -387,9 +387,12 @@ func TestReapExhausted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(reaped, lastAttempt) || slices.Contains(reaped, stillLeased) ||
-		slices.Contains(reaped, reclaimed) || slices.Contains(reaped, stillExpired) {
-		t.Errorf("reaped %v: want the last-attempt job only", reaped)
+	// ReapExhausted is global, and a worker running in another test process reaps
+	// too, so the last-attempt job may already have been reaped by the time this
+	// call runs; its end state below is what must hold either way. What this call
+	// must never return is any other job of ours.
+	if slices.Contains(reaped, stillLeased) || slices.Contains(reaped, reclaimed) || slices.Contains(reaped, stillExpired) {
+		t.Errorf("reaped %v: includes a job that still had an attempt left or a live lease", reaped)
 	}
 	if row := getJob(t, pool, stillExpired); row.State != queue.StateRunning || row.Attempts != 1 {
 		t.Errorf("an expired job with an attempt left must be left for a worker to claim, got %+v", row)

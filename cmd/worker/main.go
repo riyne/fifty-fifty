@@ -1,9 +1,8 @@
 // Command worker is the Fifty Fifty job worker and its operator commands.
 //
+//	worker run [flags]             claim and run jobs until SIGINT/SIGTERM
 //	worker requeue --kind K        give every dead job of kind K a fresh set of attempts
 //	worker requeue --id ID [--id ID ...]   the same for specific jobs
-//
-// (M3.5 adds `worker run`, the consumer loop.)
 package main
 
 import (
@@ -14,16 +13,25 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/queue"
+	"github.com/riyne/fifty-fifty/internal/worker"
 )
 
 const usage = `usage:
+  worker run [--concurrency N] [--lease D] [--poll D] [--grace D]
   worker requeue --kind KIND
   worker requeue --id JOB_ID [--id JOB_ID ...]
+
+run claims jobs and runs their handlers until SIGINT or SIGTERM, then lets the
+jobs in flight finish (up to --grace). Defaults: 4 jobs at once, 30s lease, 1s
+poll, 20s grace.
 
 requeue moves dead-lettered jobs back to the queue with a fresh set of attempts
 (their last_error is kept). It needs --kind or --id; there is no "all".
@@ -43,12 +51,21 @@ func main() {
 var errUsage = errors.New("usage")
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	if len(args) == 0 || args[0] != "requeue" {
+	if len(args) == 0 || (args[0] != "requeue" && args[0] != "run") {
 		fmt.Fprintln(stderr, usage)
 		return errUsage
 	}
 	// Parse before connecting, so a typo does not need a database.
-	p, err := parseRequeue(args[1:], stderr)
+	var (
+		reqParams queue.RequeueParams
+		runCfg    worker.Config
+		err       error
+	)
+	if args[0] == "requeue" {
+		reqParams, err = parseRequeue(args[1:], stderr)
+	} else {
+		runCfg, err = parseRun(args[1:], stderr)
+	}
 	if err != nil {
 		return err
 	}
@@ -61,7 +78,42 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("create pool: %w", err)
 	}
 	defer pool.Close()
-	return requeue(ctx, pool, p, stdout)
+
+	if args[0] == "requeue" {
+		return requeue(ctx, pool, reqParams, stdout)
+	}
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	runCfg.Pool = pool
+	runCfg.Handlers = handlers(pool)
+	runCfg.Periodic = []queue.PeriodicJob{worker.CleanupSchedule}
+	return worker.Run(ctx, runCfg)
+}
+
+// handlers is every job kind this worker can run. Later milestones register
+// theirs here (settlements in M4, receipts in M6).
+func handlers(pool *pgxpool.Pool) map[string]worker.Handler {
+	return map[string]worker.Handler{
+		worker.KindIdempotencyCleanup: worker.IdempotencyCleanup(pool),
+	}
+}
+
+func parseRun(args []string, stderr io.Writer) (worker.Config, error) {
+	var cfg worker.Config
+	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.IntVar(&cfg.Concurrency, "concurrency", 4, "jobs in flight at once")
+	fs.DurationVar(&cfg.Lease, "lease", 30*time.Second, "lease per claimed job; heartbeats run every third of it")
+	fs.DurationVar(&cfg.PollInterval, "poll", time.Second, "wait between polls when the queue is empty")
+	fs.DurationVar(&cfg.ShutdownGrace, "grace", 20*time.Second, "how long jobs in flight may finish after SIGTERM")
+	if err := fs.Parse(args); err != nil {
+		return cfg, errUsage
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, usage)
+		return cfg, errUsage
+	}
+	return cfg, nil
 }
 
 type idList []uuid.UUID
