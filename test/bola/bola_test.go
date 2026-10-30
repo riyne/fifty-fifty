@@ -117,6 +117,19 @@ func (f *fixture) finalizeWithMemberClaim(t *testing.T, payer actor, group, body
 	return 0
 }
 
+// finalizedBy has `payer` create an expense in the group and finalize it (taking
+// every item themselves), and returns its id.
+func (f *fixture) finalizedBy(t *testing.T, payer actor, group string) string {
+	t.Helper()
+	exp := f.s.CreateExpense(t, f.tokens[payer], group, expenseBody)
+	payerID := f.s.UserID(t, f.tokens[payer]).String()
+	r := f.s.Do(t, f.tokens[payer], "POST", finalizePath(group, exp), `{"split_rest_among":["`+payerID+`"]}`, "Idempotency-Key", uuid.NewString())
+	if r.Status != 200 {
+		t.Fatalf("finalize = %d: %s", r.Status, r.Body)
+	}
+	return exp
+}
+
 // firstItem returns the id of an expense's first item, read through the API.
 func (f *fixture) firstItem(t *testing.T, a actor, group, expense string) string {
 	t.Helper()
@@ -294,6 +307,33 @@ func scenarios() []scenario {
 			want:   map[actor]int{anon: 401, outsider: 404, member: 200, owner: 403},
 		},
 		{
+			// Voiding needs a finalized expense, so each actor gets a fresh one. Here a plain
+			// member is the payer; the group owner may also void it.
+			name: "void as payer or owner", opID: "POST /v1/groups/{id}/expenses/{expenseId}/void", method: "POST", idempotent: true,
+			prepare: func(t *testing.T, f *fixture) string {
+				return voidPath(f.groupA, f.finalizedBy(t, member, f.groupA))
+			},
+			want: map[actor]int{anon: 401, outsider: 404, member: 200, owner: 200},
+		},
+		{
+			// The owner is the payer, so a plain member is neither payer nor owner.
+			name: "void as a member who is neither", opID: "POST /v1/groups/{id}/expenses/{expenseId}/void", method: "POST", idempotent: true,
+			prepare: func(t *testing.T, f *fixture) string {
+				return voidPath(f.groupA, f.finalizedBy(t, owner, f.groupA))
+			},
+			want: map[actor]int{anon: 401, outsider: 404, member: 403, owner: 200},
+		},
+		{
+			name: "void B's expense through A's path", opID: "POST /v1/groups/{id}/expenses/{expenseId}/void", method: "POST", idempotent: true,
+			path: func(f *fixture) string { return voidPath(f.groupA, f.expB) },
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
+			name: "void A's expense through B's path", opID: "POST /v1/groups/{id}/expenses/{expenseId}/void", method: "POST", idempotent: true,
+			path: func(f *fixture) string { return voidPath(f.groupB, f.expA) },
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
 			name: "finalize B's expense through A's path", opID: "POST /v1/groups/{id}/expenses/{expenseId}/finalize", method: "POST", idempotent: true,
 			path: func(f *fixture) string { return finalizePath(f.groupA, f.expB) },
 			body: `{}`,
@@ -306,6 +346,10 @@ func scenarios() []scenario {
 			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
 		},
 	}
+}
+
+func voidPath(group, expense string) string {
+	return "/v1/groups/" + group + "/expenses/" + expense + "/void"
 }
 
 func finalizePath(group, expense string) string {

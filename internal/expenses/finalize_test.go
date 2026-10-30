@@ -67,10 +67,17 @@ func (w *world) auditCount(t testing.TB, expenseID string) int {
 	return w.s.QueryInt(t, `SELECT count(*) FROM audit_events WHERE kind = 'expense.finalized' AND data->>'expense_id' = $1`, expenseID)
 }
 
+// ledgerEntries returns the entries of an expense's finalize posting.
 func (w *world) ledgerEntries(t testing.TB, expenseID string) map[uuid.UUID]int64 {
+	return w.ledgerEntriesOfKind(t, expenseID, "expense")
+}
+
+// ledgerEntriesOfKind returns the entries of one posting of an expense:
+// kind "expense" is the finalize posting, "void" is the reversal.
+func (w *world) ledgerEntriesOfKind(t testing.TB, expenseID, kind string) map[uuid.UUID]int64 {
 	t.Helper()
 	rows, err := w.s.Pool.Query(context.Background(),
-		`SELECT en.member_id, en.amount_minor FROM ledger_entries en JOIN ledger_transactions tx ON tx.id = en.transaction_id WHERE tx.expense_id = $1`, expenseID)
+		`SELECT en.member_id, en.amount_minor FROM ledger_entries en JOIN ledger_transactions tx ON tx.id = en.transaction_id WHERE tx.expense_id = $1 AND tx.kind = $2`, expenseID, kind)
 	if err != nil {
 		t.Fatal(err)
 	}

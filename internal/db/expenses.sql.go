@@ -240,10 +240,35 @@ func (q *Queries) CreateLedgerTransaction(ctx context.Context, arg CreateLedgerT
 	return id, err
 }
 
+const createVoidTransaction = `-- name: CreateVoidTransaction :one
+INSERT INTO ledger_transactions (group_id, kind, expense_id, reverses_id, created_by)
+VALUES ($1, 'void', $2::uuid, $3::uuid, $4)
+RETURNING id
+`
+
+type CreateVoidTransactionParams struct {
+	GroupID    uuid.UUID
+	ExpenseID  uuid.UUID
+	ReversesID uuid.UUID
+	CreatedBy  uuid.UUID
+}
+
+func (q *Queries) CreateVoidTransaction(ctx context.Context, arg CreateVoidTransactionParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createVoidTransaction,
+		arg.GroupID,
+		arg.ExpenseID,
+		arg.ReversesID,
+		arg.CreatedBy,
+	)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getExpenseForMember = `-- name: GetExpenseForMember :one
 SELECT e.id, e.group_id, e.payer_id, e.description, e.status, e.version,
        e.tax_minor, e.tip_minor, e.created_at, e.finalized_at, e.voided_at,
-       g.currency,
+       g.currency, m.role AS caller_role,
        COALESCE((SELECT SUM(i.price_minor) FROM expense_items i WHERE i.expense_id = e.id), 0)::bigint AS subtotal_minor
 FROM expenses e
 JOIN groups g ON g.id = e.group_id
@@ -270,6 +295,7 @@ type GetExpenseForMemberRow struct {
 	FinalizedAt   *time.Time
 	VoidedAt      *time.Time
 	Currency      string
+	CallerRole    string
 	SubtotalMinor int64
 }
 
@@ -293,6 +319,7 @@ func (q *Queries) GetExpenseForMember(ctx context.Context, arg GetExpenseForMemb
 		&i.FinalizedAt,
 		&i.VoidedAt,
 		&i.Currency,
+		&i.CallerRole,
 		&i.SubtotalMinor,
 	)
 	return i, err
@@ -334,6 +361,19 @@ func (q *Queries) GetExpenseItem(ctx context.Context, arg GetExpenseItemParams) 
 		&i.ClaimedBy,
 	)
 	return i, err
+}
+
+const getExpensePosting = `-- name: GetExpensePosting :one
+SELECT id FROM ledger_transactions WHERE expense_id = $1::uuid AND kind = 'expense'
+`
+
+// GetExpensePosting returns the finalize posting of an expense (there is at most
+// one, enforced by a unique index).
+func (q *Queries) GetExpensePosting(ctx context.Context, expenseID uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getExpensePosting, expenseID)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const listExpenseItems = `-- name: ListExpenseItems :many
@@ -513,6 +553,33 @@ func (q *Queries) LockExpenseForFinalize(ctx context.Context, arg LockExpenseFor
 	return i, err
 }
 
+const lockExpenseForVoid = `-- name: LockExpenseForVoid :one
+SELECT e.status
+FROM expenses e
+JOIN memberships m ON m.group_id = e.group_id AND m.user_id = $1
+WHERE e.id = $2 AND e.group_id = $3
+  AND (e.payer_id = $1 OR m.role = 'owner')
+FOR UPDATE OF e
+`
+
+type LockExpenseForVoidParams struct {
+	UserID    uuid.UUID
+	ExpenseID uuid.UUID
+	GroupID   uuid.UUID
+}
+
+// LockExpenseForVoid takes FOR UPDATE on the expense row and authorizes in the same
+// statement: the caller must be the payer or an owner of the path's group,
+// otherwise no row. (A payer is always a member by the foreign key on expenses;
+// an owner is a member by the join.) The handler checks this earlier, without a
+// lock, so nobody else can take this write lock; this is the backstop.
+func (q *Queries) LockExpenseForVoid(ctx context.Context, arg LockExpenseForVoidParams) (string, error) {
+	row := q.db.QueryRow(ctx, lockExpenseForVoid, arg.UserID, arg.ExpenseID, arg.GroupID)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
 const markExpenseFinalized = `-- name: MarkExpenseFinalized :execrows
 UPDATE expenses SET status = 'finalized', finalized_at = now()
 WHERE id = $1 AND status = 'claiming'
@@ -522,6 +589,21 @@ WHERE id = $1 AND status = 'claiming'
 // claiming expense forward, even if the lock were somehow missing.
 func (q *Queries) MarkExpenseFinalized(ctx context.Context, id uuid.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, markExpenseFinalized, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markExpenseVoid = `-- name: MarkExpenseVoid :execrows
+UPDATE expenses SET status = 'void', voided_at = now()
+WHERE id = $1 AND status = 'finalized'
+`
+
+// MarkExpenseVoid is conditional on the status, so only a finalized expense can
+// move to void, even if the lock were somehow missing.
+func (q *Queries) MarkExpenseVoid(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markExpenseVoid, id)
 	if err != nil {
 		return 0, err
 	}
@@ -541,6 +623,29 @@ type RemoveClaimParams struct {
 // RemoveClaim only ever removes the caller's own claim.
 func (q *Queries) RemoveClaim(ctx context.Context, arg RemoveClaimParams) (int64, error) {
 	result, err := q.db.Exec(ctx, removeClaim, arg.ItemID, arg.ExpenseID, arg.MemberID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reverseLedgerEntries = `-- name: ReverseLedgerEntries :execrows
+INSERT INTO ledger_entries (transaction_id, group_id, member_id, amount_minor)
+SELECT $1::uuid, le.group_id, le.member_id, -le.amount_minor
+FROM ledger_entries le
+WHERE le.transaction_id = $2
+`
+
+type ReverseLedgerEntriesParams struct {
+	VoidTransactionID     uuid.UUID
+	OriginalTransactionID uuid.UUID
+}
+
+// ReverseLedgerEntries copies every entry of the original posting with its sign
+// flipped, in one statement, so the reversal is exactly the negation by
+// construction. Nothing is ever updated or deleted: a void is new rows.
+func (q *Queries) ReverseLedgerEntries(ctx context.Context, arg ReverseLedgerEntriesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reverseLedgerEntries, arg.VoidTransactionID, arg.OriginalTransactionID)
 	if err != nil {
 		return 0, err
 	}

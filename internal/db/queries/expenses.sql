@@ -25,7 +25,7 @@ RETURNING id, position, description, price_minor;
 -- name: GetExpenseForMember :one
 SELECT e.id, e.group_id, e.payer_id, e.description, e.status, e.version,
        e.tax_minor, e.tip_minor, e.created_at, e.finalized_at, e.voided_at,
-       g.currency,
+       g.currency, m.role AS caller_role,
        COALESCE((SELECT SUM(i.price_minor) FROM expense_items i WHERE i.expense_id = e.id), 0)::bigint AS subtotal_minor
 FROM expenses e
 JOIN groups g ON g.id = e.group_id
@@ -141,3 +141,41 @@ SELECT sqlc.arg(transaction_id)::uuid,
 -- name: MarkExpenseFinalized :execrows
 UPDATE expenses SET status = 'finalized', finalized_at = now()
 WHERE id = $1 AND status = 'claiming';
+
+-- LockExpenseForVoid takes FOR UPDATE on the expense row and authorizes in the same
+-- statement: the caller must be the payer or an owner of the path's group,
+-- otherwise no row. (A payer is always a member by the foreign key on expenses;
+-- an owner is a member by the join.) The handler checks this earlier, without a
+-- lock, so nobody else can take this write lock; this is the backstop.
+-- name: LockExpenseForVoid :one
+SELECT e.status
+FROM expenses e
+JOIN memberships m ON m.group_id = e.group_id AND m.user_id = sqlc.arg(user_id)
+WHERE e.id = sqlc.arg(expense_id) AND e.group_id = sqlc.arg(group_id)
+  AND (e.payer_id = sqlc.arg(user_id) OR m.role = 'owner')
+FOR UPDATE OF e;
+
+-- GetExpensePosting returns the finalize posting of an expense (there is at most
+-- one, enforced by a unique index).
+-- name: GetExpensePosting :one
+SELECT id FROM ledger_transactions WHERE expense_id = sqlc.arg(expense_id)::uuid AND kind = 'expense';
+
+-- name: CreateVoidTransaction :one
+INSERT INTO ledger_transactions (group_id, kind, expense_id, reverses_id, created_by)
+VALUES (sqlc.arg(group_id), 'void', sqlc.arg(expense_id)::uuid, sqlc.arg(reverses_id)::uuid, sqlc.arg(created_by))
+RETURNING id;
+
+-- ReverseLedgerEntries copies every entry of the original posting with its sign
+-- flipped, in one statement, so the reversal is exactly the negation by
+-- construction. Nothing is ever updated or deleted: a void is new rows.
+-- name: ReverseLedgerEntries :execrows
+INSERT INTO ledger_entries (transaction_id, group_id, member_id, amount_minor)
+SELECT sqlc.arg(void_transaction_id)::uuid, le.group_id, le.member_id, -le.amount_minor
+FROM ledger_entries le
+WHERE le.transaction_id = sqlc.arg(original_transaction_id);
+
+-- MarkExpenseVoid is conditional on the status, so only a finalized expense can
+-- move to void, even if the lock were somehow missing.
+-- name: MarkExpenseVoid :execrows
+UPDATE expenses SET status = 'void', voided_at = now()
+WHERE id = $1 AND status = 'finalized';

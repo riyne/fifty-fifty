@@ -48,6 +48,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/groups/{id}/expenses", h.list)
 	mux.HandleFunc("GET /v1/groups/{id}/expenses/{expenseId}", h.get)
 	mux.HandleFunc("POST /v1/groups/{id}/expenses/{expenseId}/finalize", h.finalize)
+	mux.HandleFunc("POST /v1/groups/{id}/expenses/{expenseId}/void", h.void)
 	mux.HandleFunc("PUT /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", h.claim)
 	mux.HandleFunc("DELETE /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", h.unclaim)
 }

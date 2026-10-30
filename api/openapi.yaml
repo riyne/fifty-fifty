@@ -328,6 +328,49 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/KeyReuse" }
+  /v1/groups/{id}/expenses/{expenseId}/void:
+    post:
+      summary: Void a finalized expense (the payer or the group owner). Requires Idempotency-Key.
+      description: >
+        Cancels a finalized expense by appending a second ledger transaction whose entries are the
+        exact negation of the finalize posting. Nothing already on the ledger is changed or deleted, and
+        every balance returns to what it would have been had the expense never been finalized. The
+        claims are left as they were. In one transaction the expense becomes `void` and an audit event
+        is written. Only a `finalized` expense can be voided; anything else is 409 `invalid_state`
+        (including an expense that is already void). A void after later settlements can leave a pair
+        overpaid, so a balance may change sign; that is correct bookkeeping, not an error.
+        Responses below 500 are stored under the key for 24 hours and replayed (header
+        Idempotent-Replayed: true). A caller who is not in the group gets 404; a member who is
+        neither the payer nor the owner gets 403; both before the key is read.
+      parameters:
+        - { $ref: "#/components/parameters/GroupId" }
+        - { name: expenseId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, description: "No fields; an empty body or {} is accepted." }
+      responses:
+        "200":
+          description: Voided.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VoidedExpense" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: The caller is in the group but is neither this expense's payer nor the group owner.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The expense is not `finalized` (`invalid_state`), for example still claiming or already void.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/KeyReuse" }
   /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim:
     parameters:
       - { $ref: "#/components/parameters/GroupId" }
@@ -523,6 +566,14 @@ components:
               from_member_id: { type: string, format: uuid, description: Pays. }
               to_member_id: { type: string, format: uuid, description: Receives. }
               amount_minor: { type: integer, format: int64, minimum: 1 }
+    VoidedExpense:
+      allOf:
+        - $ref: "#/components/schemas/Expense"
+        - type: object
+          required: [ledger_transaction_id, reversed_ledger_transaction_id]
+          properties:
+            ledger_transaction_id: { type: string, format: uuid, description: The new reversing posting. }
+            reversed_ledger_transaction_id: { type: string, format: uuid, description: The finalize posting it cancels. }
     ExpenseSummary:
       type: object
       required: [id, payer_id, description, status, currency, item_count, subtotal_minor, total_minor, created_at]
