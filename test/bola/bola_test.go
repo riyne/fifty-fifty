@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -83,6 +84,37 @@ func newFixture(t *testing.T) *fixture {
 	f.itemA = f.firstItem(t, owner, f.groupA, f.expA)
 	f.itemB = f.firstItem(t, outsider, f.groupB, f.expB)
 	return f
+}
+
+// finalizeWithMemberClaim has `payer` create an expense in the group, the fixture
+// `member` claim its first item, and the payer finalize (the payer takes the
+// rest). It returns what the member owes.
+func (f *fixture) finalizeWithMemberClaim(t *testing.T, payer actor, group, body string) int64 {
+	t.Helper()
+	exp := f.s.CreateExpense(t, f.tokens[payer], group, body)
+	item := f.firstItem(t, payer, group, exp)
+	if r := f.s.Do(t, f.tokens[member], "PUT", claimPath(group, exp, item), ""); r.Status != 200 {
+		t.Fatalf("member claim = %d: %s", r.Status, r.Body)
+	}
+	payerID := f.s.UserID(t, f.tokens[payer]).String()
+	r := f.s.Do(t, f.tokens[payer], "POST", finalizePath(group, exp), `{"split_rest_among":["`+payerID+`"]}`, "Idempotency-Key", uuid.NewString())
+	if r.Status != 200 {
+		t.Fatalf("finalize = %d: %s", r.Status, r.Body)
+	}
+	var fin struct {
+		Shares []struct {
+			MemberID   string `json:"member_id"`
+			TotalMinor int64  `json:"total_minor"`
+		} `json:"shares"`
+	}
+	r.JSON(t, &fin)
+	for _, s := range fin.Shares {
+		if s.MemberID == f.memberID {
+			return s.TotalMinor
+		}
+	}
+	t.Fatal("member has no share in the finalize response")
+	return 0
 }
 
 // firstItem returns the id of an expense's first item, read through the API.
@@ -180,6 +212,10 @@ func scenarios() []scenario {
 			name: "create expense", opID: "POST /v1/groups/{id}/expenses", method: "POST", path: groupPath("/expenses"),
 			body: expenseBody, idempotent: true,
 			want: map[actor]int{anon: 401, outsider: 404, member: 201, owner: 201},
+		},
+		{
+			name: "read balances", opID: "GET /v1/groups/{id}/balances", method: "GET", path: groupPath("/balances"),
+			want: map[actor]int{anon: 401, outsider: 404, member: 200, owner: 200},
 		},
 		{
 			name: "list expenses", opID: "GET /v1/groups/{id}/expenses", method: "GET", path: groupPath("/expenses"),
@@ -424,6 +460,54 @@ func TestMemberOfTwoGroupsCannotCrossThem(t *testing.T) {
 	}
 	if n := f.s.QueryInt(t, `SELECT count(*) FROM claims WHERE expense_id = $1`, f.expA); n != 0 {
 		t.Errorf("a cross-group claim created %d claims on A's expense", n)
+	}
+
+	// Money: finalize one expense in each group so this member owes something in
+	// both, then check each group's balances show only that group's ledger.
+	owedInA := f.finalizeWithMemberClaim(t, owner, f.groupA, expenseBody)
+	owedInB := f.finalizeWithMemberClaim(t, outsider, f.groupB, strings.Replace(expenseBody, `"price_minor":1500`, `"price_minor":2500`, 1))
+	if owedInA == 0 || owedInB == 0 || owedInA == owedInB {
+		t.Fatalf("test needs two different nonzero amounts, got %d and %d", owedInA, owedInB)
+	}
+	type balances struct {
+		Balances []struct {
+			MemberID     string `json:"member_id"`
+			BalanceMinor int64  `json:"balance_minor"`
+		} `json:"balances"`
+		Transfers []struct {
+			From, To string
+			Amount   int64 `json:"amount_minor"`
+		} `json:"suggested_transfers"`
+	}
+	read := func(group string) (mine int64, ids []string) {
+		var b balances
+		r := f.s.Do(t, f.tokens[member], "GET", "/v1/groups/"+group+"/balances", "")
+		if r.Status != 200 {
+			t.Fatalf("balances of %s = %d: %s", group, r.Status, r.Body)
+		}
+		r.JSON(t, &b)
+		for _, x := range b.Balances {
+			ids = append(ids, x.MemberID)
+			if x.MemberID == f.memberID {
+				mine = x.BalanceMinor
+			}
+		}
+		return mine, ids
+	}
+	mineA, idsA := read(f.groupA)
+	mineB, idsB := read(f.groupB)
+	if mineA != -owedInA || mineB != -owedInB {
+		t.Errorf("member's balances = %d in A and %d in B, want %d and %d (each group shows only its own ledger)", mineA, mineB, -owedInA, -owedInB)
+	}
+	outsiderID := f.s.UserID(t, f.tokens[outsider]).String()
+	slices.Sort(idsA)
+	slices.Sort(idsB)
+	wantA := []string{f.ownerID, f.memberID}
+	wantB := []string{outsiderID, f.memberID}
+	slices.Sort(wantA)
+	slices.Sort(wantB)
+	if !slices.Equal(idsA, wantA) || !slices.Equal(idsB, wantB) {
+		t.Errorf("each group must list exactly its own members:\n A: %v want %v\n B: %v want %v", idsA, wantA, idsB, wantB)
 	}
 	for group, other := range map[string]string{f.groupA: f.expB, f.groupB: f.expA} {
 		r := f.s.Do(t, f.tokens[member], "GET", "/v1/groups/"+group+"/expenses", "")

@@ -173,6 +173,27 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/groups/{id}/balances:
+    parameters:
+      - { $ref: "#/components/parameters/GroupId" }
+    get:
+      summary: Every member's net balance in the group, plus suggested transfers to settle up (any member).
+      description: >
+        A balance is the sum of the member's ledger entries in this group: positive means the group
+        owes them, negative means they owe the group. All current members are listed, including those
+        at zero. Balances always sum to zero. `suggested_transfers` are derived at read time by a greedy
+        heuristic (the member owed the most is paid by the member who owes the most, repeatedly); it
+        reduces the number of payments but does NOT guarantee the minimum, and it only suggests:
+        nothing is posted. Both fields come from one snapshot, so applying the transfers to the
+        balances always gives all zeros. 404 if the caller is not in the group (or it does not exist).
+      responses:
+        "200":
+          description: Balances and suggested transfers.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Balances" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/groups/{id}/expenses:
     parameters:
       - { $ref: "#/components/parameters/GroupId" }
@@ -477,6 +498,31 @@ components:
                   tax_minor: { type: integer, format: int64 }
                   tip_minor: { type: integer, format: int64 }
                   total_minor: { type: integer, format: int64 }
+    Balances:
+      type: object
+      required: [currency, balances, suggested_transfers]
+      properties:
+        currency: { type: string, enum: [CAD, USD] }
+        balances:
+          type: array
+          description: One entry per current member, in the order they joined.
+          items:
+            type: object
+            required: [member_id, display_name, balance_minor]
+            properties:
+              member_id: { type: string, format: uuid }
+              display_name: { type: string }
+              balance_minor: { type: integer, format: int64, description: "Positive: the group owes them. Negative: they owe the group." }
+        suggested_transfers:
+          type: array
+          description: Payments that would bring every balance to zero. Suggestions only; the count is reduced, not minimized.
+          items:
+            type: object
+            required: [from_member_id, to_member_id, amount_minor]
+            properties:
+              from_member_id: { type: string, format: uuid, description: Pays. }
+              to_member_id: { type: string, format: uuid, description: Receives. }
+              amount_minor: { type: integer, format: int64, minimum: 1 }
     ExpenseSummary:
       type: object
       required: [id, payer_id, description, status, currency, item_count, subtotal_minor, total_minor, created_at]

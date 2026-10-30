@@ -19,6 +19,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/auth"
 	"github.com/riyne/fifty-fifty/internal/auth/authtest"
+	"github.com/riyne/fifty-fifty/internal/balances"
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
@@ -65,6 +66,7 @@ func New(t testing.TB, opts ...Option) *Stack {
 		auth.Middleware(verifier, db.New(pool)),
 		groups.NewHandler(pool, ratelimit.New(cfg.joinRate, cfg.joinBurst)),
 		expenses.NewHandler(pool),
+		balances.NewHandler(pool),
 	)
 	srv := httptest.NewServer(httpapi.New(pool, v1))
 	t.Cleanup(srv.Close)

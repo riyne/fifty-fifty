@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/riyne/fifty-fifty/internal/auth"
+	"github.com/riyne/fifty-fifty/internal/balances"
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpx"
@@ -36,11 +37,12 @@ func New(db Pinger, v1 http.Handler) http.Handler {
 
 // NewV1 builds the authenticated API. authn wraps the whole mux, so a route
 // added here cannot accidentally be served without authentication.
-func NewV1(authn func(http.Handler) http.Handler, g *groups.Handler, e *expenses.Handler) http.Handler {
+func NewV1(authn func(http.Handler) http.Handler, g *groups.Handler, e *expenses.Handler, b *balances.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/me", me)
 	g.Register(mux)
 	e.Register(mux)
+	b.Register(mux)
 	return authn(mux)
 }
 
