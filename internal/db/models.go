@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type AuditEvent struct {
@@ -17,6 +18,36 @@ type AuditEvent struct {
 	Kind        string
 	Data        []byte
 	CreatedAt   time.Time
+}
+
+type Claim struct {
+	ItemID    uuid.UUID
+	ExpenseID uuid.UUID
+	GroupID   uuid.UUID
+	MemberID  uuid.UUID
+	CreatedAt time.Time
+}
+
+type Expense struct {
+	ID          uuid.UUID
+	GroupID     uuid.UUID
+	PayerID     uuid.UUID
+	Description string
+	TaxMinor    int64
+	TipMinor    int64
+	Status      string
+	Version     int32
+	CreatedAt   time.Time
+	FinalizedAt *time.Time
+	VoidedAt    *time.Time
+}
+
+type ExpenseItem struct {
+	ID          uuid.UUID
+	ExpenseID   uuid.UUID
+	Position    int32
+	Description string
+	PriceMinor  int64
 }
 
 type Group struct {
@@ -47,6 +78,25 @@ type JoinCode struct {
 	ExpiresAt time.Time
 	RevokedAt *time.Time
 	CreatedAt time.Time
+}
+
+type LedgerEntry struct {
+	ID            int64
+	TransactionID uuid.UUID
+	GroupID       uuid.UUID
+	MemberID      uuid.UUID
+	AmountMinor   int64
+}
+
+type LedgerTransaction struct {
+	ID         uuid.UUID
+	GroupID    uuid.UUID
+	Kind       string
+	ExpenseID  pgtype.UUID
+	ReversesID pgtype.UUID
+	CreatedBy  uuid.UUID
+	CreatedAt  time.Time
+	Txid       pgtype.Uint64
 }
 
 type Membership struct {

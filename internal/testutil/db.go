@@ -37,3 +37,24 @@ func Pool(t testing.TB) *pgxpool.Pool {
 	}
 	return pool
 }
+
+// OwnerPool returns a pool connected as the database owner (TEST_OWNER_DATABASE_URL).
+// Use it only for tests that must show a protection holds even against the owner
+// or a superuser; everything else runs as the unprivileged app role via Pool.
+// Skipped when the variable is unset.
+func OwnerPool(t testing.TB) *pgxpool.Pool {
+	t.Helper()
+	url := os.Getenv("TEST_OWNER_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_OWNER_DATABASE_URL not set; skipping owner-level integration test")
+	}
+	pool, err := pgxpool.New(context.Background(), url)
+	if err != nil {
+		t.Fatalf("connect to owner test database: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if err := pool.Ping(context.Background()); err != nil {
+		t.Fatalf("ping owner test database: %v", err)
+	}
+	return pool
+}
