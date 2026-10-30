@@ -102,18 +102,38 @@ SET state            = 'succeeded',
 WHERE id = sqlc.arg('id')
   AND lease_token = sqlc.arg('lease_token')::uuid;
 
--- Gives a failed attempt back: queued to run again at retry_at (default now), or
--- dead when this was the last attempt. attempts is not touched; the next claim
--- counts the next attempt. Returns the state the job ended in.
+-- Gives a failed attempt back: queued to run again retry_seconds from now (on the
+-- database clock, like leases), or dead when this was the last attempt. attempts
+-- is not touched; the next claim counts the next attempt. Returns the state the
+-- job ended in.
 -- name: FailJob :one
 UPDATE jobs
 SET state            = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'queued' END,
     finished_at      = CASE WHEN attempts >= max_attempts THEN now() END,
     run_at           = CASE WHEN attempts >= max_attempts THEN run_at
-                            ELSE COALESCE(sqlc.narg('retry_at')::timestamptz, now()) END,
+                            ELSE now() + make_interval(secs => sqlc.arg('retry_seconds')::float8) END,
     lease_token      = NULL,
     lease_expires_at = NULL,
     last_error       = sqlc.arg('last_error')::text
 WHERE id = sqlc.arg('id')
   AND lease_token = sqlc.arg('lease_token')::uuid
 RETURNING state;
+
+-- RequeueDeadJobs gives dead-lettered jobs a fresh set of attempts, for an operator
+-- who has fixed whatever killed them. attempts goes back to 0 (a dead job has
+-- attempts = max_attempts, which ClaimJobs refuses), so the attempt history is
+-- lost; last_error is kept as the record of why it died. Only dead jobs match, so
+-- running a requeue twice, or against a job that was already requeued and is
+-- running again, changes nothing. An empty ids array means "no id filter" and an
+-- empty kind means "no kind filter"; the Go side refuses to call this with both
+-- empty.
+-- name: RequeueDeadJobs :many
+UPDATE jobs
+SET state       = 'queued',
+    attempts    = 0,
+    finished_at = NULL,
+    run_at      = now()
+WHERE state = 'dead'
+  AND (cardinality(sqlc.arg('ids')::uuid[]) = 0 OR id = ANY(sqlc.arg('ids')::uuid[]))
+  AND (sqlc.arg('kind')::text = '' OR kind = sqlc.arg('kind')::text)
+RETURNING id;

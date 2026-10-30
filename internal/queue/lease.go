@@ -104,13 +104,13 @@ type FailParams struct {
 	// Error is stored as last_error, cut to MaxErrorLen bytes. Do not put
 	// secrets or receipt text in it.
 	Error string
-	// RetryAt is when the job may run again if it has an attempt left. Zero
-	// means now. The backoff policy that picks it is M3.4.
-	RetryAt time.Time
+	// RetryIn is how long from now (database clock) until the job may run again,
+	// if it has an attempt left. Zero means now. Backoff.Delay picks it.
+	RetryIn time.Duration
 }
 
 // Fail ends the current attempt of a claimed job: it goes back to queued, to
-// run again at p.RetryAt, or to dead when this was its last attempt. Returns the
+// run again after p.RetryIn, or to dead when this was its last attempt. Returns the
 // state the job ended in (StateQueued or StateDead). ErrLeaseLost means the job
 // is no longer yours and was not changed, so a stale worker's failure cannot
 // undo a newer attempt's success.
@@ -118,11 +118,12 @@ type FailParams struct {
 // It takes the pool because it belongs after the attempt's transaction was
 // rolled back, never inside it.
 func Fail(ctx context.Context, pool *pgxpool.Pool, c Claimed, p FailParams) (string, error) {
-	arg := db.FailJobParams{ID: c.ID, LeaseToken: c.LeaseToken, LastError: truncate(p.Error, MaxErrorLen)}
-	if !p.RetryAt.IsZero() {
-		arg.RetryAt = &p.RetryAt
+	if p.RetryIn < 0 {
+		return "", fmt.Errorf("%w: retry delay must not be negative", ErrInvalidClaim)
 	}
-	state, err := db.New(pool).FailJob(ctx, arg)
+	state, err := db.New(pool).FailJob(ctx, db.FailJobParams{
+		ID: c.ID, LeaseToken: c.LeaseToken, LastError: truncate(p.Error, MaxErrorLen), RetrySeconds: p.RetryIn.Seconds(),
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrLeaseLost
 	}

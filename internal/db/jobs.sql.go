@@ -123,7 +123,7 @@ UPDATE jobs
 SET state            = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'queued' END,
     finished_at      = CASE WHEN attempts >= max_attempts THEN now() END,
     run_at           = CASE WHEN attempts >= max_attempts THEN run_at
-                            ELSE COALESCE($1::timestamptz, now()) END,
+                            ELSE now() + make_interval(secs => $1::float8) END,
     lease_token      = NULL,
     lease_expires_at = NULL,
     last_error       = $2::text
@@ -133,18 +133,19 @@ RETURNING state
 `
 
 type FailJobParams struct {
-	RetryAt    *time.Time
-	LastError  string
-	ID         uuid.UUID
-	LeaseToken uuid.UUID
+	RetrySeconds float64
+	LastError    string
+	ID           uuid.UUID
+	LeaseToken   uuid.UUID
 }
 
-// Gives a failed attempt back: queued to run again at retry_at (default now), or
-// dead when this was the last attempt. attempts is not touched; the next claim
-// counts the next attempt. Returns the state the job ended in.
+// Gives a failed attempt back: queued to run again retry_seconds from now (on the
+// database clock, like leases), or dead when this was the last attempt. attempts
+// is not touched; the next claim counts the next attempt. Returns the state the
+// job ended in.
 func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) (string, error) {
 	row := q.db.QueryRow(ctx, failJob,
-		arg.RetryAt,
+		arg.RetrySeconds,
 		arg.LastError,
 		arg.ID,
 		arg.LeaseToken,
@@ -256,6 +257,51 @@ RETURNING id
 // forever. run_at is the lease expiry while running.
 func (q *Queries) ReapExhaustedJobs(ctx context.Context) ([]uuid.UUID, error) {
 	rows, err := q.db.Query(ctx, reapExhaustedJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const requeueDeadJobs = `-- name: RequeueDeadJobs :many
+UPDATE jobs
+SET state       = 'queued',
+    attempts    = 0,
+    finished_at = NULL,
+    run_at      = now()
+WHERE state = 'dead'
+  AND (cardinality($1::uuid[]) = 0 OR id = ANY($1::uuid[]))
+  AND ($2::text = '' OR kind = $2::text)
+RETURNING id
+`
+
+type RequeueDeadJobsParams struct {
+	Ids  []uuid.UUID
+	Kind string
+}
+
+// RequeueDeadJobs gives dead-lettered jobs a fresh set of attempts, for an operator
+// who has fixed whatever killed them. attempts goes back to 0 (a dead job has
+// attempts = max_attempts, which ClaimJobs refuses), so the attempt history is
+// lost; last_error is kept as the record of why it died. Only dead jobs match, so
+// running a requeue twice, or against a job that was already requeued and is
+// running again, changes nothing. An empty ids array means "no id filter" and an
+// empty kind means "no kind filter"; the Go side refuses to call this with both
+// empty.
+func (q *Queries) RequeueDeadJobs(ctx context.Context, arg RequeueDeadJobsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, requeueDeadJobs, arg.Ids, arg.Kind)
 	if err != nil {
 		return nil, err
 	}

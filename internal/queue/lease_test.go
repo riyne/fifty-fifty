@@ -413,14 +413,20 @@ func TestFail_RequeuesOrDeadLetters(t *testing.T) {
 		kind := newKind("fail-retry")
 		id := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 2})
 		c := claim(t, pool, kind, 1)[0]
-		at := time.Now().Add(time.Hour).Truncate(time.Microsecond)
 
-		st, err := queue.Fail(ctx, pool, c, queue.FailParams{Error: "temporary", RetryAt: at})
+		st, err := queue.Fail(ctx, pool, c, queue.FailParams{Error: "temporary", RetryIn: time.Hour})
 		if err != nil || st != queue.StateQueued {
 			t.Fatalf("%q, %v", st, err)
 		}
 		row := getJob(t, pool, id)
-		if row.State != queue.StateQueued || row.Attempts != 1 || !row.RunAt.Equal(at) ||
+		var in time.Duration // run_at - now(), on the database clock
+		if err := pool.QueryRow(ctx, `SELECT run_at - now() FROM jobs WHERE id = $1`, id).Scan(&in); err != nil {
+			t.Fatal(err)
+		}
+		if in < 59*time.Minute || in > time.Hour {
+			t.Errorf("retry scheduled %v from now, want about 1h", in)
+		}
+		if row.State != queue.StateQueued || row.Attempts != 1 ||
 			row.Token != nil || row.LeaseExpiresAt != nil || row.FinishedAt != nil || row.LastError == nil || *row.LastError != "temporary" {
 			t.Errorf("row = %+v", row)
 		}
@@ -436,7 +442,19 @@ func TestFail_RequeuesOrDeadLetters(t *testing.T) {
 		}
 	})
 
-	t.Run("no retry time means due now", func(t *testing.T) {
+	t.Run("a negative delay is refused before touching the job", func(t *testing.T) {
+		kind := newKind("fail-neg")
+		id := enqueue(t, pool, queue.NewJob{Kind: kind})
+		c := claim(t, pool, kind, 1)[0]
+		if _, err := queue.Fail(ctx, pool, c, queue.FailParams{RetryIn: -time.Second}); !errors.Is(err, queue.ErrInvalidClaim) {
+			t.Errorf("err = %v, want ErrInvalidClaim", err)
+		}
+		if row := getJob(t, pool, id); row.State != queue.StateRunning {
+			t.Errorf("job changed: %+v", row)
+		}
+	})
+
+	t.Run("no retry delay means due now", func(t *testing.T) {
 		kind := newKind("fail-now")
 		enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 2})
 		c := claim(t, pool, kind, 1)[0]
@@ -453,7 +471,7 @@ func TestFail_RequeuesOrDeadLetters(t *testing.T) {
 		id := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 1})
 		c := claim(t, pool, kind, 1)[0]
 
-		st, err := queue.Fail(ctx, pool, c, queue.FailParams{Error: "gave up", RetryAt: time.Now()})
+		st, err := queue.Fail(ctx, pool, c, queue.FailParams{Error: "gave up", RetryIn: time.Second})
 		if err != nil || st != queue.StateDead {
 			t.Fatalf("%q, %v", st, err)
 		}
