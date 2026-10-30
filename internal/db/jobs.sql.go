@@ -95,6 +95,103 @@ func (q *Queries) ClaimJobs(ctx context.Context, arg ClaimJobsParams) ([]Job, er
 	return items, nil
 }
 
+const completeJob = `-- name: CompleteJob :execrows
+UPDATE jobs
+SET state            = 'succeeded',
+    finished_at      = now(),
+    lease_token      = NULL,
+    lease_expires_at = NULL
+WHERE id = $1
+  AND lease_token = $2::uuid
+`
+
+type CompleteJobParams struct {
+	ID         uuid.UUID
+	LeaseToken uuid.UUID
+}
+
+func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (int64, error) {
+	result, err := q.db.Exec(ctx, completeJob, arg.ID, arg.LeaseToken)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const failJob = `-- name: FailJob :one
+UPDATE jobs
+SET state            = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'queued' END,
+    finished_at      = CASE WHEN attempts >= max_attempts THEN now() END,
+    run_at           = CASE WHEN attempts >= max_attempts THEN run_at
+                            ELSE COALESCE($1::timestamptz, now()) END,
+    lease_token      = NULL,
+    lease_expires_at = NULL,
+    last_error       = $2::text
+WHERE id = $3
+  AND lease_token = $4::uuid
+RETURNING state
+`
+
+type FailJobParams struct {
+	RetryAt    *time.Time
+	LastError  string
+	ID         uuid.UUID
+	LeaseToken uuid.UUID
+}
+
+// Gives a failed attempt back: queued to run again at retry_at (default now), or
+// dead when this was the last attempt. attempts is not touched; the next claim
+// counts the next attempt. Returns the state the job ended in.
+func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) (string, error) {
+	row := q.db.QueryRow(ctx, failJob,
+		arg.RetryAt,
+		arg.LastError,
+		arg.ID,
+		arg.LeaseToken,
+	)
+	var state string
+	err := row.Scan(&state)
+	return state, err
+}
+
+const heartbeatJob = `-- name: HeartbeatJob :one
+
+UPDATE jobs
+SET lease_expires_at = now() + make_interval(secs => $1::float8),
+    run_at           = now() + make_interval(secs => $1::float8)
+WHERE id = $2
+  AND lease_token = $3::uuid
+RETURNING lease_expires_at
+`
+
+type HeartbeatJobParams struct {
+	LeaseSeconds float64
+	ID           uuid.UUID
+	LeaseToken   uuid.UUID
+}
+
+// The three statements below are the worker's only writes to a job it holds, and
+// each is conditional on the lease token: that is the fence. A worker whose lease
+// was taken over (ClaimJobs writes a new token on every claim) matches no row and
+// changes nothing, however late it arrives. Zero rows means "you no longer hold
+// this job"; the Go side turns that into ErrLeaseLost.
+//
+// There is deliberately no `state = 'running'` here. The table's CHECK makes
+// lease_token non-null exactly while a job is running (migration 00006), so a
+// finished or requeued job has a NULL token, `NULL = x` is never true, and a
+// matching token already implies running. A mutation check showed no test could
+// tell the extra condition apart. If that CHECK is ever relaxed, these three
+// statements need the state condition back.
+// Extends the lease. run_at moves with it (see migration 00007). Succeeds on a
+// lease that has expired but has not been taken over yet: the token still
+// matches and nobody else holds the job, so keeping it is harmless.
+func (q *Queries) HeartbeatJob(ctx context.Context, arg HeartbeatJobParams) (*time.Time, error) {
+	row := q.db.QueryRow(ctx, heartbeatJob, arg.LeaseSeconds, arg.ID, arg.LeaseToken)
+	var lease_expires_at *time.Time
+	err := row.Scan(&lease_expires_at)
+	return lease_expires_at, err
+}
+
 const insertJob = `-- name: InsertJob :one
 INSERT INTO jobs (kind, payload, max_attempts, run_at)
 VALUES (

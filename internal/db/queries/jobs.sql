@@ -68,3 +68,52 @@ WHERE state = 'running'
   AND run_at <= now()
   AND attempts >= max_attempts
 RETURNING id;
+
+-- The three statements below are the worker's only writes to a job it holds, and
+-- each is conditional on the lease token: that is the fence. A worker whose lease
+-- was taken over (ClaimJobs writes a new token on every claim) matches no row and
+-- changes nothing, however late it arrives. Zero rows means "you no longer hold
+-- this job"; the Go side turns that into ErrLeaseLost.
+--
+-- There is deliberately no `state = 'running'` here. The table's CHECK makes
+-- lease_token non-null exactly while a job is running (migration 00006), so a
+-- finished or requeued job has a NULL token, `NULL = x` is never true, and a
+-- matching token already implies running. A mutation check showed no test could
+-- tell the extra condition apart. If that CHECK is ever relaxed, these three
+-- statements need the state condition back.
+
+-- Extends the lease. run_at moves with it (see migration 00007). Succeeds on a
+-- lease that has expired but has not been taken over yet: the token still
+-- matches and nobody else holds the job, so keeping it is harmless.
+-- name: HeartbeatJob :one
+UPDATE jobs
+SET lease_expires_at = now() + make_interval(secs => sqlc.arg('lease_seconds')::float8),
+    run_at           = now() + make_interval(secs => sqlc.arg('lease_seconds')::float8)
+WHERE id = sqlc.arg('id')
+  AND lease_token = sqlc.arg('lease_token')::uuid
+RETURNING lease_expires_at;
+
+-- name: CompleteJob :execrows
+UPDATE jobs
+SET state            = 'succeeded',
+    finished_at      = now(),
+    lease_token      = NULL,
+    lease_expires_at = NULL
+WHERE id = sqlc.arg('id')
+  AND lease_token = sqlc.arg('lease_token')::uuid;
+
+-- Gives a failed attempt back: queued to run again at retry_at (default now), or
+-- dead when this was the last attempt. attempts is not touched; the next claim
+-- counts the next attempt. Returns the state the job ended in.
+-- name: FailJob :one
+UPDATE jobs
+SET state            = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'queued' END,
+    finished_at      = CASE WHEN attempts >= max_attempts THEN now() END,
+    run_at           = CASE WHEN attempts >= max_attempts THEN run_at
+                            ELSE COALESCE(sqlc.narg('retry_at')::timestamptz, now()) END,
+    lease_token      = NULL,
+    lease_expires_at = NULL,
+    last_error       = sqlc.arg('last_error')::text
+WHERE id = sqlc.arg('id')
+  AND lease_token = sqlc.arg('lease_token')::uuid
+RETURNING state;
