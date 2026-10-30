@@ -1,6 +1,6 @@
 # Fifty Fifty: design
 
-Status: approved decisions as of 2026-10-20. Update this file when a decision changes; don't let it drift from the code.
+Status: approved decisions as of 2026-10-29 (M0-M2 done; M3 is next). Update this file when a decision changes; don't let it drift from the code.
 
 **One line:** photograph a receipt, an LLM itemizes it, friends claim their items, and the app tracks net balances and records settlements through a simulated payment provider.
 
@@ -66,7 +66,7 @@ docker-compose services:
 
 Mobile app (`mobile/`, Expo) talks only to `api` and Dex (system browser for login).
 
-Repo layout. Built (as of M2.3):
+Repo layout. Built (as of the end of M2, 2026-10-29; five migrations, 00001-00005):
 
     api/openapi.yaml                 the spec; test/bola reads it to check authz coverage
     cmd/api/                         HTTP server entrypoint
@@ -96,7 +96,7 @@ Repo layout. Built (as of M2.3):
 Planned, not built yet:
 
     cmd/{worker,mockllm,mockpay,stress}/
-    internal/{expenses,ledger,queue,receipts,settlements,...}/
+    internal/{queue,receipts,settlements,...}/
     bench/   (scripts, raw results committed, methodology)
     test/    (concurrency, rls suites)
     mobile/
@@ -255,7 +255,7 @@ Cut order if late: M7, then accuracy eval, then mobile polish.
 - Pagination for `GET /v1/groups`, the join-code list and the expense list (all currently `LIMIT 100`; an 101st expense is simply not returned).
 - Automated test for the `OIDC_DISCOVERY_URL` issuer/discovery split (implemented, untested; matters when the api runs in a container or the mobile client arrives).
 - Automated PKCE login test against Dex (login is only exercised by `scripts/dev-token.sh`; CLAIMS row 6 stays `planned` until then).
-- Tests skip silently without `TEST_DATABASE_URL` (34 skip with no database). Whatever runs tests in CI must set it and fail on skips.
+- Tests skip silently without `TEST_DATABASE_URL` (about 100 tests and subtests skip with no database, as of the end of M2). Tests that need the owner role also skip without `TEST_OWNER_DATABASE_URL`. Whatever runs tests in CI must set both and fail on skips. Running `go test` by hand does not get them from the Makefile: export them in the same shell command, then confirm with `-v` that tests ran and did not skip.
 - Rate limit is per api process; revisit if more than one api instance is ever run.
 - Migration 00004's Down drops the cluster-wide role `fifty_app`; that fails if another database in the same Postgres cluster still has privileges for it. Fine for the single-database dev stack; revisit if that changes. Roles are cluster-global, so tests or scripts that `ALTER ROLE fifty_app` leak across databases (this bit the mutation checks in M2.2 once).
 - The integration-test database is shared and never cleaned, and `httptest` issuer URLs are random local ports that get reused, so any test that counts rows by issuer URL must compare against a baseline taken after the stack starts (two tests in `internal/httpapi` asserted absolute counts and began failing once the database had accumulated thousands of users; fixed in M2.5). New tests should create their own identities and never assume an empty table.
