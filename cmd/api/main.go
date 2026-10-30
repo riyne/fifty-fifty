@@ -17,6 +17,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/auth"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
@@ -71,7 +72,7 @@ func run() error {
 	// so per api process (see internal/ratelimit).
 	joinLimiter := ratelimit.New(rate.Every(6*time.Second), 10)
 
-	v1 := httpapi.NewV1(auth.Middleware(verifier, db.New(pool)), groups.NewHandler(pool, joinLimiter))
+	v1 := httpapi.NewV1(auth.Middleware(verifier, db.New(pool)), groups.NewHandler(pool, joinLimiter), expenses.NewHandler(pool))
 
 	srv := &http.Server{
 		Addr:              addr,

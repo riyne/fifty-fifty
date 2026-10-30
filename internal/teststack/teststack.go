@@ -20,6 +20,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/auth"
 	"github.com/riyne/fifty-fifty/internal/auth/authtest"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
@@ -63,6 +64,7 @@ func New(t testing.TB, opts ...Option) *Stack {
 	v1 := httpapi.NewV1(
 		auth.Middleware(verifier, db.New(pool)),
 		groups.NewHandler(pool, ratelimit.New(cfg.joinRate, cfg.joinBurst)),
+		expenses.NewHandler(pool),
 	)
 	srv := httptest.NewServer(httpapi.New(pool, v1))
 	t.Cleanup(srv.Close)
@@ -200,4 +202,19 @@ func (s *Stack) QueryInt(t testing.TB, sql string, args ...any) int {
 		t.Fatalf("query %q: %v", sql, err)
 	}
 	return n
+}
+
+// CreateExpense creates an expense in groupID as token's user from a JSON body
+// and returns its id. It fails the test on any non-201 response.
+func (s *Stack) CreateExpense(t testing.TB, token, groupID, body string) string {
+	t.Helper()
+	r := s.Do(t, token, "POST", "/v1/groups/"+groupID+"/expenses", body, "Idempotency-Key", uuid.NewString())
+	if r.Status != http.StatusCreated {
+		t.Fatalf("create expense = %d: %s", r.Status, r.Body)
+	}
+	var e struct {
+		ID string `json:"id"`
+	}
+	r.JSON(t, &e)
+	return e.ID
 }
