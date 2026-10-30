@@ -14,6 +14,10 @@ import (
 // Integration tests for authentication and the basic group endpoints. See
 // internal/teststack for what "integration" means here.
 
+// countUsers counts users recorded under this stack's issuer URL. The URL is a
+// random local port, and the test database is shared and never cleaned, so a port
+// reused from an earlier run already has rows under it: tests must compare
+// against a baseline taken after the stack starts, never against an absolute number.
 func countUsers(t *testing.T, s *teststack.Stack) int {
 	t.Helper()
 	return s.QueryInt(t, `SELECT count(*) FROM users WHERE issuer = $1`, s.Issuer.URL)
@@ -21,6 +25,7 @@ func countUsers(t *testing.T, s *teststack.Stack) int {
 
 func TestV1_RequiresValidToken(t *testing.T) {
 	s := teststack.New(t)
+	usersBefore := countUsers(t, s)
 	other := authtest.NewIssuer(t)
 	bad := map[string]string{
 		"no token":         "",
@@ -42,7 +47,7 @@ func TestV1_RequiresValidToken(t *testing.T) {
 			}
 		}
 	}
-	if n := countUsers(t, s); n != 0 {
+	if n := countUsers(t, s) - usersBefore; n != 0 {
 		t.Fatalf("rejected tokens created %d users, want 0", n)
 	}
 }
@@ -80,6 +85,7 @@ func TestMe_ProvisionsOnFirstTokenAndIsStable(t *testing.T) {
 // one user row (this is what EnsureUser's ON CONFLICT is for).
 func TestMe_ConcurrentFirstRequestsCreateOneUser(t *testing.T) {
 	s := teststack.New(t)
+	usersBefore := countUsers(t, s)
 	tok := s.Token(t, "racer")
 
 	const n = 20
@@ -105,8 +111,8 @@ func TestMe_ConcurrentFirstRequestsCreateOneUser(t *testing.T) {
 			t.Fatalf("concurrent first requests produced different users: %v", ids)
 		}
 	}
-	if got := countUsers(t, s); got != 1 {
-		t.Fatalf("users for this issuer = %d, want 1", got)
+	if got := countUsers(t, s) - usersBefore; got != 1 {
+		t.Fatalf("concurrent first requests created %d users, want 1", got)
 	}
 }
 

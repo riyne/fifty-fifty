@@ -47,6 +47,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/groups/{id}/expenses", h.create)
 	mux.HandleFunc("GET /v1/groups/{id}/expenses", h.list)
 	mux.HandleFunc("GET /v1/groups/{id}/expenses/{expenseId}", h.get)
+	mux.HandleFunc("POST /v1/groups/{id}/expenses/{expenseId}/finalize", h.finalize)
 	mux.HandleFunc("PUT /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", h.claim)
 	mux.HandleFunc("DELETE /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", h.unclaim)
 }
@@ -346,16 +347,22 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "list expense items", err)
 		return
 	}
+	httpx.WriteJSON(w, http.StatusOK, expenseView(e, rows))
+}
+
+// expenseView renders an expense and its items. It is shared by the read
+// endpoint and by finalize, so both show exactly the same thing.
+func expenseView(e db.GetExpenseForMemberRow, rows []db.ListExpenseItemsRow) expenseJSON {
 	items := make([]itemJSON, len(rows))
 	for i, row := range rows {
 		items[i] = itemJSON{ID: row.ID, Position: row.Position, Description: row.Description, PriceMinor: row.PriceMinor, ClaimedBy: row.ClaimedBy}
 	}
-	httpx.WriteJSON(w, http.StatusOK, expenseJSON{
+	return expenseJSON{
 		ID: e.ID, GroupID: e.GroupID, PayerID: e.PayerID, Description: e.Description, Status: e.Status, Version: e.Version,
 		Currency: e.Currency, TaxMinor: e.TaxMinor, TipMinor: e.TipMinor,
 		SubtotalMinor: e.SubtotalMinor, TotalMinor: e.SubtotalMinor + e.TaxMinor + e.TipMinor,
 		CreatedAt: e.CreatedAt, FinalizedAt: e.FinalizedAt, VoidedAt: e.VoidedAt, Items: items,
-	})
+	}
 }
 
 // ---- helpers ----

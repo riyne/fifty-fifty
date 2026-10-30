@@ -38,6 +38,48 @@ func (q *Queries) AddClaim(ctx context.Context, arg AddClaimParams) (int64, erro
 	return result.RowsAffected(), nil
 }
 
+const addClaimsForItems = `-- name: AddClaimsForItems :exec
+INSERT INTO claims (item_id, expense_id, group_id, member_id)
+SELECT i.id, $1::uuid, $2::uuid, m.id
+FROM unnest($3::uuid[]) AS i(id)
+CROSS JOIN unnest($4::uuid[]) AS m(id)
+`
+
+type AddClaimsForItemsParams struct {
+	ExpenseID uuid.UUID
+	GroupID   uuid.UUID
+	ItemIds   []uuid.UUID
+	MemberIds []uuid.UUID
+}
+
+// AddClaimsForItems writes one claim per (item, member): "split the rest evenly"
+// becomes real claim rows, so the ledger can always be recomputed from claims.
+func (q *Queries) AddClaimsForItems(ctx context.Context, arg AddClaimsForItemsParams) error {
+	_, err := q.db.Exec(ctx, addClaimsForItems,
+		arg.ExpenseID,
+		arg.GroupID,
+		arg.ItemIds,
+		arg.MemberIds,
+	)
+	return err
+}
+
+const countGroupMembers = `-- name: CountGroupMembers :one
+SELECT count(*) FROM memberships WHERE group_id = $1 AND user_id = ANY($2::uuid[])
+`
+
+type CountGroupMembersParams struct {
+	GroupID   uuid.UUID
+	MemberIds []uuid.UUID
+}
+
+func (q *Queries) CountGroupMembers(ctx context.Context, arg CountGroupMembersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countGroupMembers, arg.GroupID, arg.MemberIds)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createExpense = `-- name: CreateExpense :one
 INSERT INTO expenses (group_id, payer_id, description, tax_minor, tip_minor, status)
 VALUES ($1, $2, $3, $4, $5, 'claiming')
@@ -149,6 +191,53 @@ func (q *Queries) CreateExpenseItems(ctx context.Context, arg CreateExpenseItems
 		return nil, err
 	}
 	return items, nil
+}
+
+const createLedgerEntries = `-- name: CreateLedgerEntries :exec
+INSERT INTO ledger_entries (transaction_id, group_id, member_id, amount_minor)
+SELECT $1::uuid,
+       $2::uuid,
+       unnest($3::uuid[]),
+       unnest($4::bigint[])
+`
+
+type CreateLedgerEntriesParams struct {
+	TransactionID uuid.UUID
+	GroupID       uuid.UUID
+	MemberIds     []uuid.UUID
+	Amounts       []int64
+}
+
+// CreateLedgerEntries inserts every entry of one posting in a single statement
+// (the unnest calls advance together). The posting must be in the same database
+// transaction as its header, and must sum to zero, or the database refuses it.
+func (q *Queries) CreateLedgerEntries(ctx context.Context, arg CreateLedgerEntriesParams) error {
+	_, err := q.db.Exec(ctx, createLedgerEntries,
+		arg.TransactionID,
+		arg.GroupID,
+		arg.MemberIds,
+		arg.Amounts,
+	)
+	return err
+}
+
+const createLedgerTransaction = `-- name: CreateLedgerTransaction :one
+INSERT INTO ledger_transactions (group_id, kind, expense_id, created_by)
+VALUES ($1, 'expense', $2::uuid, $3)
+RETURNING id
+`
+
+type CreateLedgerTransactionParams struct {
+	GroupID   uuid.UUID
+	ExpenseID uuid.UUID
+	CreatedBy uuid.UUID
+}
+
+func (q *Queries) CreateLedgerTransaction(ctx context.Context, arg CreateLedgerTransactionParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, createLedgerTransaction, arg.GroupID, arg.ExpenseID, arg.CreatedBy)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getExpenseForMember = `-- name: GetExpenseForMember :one
@@ -389,6 +478,54 @@ func (q *Queries) LockExpenseForClaim(ctx context.Context, arg LockExpenseForCla
 	var status string
 	err := row.Scan(&status)
 	return status, err
+}
+
+const lockExpenseForFinalize = `-- name: LockExpenseForFinalize :one
+SELECT e.status, e.tax_minor, e.tip_minor
+FROM expenses e
+WHERE e.id = $1 AND e.group_id = $2 AND e.payer_id = $3
+FOR UPDATE OF e
+`
+
+type LockExpenseForFinalizeParams struct {
+	ExpenseID uuid.UUID
+	GroupID   uuid.UUID
+	UserID    uuid.UUID
+}
+
+type LockExpenseForFinalizeRow struct {
+	Status   string
+	TaxMinor int64
+	TipMinor int64
+}
+
+// LockExpenseForFinalize takes FOR UPDATE on the expense row, which waits for every
+// in-flight claim (FOR SHARE) and blocks new ones until commit. It authorizes in
+// the same statement: the caller must be the expense's payer, in the path's group,
+// otherwise no row. There is no membership join because none is needed: the
+// foreign key on expenses (group_id, payer_id) guarantees a payer is a member of
+// the expense's group. The handler checks the payer earlier, without a lock, so a
+// non-payer never takes this write lock; this is the backstop.
+func (q *Queries) LockExpenseForFinalize(ctx context.Context, arg LockExpenseForFinalizeParams) (LockExpenseForFinalizeRow, error) {
+	row := q.db.QueryRow(ctx, lockExpenseForFinalize, arg.ExpenseID, arg.GroupID, arg.UserID)
+	var i LockExpenseForFinalizeRow
+	err := row.Scan(&i.Status, &i.TaxMinor, &i.TipMinor)
+	return i, err
+}
+
+const markExpenseFinalized = `-- name: MarkExpenseFinalized :execrows
+UPDATE expenses SET status = 'finalized', finalized_at = now()
+WHERE id = $1 AND status = 'claiming'
+`
+
+// MarkExpenseFinalized is conditional on the status, so it can only ever move a
+// claiming expense forward, even if the lock were somehow missing.
+func (q *Queries) MarkExpenseFinalized(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markExpenseFinalized, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const removeClaim = `-- name: RemoveClaim :execrows

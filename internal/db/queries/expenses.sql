@@ -96,3 +96,48 @@ ON CONFLICT (item_id, member_id) DO NOTHING;
 -- RemoveClaim only ever removes the caller's own claim.
 -- name: RemoveClaim :execrows
 DELETE FROM claims WHERE item_id = $1 AND expense_id = $2 AND member_id = $3;
+
+-- LockExpenseForFinalize takes FOR UPDATE on the expense row, which waits for every
+-- in-flight claim (FOR SHARE) and blocks new ones until commit. It authorizes in
+-- the same statement: the caller must be the expense's payer, in the path's group,
+-- otherwise no row. There is no membership join because none is needed: the
+-- foreign key on expenses (group_id, payer_id) guarantees a payer is a member of
+-- the expense's group. The handler checks the payer earlier, without a lock, so a
+-- non-payer never takes this write lock; this is the backstop.
+-- name: LockExpenseForFinalize :one
+SELECT e.status, e.tax_minor, e.tip_minor
+FROM expenses e
+WHERE e.id = sqlc.arg(expense_id) AND e.group_id = sqlc.arg(group_id) AND e.payer_id = sqlc.arg(user_id)
+FOR UPDATE OF e;
+
+-- name: CountGroupMembers :one
+SELECT count(*) FROM memberships WHERE group_id = sqlc.arg(group_id) AND user_id = ANY(sqlc.arg(member_ids)::uuid[]);
+
+-- AddClaimsForItems writes one claim per (item, member): "split the rest evenly"
+-- becomes real claim rows, so the ledger can always be recomputed from claims.
+-- name: AddClaimsForItems :exec
+INSERT INTO claims (item_id, expense_id, group_id, member_id)
+SELECT i.id, sqlc.arg(expense_id)::uuid, sqlc.arg(group_id)::uuid, m.id
+FROM unnest(sqlc.arg(item_ids)::uuid[]) AS i(id)
+CROSS JOIN unnest(sqlc.arg(member_ids)::uuid[]) AS m(id);
+
+-- name: CreateLedgerTransaction :one
+INSERT INTO ledger_transactions (group_id, kind, expense_id, created_by)
+VALUES (sqlc.arg(group_id), 'expense', sqlc.arg(expense_id)::uuid, sqlc.arg(created_by))
+RETURNING id;
+
+-- CreateLedgerEntries inserts every entry of one posting in a single statement
+-- (the unnest calls advance together). The posting must be in the same database
+-- transaction as its header, and must sum to zero, or the database refuses it.
+-- name: CreateLedgerEntries :exec
+INSERT INTO ledger_entries (transaction_id, group_id, member_id, amount_minor)
+SELECT sqlc.arg(transaction_id)::uuid,
+       sqlc.arg(group_id)::uuid,
+       unnest(sqlc.arg(member_ids)::uuid[]),
+       unnest(sqlc.arg(amounts)::bigint[]);
+
+-- MarkExpenseFinalized is conditional on the status, so it can only ever move a
+-- claiming expense forward, even if the lock were somehow missing.
+-- name: MarkExpenseFinalized :execrows
+UPDATE expenses SET status = 'finalized', finalized_at = now()
+WHERE id = $1 AND status = 'claiming';

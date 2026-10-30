@@ -45,16 +45,17 @@ const (
 var actorOrder = []actor{anon, outsider, member, owner}
 
 type fixture struct {
-	s      *teststack.Stack
-	tokens map[actor]string
-	groupA string // owned by `owner`, `member` belongs, `outsider` does not
-	groupB string // owned by `outsider`
-	codeA  string // a join code id in A
-	codeB  string // a join code id in B
-	expA   string // an expense in A, created by `owner`
-	expB   string // an expense in B, created by `outsider`
-	itemA  string // first item of expA
-	itemB  string // first item of expB
+	s                 *teststack.Stack
+	tokens            map[actor]string
+	groupA            string // owned by `owner`, `member` belongs, `outsider` does not
+	groupB            string // owned by `outsider`
+	codeA             string // a join code id in A
+	codeB             string // a join code id in B
+	expA              string // an expense in A, created by `owner`
+	expB              string // an expense in B, created by `outsider`
+	itemA             string // first item of expA
+	itemB             string // first item of expB
+	ownerID, memberID string // user ids, for bodies that name members
 }
 
 const expenseBody = `{"description":"dinner","items":[{"description":"pizza","price_minor":1500},{"description":"beer","price_minor":800}],"tax_minor":300,"tip_minor":200}`
@@ -78,6 +79,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	f.expA = s.CreateExpense(t, f.tokens[owner], f.groupA, expenseBody)
 	f.expB = s.CreateExpense(t, f.tokens[outsider], f.groupB, expenseBody)
+	f.ownerID, f.memberID = s.UserID(t, f.tokens[owner]).String(), s.UserID(t, f.tokens[member]).String()
 	f.itemA = f.firstItem(t, owner, f.groupA, f.expA)
 	f.itemB = f.firstItem(t, outsider, f.groupB, f.expB)
 	return f
@@ -102,7 +104,7 @@ func (f *fixture) firstItem(t *testing.T, a actor, group, expense string) string
 func (f *fixture) state(t *testing.T) string {
 	t.Helper()
 	q := func(sql string) int { return f.s.QueryInt(t, sql, f.groupA, f.groupB) }
-	return fmt.Sprintf("codes=%d revoked=%d uses=%d members=%d audit=%d expenses=%d items=%d claims=%d",
+	return fmt.Sprintf("codes=%d revoked=%d uses=%d members=%d audit=%d expenses=%d items=%d claims=%d finalized=%d ledger_tx=%d ledger_entries=%d",
 		q(`SELECT count(*) FROM join_codes WHERE group_id IN ($1, $2)`),
 		q(`SELECT count(revoked_at) FROM join_codes WHERE group_id IN ($1, $2)`),
 		q(`SELECT coalesce(sum(uses), 0) FROM join_codes WHERE group_id IN ($1, $2)`),
@@ -111,6 +113,9 @@ func (f *fixture) state(t *testing.T) string {
 		q(`SELECT count(*) FROM expenses WHERE group_id IN ($1, $2)`),
 		q(`SELECT count(*) FROM expense_items i JOIN expenses e ON e.id = i.expense_id WHERE e.group_id IN ($1, $2)`),
 		q(`SELECT count(*) FROM claims WHERE group_id IN ($1, $2)`),
+		q(`SELECT count(*) FROM expenses WHERE status <> 'claiming' AND group_id IN ($1, $2)`),
+		q(`SELECT count(*) FROM ledger_transactions WHERE group_id IN ($1, $2)`),
+		q(`SELECT count(*) FROM ledger_entries WHERE group_id IN ($1, $2)`),
 	)
 }
 
@@ -121,6 +126,8 @@ type scenario struct {
 	method string
 	path   func(f *fixture) string
 	body   string
+	// bodyFn, if set, builds the body from the fixture (e.g. to name a member's id).
+	bodyFn func(f *fixture) string
 	// idempotent adds a fresh Idempotency-Key header to every request.
 	idempotent bool
 	// prepare runs before each actor's request (e.g. to mint a fresh code to revoke).
@@ -230,7 +237,43 @@ func scenarios() []scenario {
 			path: func(f *fixture) string { return claimPath(f.groupA, f.expB, f.itemB) },
 			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
 		},
+		{
+			// Only the payer may finalize. Each actor gets a fresh expense (created by
+			// `owner`, so owner is the payer); a plain member is refused with 403.
+			name: "finalize as payer", opID: "POST /v1/groups/{id}/expenses/{expenseId}/finalize", method: "POST", idempotent: true,
+			prepare: func(t *testing.T, f *fixture) string {
+				return finalizePath(f.groupA, f.s.CreateExpense(t, f.tokens[owner], f.groupA, expenseBody))
+			},
+			bodyFn: func(f *fixture) string { return `{"split_rest_among":["` + f.ownerID + `"]}` },
+			want:   map[actor]int{anon: 401, outsider: 404, member: 403, owner: 200},
+		},
+		{
+			// Being the group owner confers nothing: here a plain member is the payer
+			// and the owner is the one refused.
+			name: "finalize as non-payer owner", opID: "POST /v1/groups/{id}/expenses/{expenseId}/finalize", method: "POST", idempotent: true,
+			prepare: func(t *testing.T, f *fixture) string {
+				return finalizePath(f.groupA, f.s.CreateExpense(t, f.tokens[member], f.groupA, expenseBody))
+			},
+			bodyFn: func(f *fixture) string { return `{"split_rest_among":["` + f.memberID + `"]}` },
+			want:   map[actor]int{anon: 401, outsider: 404, member: 200, owner: 403},
+		},
+		{
+			name: "finalize B's expense through A's path", opID: "POST /v1/groups/{id}/expenses/{expenseId}/finalize", method: "POST", idempotent: true,
+			path: func(f *fixture) string { return finalizePath(f.groupA, f.expB) },
+			body: `{}`,
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
+			name: "finalize A's expense through B's path", opID: "POST /v1/groups/{id}/expenses/{expenseId}/finalize", method: "POST", idempotent: true,
+			path: func(f *fixture) string { return finalizePath(f.groupB, f.expA) },
+			body: `{}`,
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
 	}
+}
+
+func finalizePath(group, expense string) string {
+	return "/v1/groups/" + group + "/expenses/" + expense + "/finalize"
 }
 
 func claimPath(group, expense, item string) string {
@@ -264,11 +307,15 @@ func TestMatrix(t *testing.T) {
 				}
 
 				before := f.state(t)
+				body := sc.body
+				if sc.bodyFn != nil {
+					body = sc.bodyFn(f)
+				}
 				var headers []string
 				if sc.idempotent {
 					headers = []string{"Idempotency-Key", uuid.NewString()}
 				}
-				r := f.s.Do(t, f.tokens[a], sc.method, path, sc.body, headers...)
+				r := f.s.Do(t, f.tokens[a], sc.method, path, body, headers...)
 				if r.Status != want {
 					t.Errorf("%s as %s: %s %s = %d, want %d: %s", sc.name, a, sc.method, path, r.Status, want, r.Body)
 					continue

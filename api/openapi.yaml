@@ -252,6 +252,61 @@ paths:
               schema: { $ref: "#/components/schemas/Expense" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/groups/{id}/expenses/{expenseId}/finalize:
+    post:
+      summary: Finalize an expense into ledger entries (payer only). Requires Idempotency-Key.
+      description: >
+        Allowed only while the expense is `claiming` and every item has a claimant. If some items
+        are unclaimed, the payer may pass `split_rest_among`: those items are then split evenly among
+        the listed members, recorded as real claims. Each item's price is split evenly among its
+        claimants; tax and tip are prorated by each member's claimed subtotal; remainders go to the
+        largest fractional remainder, ties to the lowest member id. In one transaction the ledger
+        gets a posting that sums to zero (the payer is credited what the others owe, each other
+        claimant is debited their share), the expense becomes `finalized`, and an audit event is
+        written. Claims racing the finalize either make it into the posting or are refused with 409;
+        none are accepted afterwards. Responses below 500 are stored under the key for 24 hours and
+        replayed (header Idempotent-Replayed: true), including 409s, so after fixing a 409 (for
+        example by claiming the missing items) retry with a NEW key. A caller who is not in the
+        group gets 404; a member who is not the payer gets 403; both before the key or body are read.
+      parameters:
+        - { $ref: "#/components/parameters/GroupId" }
+        - { name: expenseId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                split_rest_among:
+                  type: array
+                  maxItems: 100
+                  description: Distinct members of the group who share any unclaimed items evenly. Ignored when every item is already claimed.
+                  items: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Finalized.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FinalizedExpense" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: The caller is in the group but is not this expense's payer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >
+            `invalid_state` (the expense is not `claiming`, including already finalized) or
+            `items_unclaimed` (some items have no claimant and no split_rest_among was given).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/KeyReuse" }
   /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim:
     parameters:
       - { $ref: "#/components/parameters/GroupId" }
@@ -403,6 +458,25 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/ExpenseItem" }
+    FinalizedExpense:
+      allOf:
+        - $ref: "#/components/schemas/Expense"
+        - type: object
+          required: [ledger_transaction_id, shares]
+          properties:
+            ledger_transaction_id: { type: string, format: uuid }
+            shares:
+              type: array
+              description: What each claimant owes for this expense (the payer's own share included), sorted by member id. Totals sum to the expense total.
+              items:
+                type: object
+                required: [member_id, subtotal_minor, tax_minor, tip_minor, total_minor]
+                properties:
+                  member_id: { type: string, format: uuid }
+                  subtotal_minor: { type: integer, format: int64 }
+                  tax_minor: { type: integer, format: int64 }
+                  tip_minor: { type: integer, format: int64 }
+                  total_minor: { type: integer, format: int64 }
     ExpenseSummary:
       type: object
       required: [id, payer_id, description, status, currency, item_count, subtotal_minor, total_minor, created_at]
