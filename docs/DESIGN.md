@@ -39,6 +39,8 @@ The ledger records IOUs between friends, not real funds. Never describe it as a 
 | Join codes (M1.3) | 12 random Crockford-base32 chars (60 bits), shown once, stored as unsalted SHA-256 (fine for a high-entropy random secret; protection is expiry + use limit + rate limit, not hash cost). Owner-only create/list/revoke; defaults 5 uses / 72 h, max 50 / 168 h. Redemption locks the code row (`FOR UPDATE`) and spends a use only when the user is actually added. Unknown, expired, revoked and used-up codes are indistinguishable (404). Member-but-not-owner gets 403; non-member gets 404. Redeeming requires `Idempotency-Key` |
 | Rate limiting (M1.3) | In-memory token bucket per user on `POST /v1/join` (burst 10, then 1 per 6 s). Per api process and reset on restart; correct for the single-instance deployment, multiplies with replicas. README must say so |
 | Audit (M1.3) | `audit_events` written in the same transaction as the action: `join_code.created`, `join_code.revoked`, `member.joined`. No secrets in `data`. Failed redemptions are not audited (rate limiter + logs instead) |
+| M2 scope decisions (2026-10-29) | (1) M2 accepts only per-unit items; expanding "3 x beer" into units is a pure helper built in M6 with the receipt parser, its only caller. (2) The expense creator is the payer; the `payer` column exists but "payer != creator" is not supported (multi-payer is cut). (3) A member claims only for themselves; the only way a third party is assigned is "split the rest evenly" at finalize, which writes real claim rows in the finalize transaction so "ledger = recomputed claims" holds. (4) Finalize: payer only. Void: payer or group owner. (5) Item edits are allowed in `needs_review` and `claiming`; an edit deletes the claims on the edited items (they were made at the old price). (6) A void after a later settlement (M4) can leave a pair overpaid so balances flip sign; that is correct ledger behavior, not a bug. Prices and tax/tip are non-negative: no negative discount lines (enter a discount as reduced item prices) |
+| Allocator (M2.1) | `internal/allocator`, pure Go, stdlib only. `Apportion` is largest-remainder over integer weights using 128-bit multiply/divide (`math/bits`), so `total*weight` cannot overflow. Ties go to the lowest member id (bytewise uuid order); output is sorted by id and independent of input order. `Allocate` splits each item evenly among its claimants, then prorates tax and tip by claimed subtotal. Known property: with equal weights each item's leftover cent goes to the lowest-id claimant, so across k shared items one member can be up to k cents over exact (per item, under 1 cent). A rotating tie-break would spread this but deviates from the "tie-break by member id" rule above; not adopted |
 | Toolchain (M1.1) | Module `github.com/riyne/fifty-fifty`; Go 1.27.3; Postgres 17 (host port 5433); Dex v2.46.0 (config baked into image, no bind mounts); goose v3.29.0 pinned in the separate `tools/go.mod` module and run via `go tool -modfile=tools/go.mod goose` (keeps its large dependency tree out of the app module and out of govulncheck scope) |
 | Repo | Private until M5 numbers and README exist, then public |
 
@@ -56,10 +58,11 @@ docker-compose services:
 
 Mobile app (`mobile/`, Expo) talks only to `api` and Dex (system browser for login).
 
-Repo layout. Built (as of M1.3):
+Repo layout. Built (as of M2.1):
 
     api/openapi.yaml                 the spec; test/bola reads it to check authz coverage
     cmd/api/                         HTTP server entrypoint
+    internal/allocator/              pure share math: largest-remainder apportion, per-expense allocate
     internal/auth/                   OIDC verifier + middleware + first-login provisioning
     internal/auth/authtest/          in-process fake issuer (tests only; nothing in prod imports it)
     internal/db/                     sqlc output (committed) + queries/*.sql (source)
@@ -163,7 +166,7 @@ Tesseract OCR -> regex redaction (card numbers, phones, emails; names are not re
 
 - Review flag is deterministic: schema valid and items + tax + tip == total within tolerance. LLM self-reported confidence is not used.
 - `needs_review`: payer edits items (optimistic lock), then proceeds.
-- Quantity lines (e.g. 3 x beer) are expanded into per-unit items so units can be claimed individually (remainders by the same allocator). Details settled in M2.
+- Quantity lines (e.g. 3 x beer) are expanded into per-unit items so units can be claimed individually (remainders by the same allocator). Settled at M2: the expense API only accepts per-unit items; the expansion is a pure helper built here in M6.
 - Prompt injection: receipt text is untrusted. The model has no tools; output is schema-validated and reconciled; worst case is a wrong parse the user reviews. Injection fixtures live in the test suite.
 - Per-user rate limit and daily receipt quota (also caps LLM cost).
 - Synthetic receipt generator renders receipts from known ground truth (items, totals, planted PII, noise/skew). It feeds the OCR/redaction evals, the accuracy eval, mock LLM responses, and the demo (print or display receipts and photograph them).
@@ -207,7 +210,7 @@ Actual hours are not recorded anywhere; re-baselining needs Ryan's own time log.
 |---|---|---|
 | M0 | Design doc, scaffold. **Done** | 3 |
 | M1 | Go module, compose (Postgres, Dex), migrations, sqlc, OIDC middleware, users/groups/join codes, CI skeleton. **M1.1 (module, compose, migrations, health), M1.2 (users/groups/memberships, sqlc, OIDC, fake issuer) and M1.3 (join codes, idempotency, rate limit, audit, first BOLA suite) done (commit e611bb6). M1.4 (CI skeleton, GitHub Actions only) is deferred to just before M5 / going public, by Ryan's decision on 2026-10-20; M1 is otherwise complete** | ~20 |
-| M2 | Ledger core: expenses, claims, finalize, void, allocator, balances, simplification | ~25 |
+| M2 | Ledger core: expenses, claims, finalize, void, allocator, balances, simplification. Sub-steps (approved 2026-10-29): **2.1 allocator (done)**; 2.2 schema + DB-enforced invariants (zero-sum constraint, append-only ledger); 2.3 create/read expenses; 2.4 claim/unclaim; 2.5 finalize (+ split the rest); 2.6 balances + simplification; 2.7 void; 2.8 item edits; 2.9 `unsafe_controls` seams for the M2 locks and version check. Cut first if M2 runs long: 2.9, then 2.8 (nothing in M3-M5 depends on edits) | ~25 |
 | M3 | Queue: leases, fencing, backoff, DLQ, kill-a-worker recovery test and benchmark | ~20 |
 | M4 | Settlement: idempotency, mock provider, async execution, reconciliation | ~20 |
 | M5 | Stress test, negative controls, BOLA suite, benchmark write-up. **Resume-usable numbers (~5-7 weeks at 15 h/wk)** | ~20 |
