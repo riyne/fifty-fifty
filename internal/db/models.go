@@ -68,6 +68,21 @@ type IdempotencyKey struct {
 	ExpiresAt      time.Time
 }
 
+type Job struct {
+	ID             uuid.UUID
+	Kind           string
+	Payload        []byte
+	State          string
+	Attempts       int32
+	MaxAttempts    int32
+	RunAt          time.Time
+	LeaseToken     pgtype.UUID
+	LeaseExpiresAt *time.Time
+	LastError      pgtype.Text
+	CreatedAt      time.Time
+	FinishedAt     *time.Time
+}
+
 type JoinCode struct {
 	ID        uuid.UUID
 	GroupID   uuid.UUID
