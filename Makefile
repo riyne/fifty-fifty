@@ -6,7 +6,7 @@ GOOSE   := go tool -modfile=tools/go.mod goose -dir migrations postgres
 export MIGRATE_DATABASE_URL ?= postgres://fifty:fifty@localhost:5433/fifty?sslmode=disable
 export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test
+.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test bench-recovery
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -46,3 +46,8 @@ export TEST_OWNER_DATABASE_URL ?= $(MIGRATE_DATABASE_URL)
 
 test:
 	go test ./...
+
+# Crash-recovery benchmark (bench/README.md). Needs a clean working tree and writes
+# bench/results/recovery-*.json and .txt; commit those with the code's commit hash noted.
+bench-recovery:
+	go run ./bench/recovery

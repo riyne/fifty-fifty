@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -44,7 +45,11 @@ type RecoveryParams struct {
 	Poll        time.Duration
 	CommitDelay time.Duration
 	Kill        KillPoint
-	Mock        mockllm.Config // the in-process mock LLM the workers call
+	// KillJitter delays the kill by a random time in [0, KillJitter) after the kill
+	// point is reached (seeded by Mock.Seed), so across trials the victim dies at
+	// different ages of its leases instead of always just after its first claim.
+	KillJitter time.Duration
+	Mock       mockllm.Config // the in-process mock LLM the workers call
 
 	// DrainTimeout bounds the wait for every job to finish after the kill. Default
 	// 2 minutes.
@@ -150,6 +155,14 @@ func RunRecovery(ctx context.Context, p RecoveryParams) (RecoveryResult, error) 
 		return res, fmt.Errorf("waiting for the victim to reach the kill point (%s): %w", p.Kill, err)
 	}
 
+	if p.KillJitter > 0 {
+		jitter := time.Duration(rand.New(rand.NewPCG(p.Mock.Seed, 1)).Int64N(int64(p.KillJitter)))
+		select {
+		case <-time.After(jitter):
+		case <-ctx.Done():
+			return res, ctx.Err()
+		}
+	}
 	if err := victim.cmd.Process.Kill(); err != nil { // SIGKILL: no handlers, no deferred cleanup
 		return res, fmt.Errorf("kill: %w", err)
 	}
