@@ -8,7 +8,92 @@ package db
 import (
 	"context"
 	"time"
+
+	"github.com/google/uuid"
 )
+
+const claimJobs = `-- name: ClaimJobs :many
+WITH candidates AS MATERIALIZED (
+    SELECT id
+    FROM jobs
+    WHERE state IN ('queued', 'running')
+      AND run_at <= now()
+      AND attempts < max_attempts
+      AND kind = ANY($2::text[])
+    ORDER BY run_at
+    LIMIT $3
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE jobs
+SET state            = 'running',
+    attempts         = jobs.attempts + 1,
+    lease_token      = gen_random_uuid(),
+    lease_expires_at = now() + make_interval(secs => $1::float8),
+    run_at           = now() + make_interval(secs => $1::float8)
+FROM candidates
+WHERE jobs.id = candidates.id
+RETURNING jobs.id, jobs.kind, jobs.payload, jobs.state, jobs.attempts, jobs.max_attempts, jobs.run_at, jobs.lease_token, jobs.lease_expires_at, jobs.last_error, jobs.created_at, jobs.finished_at
+`
+
+type ClaimJobsParams struct {
+	LeaseSeconds float64
+	Kinds        []string
+	Batch        int32
+}
+
+// ClaimJobs hands up to `batch` eligible jobs of the given kinds to a worker.
+//
+// Eligible means: queued, or running with an expired lease (while running, run_at
+// is the lease expiry, see migration 00007), and run_at has passed, and the job
+// has an attempt left. FOR UPDATE SKIP LOCKED makes concurrent claimers pass over
+// rows another claimer is holding instead of waiting for them, so two workers
+// never get the same job and never queue behind each other.
+//
+// MATERIALIZED states that the candidate selection (with its LIMIT and row locks)
+// runs exactly once. Postgres 17 already refuses to inline a CTE that takes row
+// locks (checked with EXPLAIN, and removing the keyword changes no plan), so this
+// is redundant today; it is spelled out so the claim does not depend on that
+// planner behavior. If a planner folded the CTE into the UPDATE's join and applied
+// the LIMIT per candidate row, a claim could take more than `batch` jobs.
+//
+// Claiming writes a NEW lease_token every time. Every later write by a worker is
+// conditional on that token, so a worker whose lease was taken over cannot affect
+// the newer attempt (fencing). last_error is kept, so a retried job still shows
+// why the previous attempt failed.
+//
+// lease_seconds is applied to the database clock, never the worker's.
+func (q *Queries) ClaimJobs(ctx context.Context, arg ClaimJobsParams) ([]Job, error) {
+	rows, err := q.db.Query(ctx, claimJobs, arg.LeaseSeconds, arg.Kinds, arg.Batch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Job
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Payload,
+			&i.State,
+			&i.Attempts,
+			&i.MaxAttempts,
+			&i.RunAt,
+			&i.LeaseToken,
+			&i.LeaseExpiresAt,
+			&i.LastError,
+			&i.CreatedAt,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const insertJob = `-- name: InsertJob :one
 INSERT INTO jobs (kind, payload, max_attempts, run_at)
@@ -53,4 +138,41 @@ func (q *Queries) InsertJob(ctx context.Context, arg InsertJobParams) (Job, erro
 		&i.FinishedAt,
 	)
 	return i, err
+}
+
+const reapExhaustedJobs = `-- name: ReapExhaustedJobs :many
+UPDATE jobs
+SET state            = 'dead',
+    finished_at      = now(),
+    lease_token      = NULL,
+    lease_expires_at = NULL,
+    last_error       = 'lease expired on attempt ' || attempts || ' of ' || max_attempts
+WHERE state = 'running'
+  AND run_at <= now()
+  AND attempts >= max_attempts
+RETURNING id
+`
+
+// ReapExhaustedJobs dead-letters running jobs whose lease has expired on their
+// last attempt. ClaimJobs refuses them (attempts = max_attempts, and the table
+// forbids attempts > max_attempts), so without this they would stay "running"
+// forever. run_at is the lease expiry while running.
+func (q *Queries) ReapExhaustedJobs(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, reapExhaustedJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

@@ -19,16 +19,17 @@ func TestJobs_ShapeIsEnforced(t *testing.T) {
 	type row struct {
 		state, attempts, maxAttempts   string
 		token, expires, finished, kind string
-		payload                        string
+		payload, runAt                 string
 	}
 	// Columns default to those of a valid queued job; each case overrides some.
 	valid := row{
 		state: `'queued'`, attempts: `0`, maxAttempts: `3`,
-		token: `NULL`, expires: `NULL`, finished: `NULL`, kind: `'k'`, payload: `'{}'`,
+		token: `NULL`, expires: `NULL`, finished: `NULL`, kind: `'k'`, payload: `'{}'`, runAt: `now()`,
 	}
 	with := func(f func(r *row)) row { r := valid; f(&r); return r }
 	running := func(r *row) {
-		r.state, r.attempts, r.token, r.expires = `'running'`, `1`, `gen_random_uuid()`, `now() + interval '30 seconds'`
+		// While running, run_at is the lease expiry (migration 00007).
+		r.state, r.attempts, r.token, r.expires, r.runAt = `'running'`, `1`, `gen_random_uuid()`, `now() + interval '30 seconds'`, `now() + interval '30 seconds'`
 	}
 	terminal := func(state string) func(r *row) {
 		return func(r *row) { r.state, r.attempts, r.finished = state, `1`, `now()` }
@@ -60,6 +61,11 @@ func TestJobs_ShapeIsEnforced(t *testing.T) {
 		{"queued with a finish time", with(func(r *row) { r.finished = `now()` }), codeCheck},
 		{"running with a finish time", with(func(r *row) { running(r); r.finished = `now()` }), codeCheck},
 
+		// run_at is the lease expiry while running (what makes the claim an ordered index scan)
+		{"running with run_at before the lease expiry", with(func(r *row) { running(r); r.runAt = `now()` }), codeCheck},
+		{"running with run_at after the lease expiry", with(func(r *row) { running(r); r.runAt = `now() + interval '1 hour'` }), codeCheck},
+		{"queued with run_at in the future", with(func(r *row) { r.runAt = `now() + interval '1 hour'` }), noErrExpected},
+
 		// attempts
 		{"more attempts than allowed", with(func(r *row) { r.attempts = `4` }), codeCheck},
 		{"negative attempts", with(func(r *row) { r.attempts = `-1` }), codeCheck},
@@ -76,9 +82,9 @@ func TestJobs_ShapeIsEnforced(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			// Values are SQL fragments written in this file, never user input.
-			sql := `INSERT INTO jobs (kind, payload, state, attempts, max_attempts, lease_token, lease_expires_at, finished_at)
+			sql := `INSERT INTO jobs (kind, payload, state, attempts, max_attempts, lease_token, lease_expires_at, finished_at, run_at)
 			        VALUES (` + c.row.kind + `, ` + c.row.payload + `, ` + c.row.state + `, ` + c.row.attempts + `, ` +
-				c.row.maxAttempts + `, ` + c.row.token + `, ` + c.row.expires + `, ` + c.row.finished + `)`
+				c.row.maxAttempts + `, ` + c.row.token + `, ` + c.row.expires + `, ` + c.row.finished + `, ` + c.row.runAt + `)`
 			err := inTxAlwaysRollback(pool, func(tx pgx.Tx) error {
 				_, err := tx.Exec(ctx, sql)
 				return err
