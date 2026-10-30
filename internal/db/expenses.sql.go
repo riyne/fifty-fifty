@@ -12,6 +12,32 @@ import (
 	"github.com/google/uuid"
 )
 
+const addClaim = `-- name: AddClaim :execrows
+INSERT INTO claims (item_id, expense_id, group_id, member_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (item_id, member_id) DO NOTHING
+`
+
+type AddClaimParams struct {
+	ItemID    uuid.UUID
+	ExpenseID uuid.UUID
+	GroupID   uuid.UUID
+	MemberID  uuid.UUID
+}
+
+func (q *Queries) AddClaim(ctx context.Context, arg AddClaimParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addClaim,
+		arg.ItemID,
+		arg.ExpenseID,
+		arg.GroupID,
+		arg.MemberID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const createExpense = `-- name: CreateExpense :one
 INSERT INTO expenses (group_id, payer_id, description, tax_minor, tip_minor, status)
 VALUES ($1, $2, $3, $4, $5, 'claiming')
@@ -183,6 +209,44 @@ func (q *Queries) GetExpenseForMember(ctx context.Context, arg GetExpenseForMemb
 	return i, err
 }
 
+const getExpenseItem = `-- name: GetExpenseItem :one
+SELECT i.id, i.position, i.description, i.price_minor,
+       COALESCE(array_agg(c.member_id ORDER BY c.member_id) FILTER (WHERE c.member_id IS NOT NULL), '{}')::uuid[] AS claimed_by
+FROM expense_items i
+LEFT JOIN claims c ON c.item_id = i.id
+WHERE i.id = $1 AND i.expense_id = $2
+GROUP BY i.id
+`
+
+type GetExpenseItemParams struct {
+	ID        uuid.UUID
+	ExpenseID uuid.UUID
+}
+
+type GetExpenseItemRow struct {
+	ID          uuid.UUID
+	Position    int32
+	Description string
+	PriceMinor  int64
+	ClaimedBy   []uuid.UUID
+}
+
+// GetExpenseItem has no authorization of its own. Call it only after
+// LockExpenseForClaim succeeded for the same expense. The expense filter is what
+// makes an item id from some other expense match nothing.
+func (q *Queries) GetExpenseItem(ctx context.Context, arg GetExpenseItemParams) (GetExpenseItemRow, error) {
+	row := q.db.QueryRow(ctx, getExpenseItem, arg.ID, arg.ExpenseID)
+	var i GetExpenseItemRow
+	err := row.Scan(
+		&i.ID,
+		&i.Position,
+		&i.Description,
+		&i.PriceMinor,
+		&i.ClaimedBy,
+	)
+	return i, err
+}
+
 const listExpenseItems = `-- name: ListExpenseItems :many
 SELECT i.id, i.position, i.description, i.price_minor,
        COALESCE(array_agg(c.member_id ORDER BY c.member_id) FILTER (WHERE c.member_id IS NOT NULL), '{}')::uuid[] AS claimed_by
@@ -295,4 +359,53 @@ func (q *Queries) ListExpensesForMember(ctx context.Context, arg ListExpensesFor
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockExpenseForClaim = `-- name: LockExpenseForClaim :one
+SELECT e.status
+FROM expenses e
+JOIN memberships m ON m.group_id = e.group_id AND m.user_id = $1
+WHERE e.id = $2 AND e.group_id = $3
+FOR SHARE OF e
+`
+
+type LockExpenseForClaimParams struct {
+	UserID    uuid.UUID
+	ExpenseID uuid.UUID
+	GroupID   uuid.UUID
+}
+
+// LockExpenseForClaim is the first statement of every claim and unclaim: it
+// takes FOR SHARE on the expense row, authorizes the caller (membership join,
+// path-group filter) and returns the status, all in one statement.
+//
+// FOR SHARE locks are compatible with each other, so claimers never wait for
+// one another. They conflict with FOR UPDATE, which finalize, void and item
+// edits take: those wait for in-flight claims, and a claim that arrives while
+// one of them holds the lock waits, then (READ COMMITTED) re-reads the row after
+// it commits and sees the new status.
+func (q *Queries) LockExpenseForClaim(ctx context.Context, arg LockExpenseForClaimParams) (string, error) {
+	row := q.db.QueryRow(ctx, lockExpenseForClaim, arg.UserID, arg.ExpenseID, arg.GroupID)
+	var status string
+	err := row.Scan(&status)
+	return status, err
+}
+
+const removeClaim = `-- name: RemoveClaim :execrows
+DELETE FROM claims WHERE item_id = $1 AND expense_id = $2 AND member_id = $3
+`
+
+type RemoveClaimParams struct {
+	ItemID    uuid.UUID
+	ExpenseID uuid.UUID
+	MemberID  uuid.UUID
+}
+
+// RemoveClaim only ever removes the caller's own claim.
+func (q *Queries) RemoveClaim(ctx context.Context, arg RemoveClaimParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeClaim, arg.ItemID, arg.ExpenseID, arg.MemberID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

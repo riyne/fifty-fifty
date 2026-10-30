@@ -252,6 +252,36 @@ paths:
               schema: { $ref: "#/components/schemas/Expense" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim:
+    parameters:
+      - { $ref: "#/components/parameters/GroupId" }
+      - { name: expenseId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      summary: Claim an item for yourself (any member). Idempotent; no Idempotency-Key needed.
+      description: >
+        A member can only claim for themselves. Claiming an item you already hold changes nothing.
+        Only allowed while the expense is `claiming`; otherwise 409. Claimers do not block one another;
+        a claim that arrives while the expense is being finalized waits for it and then gets 409.
+        404 if the caller is not in the group, or the expense does not exist or is in another group
+        (`expense not found`, indistinguishable), or the item is not in this expense (`item not found`).
+      responses:
+        "200":
+          description: The item with its current claimants.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExpenseItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotClaimable" }
+    delete:
+      summary: Remove your own claim on an item (any member). Idempotent.
+      description: Removes only the caller's claim. Unclaiming an item you do not hold is a no-op. Same 404 and 409 rules as claiming.
+      responses:
+        "204": { description: Your claim is gone (or never existed). }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/NotClaimable" }
   /v1/join:
     post:
       summary: Join a group with a code. Requires Idempotency-Key; rate limited per user.
@@ -412,6 +442,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
       description: The caller can see the group but is not allowed to do this (not the owner).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotClaimable:
+      description: The expense is not in status `claiming` (it is being reviewed, finalized or void), so claims cannot change.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

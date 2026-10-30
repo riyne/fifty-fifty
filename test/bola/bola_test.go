@@ -53,6 +53,8 @@ type fixture struct {
 	codeB  string // a join code id in B
 	expA   string // an expense in A, created by `owner`
 	expB   string // an expense in B, created by `outsider`
+	itemA  string // first item of expA
+	itemB  string // first item of expB
 }
 
 const expenseBody = `{"description":"dinner","items":[{"description":"pizza","price_minor":1500},{"description":"beer","price_minor":800}],"tax_minor":300,"tip_minor":200}`
@@ -76,7 +78,24 @@ func newFixture(t *testing.T) *fixture {
 	}
 	f.expA = s.CreateExpense(t, f.tokens[owner], f.groupA, expenseBody)
 	f.expB = s.CreateExpense(t, f.tokens[outsider], f.groupB, expenseBody)
+	f.itemA = f.firstItem(t, owner, f.groupA, f.expA)
+	f.itemB = f.firstItem(t, outsider, f.groupB, f.expB)
 	return f
+}
+
+// firstItem returns the id of an expense's first item, read through the API.
+func (f *fixture) firstItem(t *testing.T, a actor, group, expense string) string {
+	t.Helper()
+	var e struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+	}
+	f.s.Do(t, f.tokens[a], "GET", "/v1/groups/"+group+"/expenses/"+expense, "").JSON(t, &e)
+	if len(e.Items) == 0 {
+		t.Fatal("fixture expense has no items")
+	}
+	return e.Items[0].ID
 }
 
 // state summarizes everything a denied request must not change, for both groups.
@@ -177,7 +196,45 @@ func scenarios() []scenario {
 			path: func(f *fixture) string { return "/v1/groups/" + f.groupB + "/expenses/" + f.expA },
 			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
 		},
+		{
+			// Any member may claim; a non-member is refused with 404.
+			name: "claim item", opID: "PUT /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", method: "PUT",
+			path: func(f *fixture) string { return claimPath(f.groupA, f.expA, f.itemA) },
+			want: map[actor]int{anon: 401, outsider: 404, member: 200, owner: 200},
+		},
+		{
+			// Authorized on A and on A's expense, but the item belongs to B's expense.
+			name: "claim B's item through A's expense", opID: "PUT /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", method: "PUT",
+			path: func(f *fixture) string { return claimPath(f.groupA, f.expA, f.itemB) },
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
+			// B's expense and item are real and consistent with each other, but not with A's path.
+			name: "claim B's item through A's path", opID: "PUT /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", method: "PUT",
+			path: func(f *fixture) string { return claimPath(f.groupA, f.expB, f.itemB) },
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
+			// B's owner is authorized on B but names A's expense and item.
+			name: "claim A's item through B's path", opID: "PUT /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", method: "PUT",
+			path: func(f *fixture) string { return claimPath(f.groupB, f.expA, f.itemA) },
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
+			name: "unclaim item", opID: "DELETE /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", method: "DELETE",
+			path: func(f *fixture) string { return claimPath(f.groupA, f.expA, f.itemA) },
+			want: map[actor]int{anon: 401, outsider: 404, member: 204, owner: 204},
+		},
+		{
+			name: "unclaim B's item through A's path", opID: "DELETE /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", method: "DELETE",
+			path: func(f *fixture) string { return claimPath(f.groupA, f.expB, f.itemB) },
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
 	}
+}
+
+func claimPath(group, expense, item string) string {
+	return "/v1/groups/" + group + "/expenses/" + expense + "/items/" + item + "/claim"
 }
 
 // exempt lists authenticated operations with no per-object authorization to
@@ -303,6 +360,23 @@ func TestMemberOfTwoGroupsCannotCrossThem(t *testing.T) {
 	}
 	if got := get(f.groupB, f.expA); got != 404 {
 		t.Errorf("A's expense via B's path = %d, want 404", got)
+	}
+	// Claiming has the same property: the member may claim in either group, but
+	// only through the path of the group that owns the expense and item.
+	claim := func(group, expense, item string) int {
+		return f.s.Do(t, f.tokens[member], "PUT", claimPath(group, expense, item), "").Status
+	}
+	if got := claim(f.groupB, f.expB, f.itemB); got != 200 {
+		t.Errorf("claim B's item via B = %d, want 200", got)
+	}
+	if got := claim(f.groupA, f.expB, f.itemB); got != 404 {
+		t.Errorf("claim B's item via A's path = %d, want 404", got)
+	}
+	if got := claim(f.groupB, f.expA, f.itemA); got != 404 {
+		t.Errorf("claim A's item via B's path = %d, want 404", got)
+	}
+	if n := f.s.QueryInt(t, `SELECT count(*) FROM claims WHERE expense_id = $1`, f.expA); n != 0 {
+		t.Errorf("a cross-group claim created %d claims on A's expense", n)
 	}
 	for group, other := range map[string]string{f.groupA: f.expB, f.groupB: f.expA} {
 		r := f.s.Do(t, f.tokens[member], "GET", "/v1/groups/"+group+"/expenses", "")

@@ -47,6 +47,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/groups/{id}/expenses", h.create)
 	mux.HandleFunc("GET /v1/groups/{id}/expenses", h.list)
 	mux.HandleFunc("GET /v1/groups/{id}/expenses/{expenseId}", h.get)
+	mux.HandleFunc("PUT /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", h.claim)
+	mux.HandleFunc("DELETE /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", h.unclaim)
 }
 
 type itemJSON struct {

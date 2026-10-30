@@ -60,3 +60,39 @@ LEFT JOIN LATERAL (
 WHERE e.group_id = sqlc.arg(group_id)
 ORDER BY e.created_at DESC, e.id
 LIMIT 100;
+
+-- LockExpenseForClaim is the first statement of every claim and unclaim: it
+-- takes FOR SHARE on the expense row, authorizes the caller (membership join,
+-- path-group filter) and returns the status, all in one statement.
+--
+-- FOR SHARE locks are compatible with each other, so claimers never wait for
+-- one another. They conflict with FOR UPDATE, which finalize, void and item
+-- edits take: those wait for in-flight claims, and a claim that arrives while
+-- one of them holds the lock waits, then (READ COMMITTED) re-reads the row after
+-- it commits and sees the new status.
+-- name: LockExpenseForClaim :one
+SELECT e.status
+FROM expenses e
+JOIN memberships m ON m.group_id = e.group_id AND m.user_id = sqlc.arg(user_id)
+WHERE e.id = sqlc.arg(expense_id) AND e.group_id = sqlc.arg(group_id)
+FOR SHARE OF e;
+
+-- GetExpenseItem has no authorization of its own. Call it only after
+-- LockExpenseForClaim succeeded for the same expense. The expense filter is what
+-- makes an item id from some other expense match nothing.
+-- name: GetExpenseItem :one
+SELECT i.id, i.position, i.description, i.price_minor,
+       COALESCE(array_agg(c.member_id ORDER BY c.member_id) FILTER (WHERE c.member_id IS NOT NULL), '{}')::uuid[] AS claimed_by
+FROM expense_items i
+LEFT JOIN claims c ON c.item_id = i.id
+WHERE i.id = $1 AND i.expense_id = $2
+GROUP BY i.id;
+
+-- name: AddClaim :execrows
+INSERT INTO claims (item_id, expense_id, group_id, member_id)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (item_id, member_id) DO NOTHING;
+
+-- RemoveClaim only ever removes the caller's own claim.
+-- name: RemoveClaim :execrows
+DELETE FROM claims WHERE item_id = $1 AND expense_id = $2 AND member_id = $3;
