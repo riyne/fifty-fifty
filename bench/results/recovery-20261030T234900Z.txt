@@ -1,0 +1,18 @@
+Crash-recovery benchmark: kill -9 of one worker process mid-job
+Workload: mock LLM with simulated latency of 800ms median (log-normal sigma 0.40); 24 jobs per trial, 3 workers x 4 slots, poll 1s, kill point "call" after a random delay in [0, 1s), max_attempts 5
+Commit 621138a5d60c62c3a89f6d6172a64aa64479c9f1 (dirty: false), Apple M3 Pro, 11 CPUs, 19327352832 bytes RAM, Darwin 25.6.0 arm64, go1.27.3
+Postgres: PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+Docker postgres container: /fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit)
+Docker engine: cpus=11 memory_bytes=8214716416 server=29.9.1
+Load average at start: 16:48  up 72 days, 12:52, 1 user, load averages: 1.64 2.08 2.15
+
+lease 3s: 20 trials, 480 jobs, 480 succeeded, 0 lost, 0 dead, 0 duplicate effects, 0 missing effects
+  orphans (jobs the killed worker held): 79 total (0 trials had none); extra LLM calls begun: 79
+  recovery, per orphan (kill -> job succeeded), seconds: n=79 min 2.51 median 3.76 p90 4.49 max 5.51
+  recovery, per trial (last orphan done), seconds: n=20 min 3.67 median 4.15 p90 4.78 max 5.51
+
+lease 10s: 20 trials, 480 jobs, 480 succeeded, 0 lost, 0 dead, 0 duplicate effects, 0 missing effects
+  orphans (jobs the killed worker held): 80 total (0 trials had none); extra LLM calls begun: 80
+  recovery, per orphan (kill -> job succeeded), seconds: n=80 min 9.78 median 10.81 p90 11.51 max 12.50
+  recovery, per trial (last orphan done), seconds: n=20 min 10.67 median 11.29 p90 11.90 max 12.50
+

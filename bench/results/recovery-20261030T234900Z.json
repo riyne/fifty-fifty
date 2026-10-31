@@ -1,0 +1,1214 @@
+{
+  "started_at": "2026-10-30T23:49:00.157457Z",
+  "params": {
+    "trials_per_lease": 20,
+    "leases": [
+      "3s",
+      "10s"
+    ],
+    "workers": 3,
+    "concurrency_per_worker": 4,
+    "jobs_per_trial": 24,
+    "poll_interval": "1s",
+    "kill_point": "call",
+    "kill_jitter_max": "1s",
+    "mock_llm_latency_median": "800ms",
+    "mock_llm_latency_sigma": 0.4,
+    "max_attempts": 5
+  },
+  "environment": {
+    "machine": "Apple M3 Pro",
+    "cpus": 11,
+    "memory_bytes": "19327352832",
+    "os": "Darwin 25.6.0 arm64",
+    "go_version": "go1.27.3",
+    "postgres_version": "PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+    "docker_postgres_container": "/fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit)",
+    "docker_engine": "cpus=11 memory_bytes=8214716416 server=29.9.1",
+    "load_average_at_start": "16:48  up 72 days, 12:52, 1 user, load averages: 1.64 2.08 2.15",
+    "commit": "621138a5d60c62c3a89f6d6172a64aa64479c9f1",
+    "working_tree_dirty": false
+  },
+  "results": [
+    {
+      "lease": "3s",
+      "trials": [
+        {
+          "run": "88809009-65c7-4e56-bab2-f10b4d9640a9",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.690238,
+            3.707552,
+            4.180596,
+            5.507345
+          ],
+          "drain_seconds": 5.507345
+        },
+        {
+          "run": "25cd8ed0-2f8c-4f86-b6bd-d8e59416d5d0",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.364816,
+            3.416769,
+            3.598936,
+            3.670121
+          ],
+          "drain_seconds": 3.670121
+        },
+        {
+          "run": "2a930643-262f-47ad-a67a-26b4b631caa3",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.527907,
+            3.752007,
+            4.072211,
+            4.259179
+          ],
+          "drain_seconds": 4.259179
+        },
+        {
+          "run": "4179e145-b5af-4ec2-9e68-566b3b15a0cb",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.882555,
+            4.134103,
+            4.15644,
+            4.353327
+          ],
+          "drain_seconds": 4.353327
+        },
+        {
+          "run": "57a46598-fad5-4594-9064-941785a3992d",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            2.971935,
+            3.478811,
+            3.694052,
+            4.090092
+          ],
+          "drain_seconds": 4.090092
+        },
+        {
+          "run": "4a144c34-f9b3-463e-a880-46aea378e8be",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.365939,
+            3.526487,
+            3.729894,
+            4.104931
+          ],
+          "drain_seconds": 4.104931
+        },
+        {
+          "run": "0852706a-17e3-4ebd-b208-ffc4f28e5cdc",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            2.966246,
+            3.631894,
+            4.144434,
+            4.783714
+          ],
+          "drain_seconds": 4.783714
+        },
+        {
+          "run": "cc2f8a06-e42e-4d3f-b7a1-f089948c1e28",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.312647,
+            3.687899,
+            3.694438,
+            3.910727
+          ],
+          "drain_seconds": 3.910727
+        },
+        {
+          "run": "9837a401-b93d-48fa-924e-35989a883e77",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.831052,
+            4.072927,
+            4.212062,
+            5.390464
+          ],
+          "drain_seconds": 5.390464
+        },
+        {
+          "run": "16a5365f-4052-4ef0-93a7-850254e407a8",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.378766,
+            3.397898,
+            3.631359,
+            4.232763
+          ],
+          "drain_seconds": 4.232763
+        },
+        {
+          "run": "b3121242-92a6-4159-9fba-932a03491e91",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.507094,
+            3.762086,
+            3.849046,
+            4.149473
+          ],
+          "drain_seconds": 4.149473
+        },
+        {
+          "run": "b6c83df3-87ae-41c7-ae92-6d578731fc1c",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.64098,
+            3.926825,
+            4.465731,
+            4.755668
+          ],
+          "drain_seconds": 4.755668
+        },
+        {
+          "run": "f793e523-7199-41bb-b030-545d2221d241",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            4.073603,
+            4.080029,
+            4.520283,
+            4.67385
+          ],
+          "drain_seconds": 4.67385
+        },
+        {
+          "run": "a8e261d9-4b48-4904-9862-48904c533424",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.027498,
+            3.154108,
+            3.244589,
+            4.060947
+          ],
+          "drain_seconds": 4.060947
+        },
+        {
+          "run": "15299861-a309-4352-9e69-93009e34e078",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 27,
+          "extra_attempts": 3,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 3,
+          "orphan_attempts": [
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            4.200507,
+            4.245601,
+            4.520391
+          ],
+          "drain_seconds": 4.520391
+        },
+        {
+          "run": "0cdd3e02-d7cc-48b2-b9ba-60555f00632e",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            2.511192,
+            2.964517,
+            3.692052,
+            4.490903
+          ],
+          "drain_seconds": 4.490903
+        },
+        {
+          "run": "c131f859-2181-458c-8677-f55a6c882cae",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.392092,
+            3.682313,
+            3.794386,
+            3.955437
+          ],
+          "drain_seconds": 3.955437
+        },
+        {
+          "run": "7a50e9c6-234b-43ff-a067-c8bb6c2ab012",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.848779,
+            3.85619,
+            4.078694,
+            4.122996
+          ],
+          "drain_seconds": 4.122996
+        },
+        {
+          "run": "6500ea91-28b8-41b5-8924-c4b4bf342695",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.28803,
+            3.672354,
+            3.677302,
+            3.72242
+          ],
+          "drain_seconds": 3.72242
+        },
+        {
+          "run": "56693e9d-5507-4bd5-a2be-3f68132b2d6f",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            3.314977,
+            3.342366,
+            3.522545,
+            3.760204
+          ],
+          "drain_seconds": 3.760204
+        }
+      ],
+      "summary": {
+        "trials": 20,
+        "jobs_total": 480,
+        "succeeded_total": 480,
+        "lost_jobs_total": 0,
+        "dead_total": 0,
+        "duplicate_effects_total": 0,
+        "missing_effects_total": 0,
+        "orphans_total": 79,
+        "trials_with_no_orphan": 0,
+        "extra_attempts_total": 79,
+        "recovery_seconds_per_orphan": {
+          "n": 79,
+          "min": 2.511192,
+          "median": 3.760204,
+          "p90": 4.490903,
+          "max": 5.507345
+        },
+        "recovery_seconds_per_trial_all_orphans_done": {
+          "n": 20,
+          "min": 3.670121,
+          "median": 4.149473,
+          "p90": 4.783714,
+          "max": 5.507345
+        }
+      }
+    },
+    {
+      "lease": "10s",
+      "trials": [
+        {
+          "run": "b76bd9e1-de04-44fc-80e0-5237a68f7423",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.687921,
+            10.705145,
+            11.180279,
+            12.504305
+          ],
+          "drain_seconds": 12.504305
+        },
+        {
+          "run": "622036ae-c6c4-4c48-a9a6-afc54c137a80",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.515308,
+            10.566744,
+            10.748974,
+            10.819447
+          ],
+          "drain_seconds": 10.819447
+        },
+        {
+          "run": "e9e14725-5d11-43d5-92b4-4dc0ac5a8f63",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.314459,
+            10.536013,
+            10.857266,
+            11.043195
+          ],
+          "drain_seconds": 11.043195
+        },
+        {
+          "run": "bc20e852-68a0-464e-9281-af1832a160af",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.433662,
+            10.457106,
+            11.187539,
+            11.200549
+          ],
+          "drain_seconds": 11.200549
+        },
+        {
+          "run": "f38e545f-ba91-49f1-ab07-42ce0d7c0e02",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            9.7841,
+            10.15509,
+            10.505968,
+            11.27989
+          ],
+          "drain_seconds": 11.27989
+        },
+        {
+          "run": "e7518632-b5b5-411b-a566-9c1432d4aa1b",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.748128,
+            10.909243,
+            11.113099,
+            11.487315
+          ],
+          "drain_seconds": 11.487315
+        },
+        {
+          "run": "b8f0eaab-e5a9-4277-b0ec-3c5472670a33",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.079069,
+            10.745616,
+            11.258167,
+            11.896793
+          ],
+          "drain_seconds": 11.896793
+        },
+        {
+          "run": "4fa0c79f-d1f8-40e2-9881-1c36ef96e4cf",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.432856,
+            10.808409,
+            10.814598,
+            11.031517
+          ],
+          "drain_seconds": 11.031517
+        },
+        {
+          "run": "ee1d65ab-e0f3-4d52-af5e-8d3b456bc6cf",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.6292,
+            10.872715,
+            11.011979,
+            12.191228
+          ],
+          "drain_seconds": 12.191228
+        },
+        {
+          "run": "1a3942e4-0bd1-4eed-aeab-bbec71014954",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.541841,
+            10.560321,
+            10.793764,
+            11.394613
+          ],
+          "drain_seconds": 11.394613
+        },
+        {
+          "run": "4df5e440-0651-48c2-ba70-c974260afbb0",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.470167,
+            10.727349,
+            11.115338,
+            11.830108
+          ],
+          "drain_seconds": 11.830108
+        },
+        {
+          "run": "57e70009-07a6-41dc-a3d8-db55de0668a7",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.779654,
+            11.064482,
+            11.3292,
+            11.893208
+          ],
+          "drain_seconds": 11.893208
+        },
+        {
+          "run": "4b28eb83-79a4-4ca1-811d-462277576d21",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            11.230189,
+            11.235155,
+            11.674872,
+            11.828675
+          ],
+          "drain_seconds": 11.828675
+        },
+        {
+          "run": "019b79fc-88de-4539-a5e2-1dabe4ca0685",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.281836,
+            10.800651,
+            10.926515,
+            11.097329
+          ],
+          "drain_seconds": 11.097329
+        },
+        {
+          "run": "11f04485-217f-466d-b1ac-1170d421aa24",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.614813,
+            11.188265,
+            11.233482,
+            11.50817
+          ],
+          "drain_seconds": 11.50817
+        },
+        {
+          "run": "ba15fbc2-69ee-4cdd-9938-45dc28acd6e2",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.273493,
+            10.517932,
+            11.072353,
+            11.872071
+          ],
+          "drain_seconds": 11.872071
+        },
+        {
+          "run": "2e4e248a-fc02-4f6b-ad22-3c03fa6172dc",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.424514,
+            10.716398,
+            10.830173,
+            10.98893
+          ],
+          "drain_seconds": 10.98893
+        },
+        {
+          "run": "1e270a02-2ee3-44fd-990d-e87aeab287aa",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.073301,
+            10.296055,
+            10.339974,
+            10.667161
+          ],
+          "drain_seconds": 10.667161
+        },
+        {
+          "run": "76d8bc61-5533-41c3-95bb-12828ee5f9ba",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.421556,
+            10.805871,
+            10.809467,
+            10.855004
+          ],
+          "drain_seconds": 10.855004
+        },
+        {
+          "run": "2a30b936-c096-40ec-a59d-67ead2ebfeae",
+          "jobs": 24,
+          "succeeded": 24,
+          "dead": 0,
+          "unfinished": 0,
+          "lost_jobs": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 28,
+          "extra_attempts": 4,
+          "victim": "w1",
+          "killed_by_signal": "SIGKILL",
+          "orphans": 4,
+          "orphan_attempts": [
+            2,
+            2,
+            2,
+            2
+          ],
+          "recovery_seconds": [
+            10.517555,
+            10.546352,
+            10.964066,
+            11.28986
+          ],
+          "drain_seconds": 11.28986
+        }
+      ],
+      "summary": {
+        "trials": 20,
+        "jobs_total": 480,
+        "succeeded_total": 480,
+        "lost_jobs_total": 0,
+        "dead_total": 0,
+        "duplicate_effects_total": 0,
+        "missing_effects_total": 0,
+        "orphans_total": 80,
+        "trials_with_no_orphan": 0,
+        "extra_attempts_total": 80,
+        "recovery_seconds_per_orphan": {
+          "n": 80,
+          "min": 9.7841,
+          "median": 10.809467,
+          "p90": 11.50817,
+          "max": 12.504305
+        },
+        "recovery_seconds_per_trial_all_orphans_done": {
+          "n": 20,
+          "min": 10.667161,
+          "median": 11.28986,
+          "p90": 11.896793,
+          "max": 12.504305
+        }
+      }
+    }
+  ]
+}
