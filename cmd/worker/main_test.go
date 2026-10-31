@@ -117,8 +117,10 @@ func TestParseRun(t *testing.T) {
 // kinds that have one (worker.Run refuses otherwise).
 func TestHandlersCoverTheSchedule(t *testing.T) {
 	h := handlers(nil)
-	if _, ok := h[worker.CleanupSchedule.Kind]; !ok {
-		t.Errorf("no handler for the scheduled kind %q", worker.CleanupSchedule.Kind)
+	for _, sched := range []queue.PeriodicJob{worker.CleanupSchedule, worker.PruneSchedule} {
+		if _, ok := h[sched.Kind]; !ok {
+			t.Errorf("no handler for the scheduled kind %q", sched.Kind)
+		}
 	}
 }
 

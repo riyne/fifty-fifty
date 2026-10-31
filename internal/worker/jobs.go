@@ -36,9 +36,14 @@ func IdempotencyCleanup(pool *pgxpool.Pool) Handler {
 // It also stops if ctx is canceled (for example, the lease was lost); the next run
 // continues.
 func deleteAllExpired(ctx context.Context, pool *pgxpool.Pool, batch int) (int64, error) {
+	return drain(func() (int64, error) { return idempotency.DeleteExpired(ctx, pool, batch) })
+}
+
+// drain calls step until it returns 0 or an error, and returns the total.
+func drain(step func() (int64, error)) (int64, error) {
 	var total int64
 	for {
-		n, err := idempotency.DeleteExpired(ctx, pool, batch)
+		n, err := step()
 		total += n
 		if err != nil || n == 0 {
 			return total, err
@@ -49,3 +54,30 @@ func deleteAllExpired(ctx context.Context, pool *pgxpool.Pool, batch int) (int64
 // CleanupSchedule is how often the cleanup runs. Keys live 24 h, so hourly keeps
 // the table within about 25 h of keys.
 var CleanupSchedule = queue.PeriodicJob{Kind: KindIdempotencyCleanup, Every: time.Hour, MaxAttempts: 3}
+
+// KindJobsPrune deletes finished jobs past their retention.
+const KindJobsPrune = "jobs.prune"
+
+// JobRetention is how long a succeeded job is kept: long enough to look at what ran
+// last week, short enough that the jobs table (and its indexes) stays a small
+// multiple of a week's traffic. Dead jobs are kept until an operator deals with them.
+const JobRetention = 7 * 24 * time.Hour
+
+// JobsPrune is the handler for KindJobsPrune. Like the idempotency cleanup it is
+// idempotent, so all of the work is phase one with nothing to commit; a lease lost
+// halfway just leaves the rest for the next run. It deletes in batches of
+// cleanupBatch until a batch deletes nothing.
+func JobsPrune(pool *pgxpool.Pool, retention time.Duration) Handler {
+	return func(ctx context.Context, _ queue.Claimed) (Commit, error) {
+		_, err := pruneAll(ctx, pool, retention, cleanupBatch)
+		return nil, err
+	}
+}
+
+func pruneAll(ctx context.Context, pool *pgxpool.Pool, retention time.Duration, batch int) (int64, error) {
+	return drain(func() (int64, error) { return queue.PruneFinished(ctx, pool, retention, batch) })
+}
+
+// PruneSchedule is how often pruning runs. Hourly bounds the backlog to an hour's
+// worth of jobs past retention.
+var PruneSchedule = queue.PeriodicJob{Kind: KindJobsPrune, Every: time.Hour, MaxAttempts: 3}

@@ -91,7 +91,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	defer stop()
 	runCfg.Pool = pool
 	runCfg.Handlers = handlers(pool)
-	runCfg.Periodic = []queue.PeriodicJob{worker.CleanupSchedule}
+	runCfg.Periodic = []queue.PeriodicJob{worker.CleanupSchedule, worker.PruneSchedule}
 
 	if metricsAddr != "" {
 		kinds := make([]string, 0, len(runCfg.Handlers))
@@ -140,6 +140,7 @@ func serveMetrics(ctx context.Context, ln net.Listener, h http.Handler) {
 func handlers(pool *pgxpool.Pool) map[string]worker.Handler {
 	return map[string]worker.Handler{
 		worker.KindIdempotencyCleanup: worker.IdempotencyCleanup(pool),
+		worker.KindJobsPrune:          worker.JobsPrune(pool, worker.JobRetention),
 	}
 }
 

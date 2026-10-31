@@ -373,8 +373,11 @@ func TestComplete_HoldsTheRowSoNobodyTakesOverMidCommit(t *testing.T) {
 // Both writes run on one row; the row lock makes exactly one of them take effect.
 func TestFencing_CompleteAndFailRaceHasOneWinner(t *testing.T) {
 	pool := testutil.Pool(t)
-	kind := newKind("racewin")
 	for round := range 40 {
+		// A kind per round: when Fail wins, its job goes back to queued and stays
+		// claimable, and the next round's claim would take it instead of the job just
+		// enqueued, so the assertions below would look at a job nobody touched.
+		kind := newKind("racewin")
 		id := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 3})
 		c := claim(t, pool, kind, 1)[0]
 

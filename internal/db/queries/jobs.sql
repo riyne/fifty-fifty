@@ -177,3 +177,21 @@ SELECT kind,
 FROM jobs
 WHERE state IN ('queued', 'running') OR state = 'dead'
 GROUP BY kind;
+
+-- DeleteFinishedJobs removes up to `batch` succeeded jobs that finished more than
+-- `retention_seconds` ago, oldest first. Only succeeded jobs: a dead job is a
+-- dead-letter an operator may requeue, and a live job is not finished. A succeeded
+-- job is never modified again (every fenced statement needs a lease token, and only
+-- running jobs have one; requeue touches only dead jobs), so unlike the idempotency
+-- cleanup there is no concurrent writer to race with. Deleting a periodic job's row
+-- frees its dedupe_key, which is harmless: the key names a time bucket in the past.
+-- name: DeleteFinishedJobs :execrows
+DELETE FROM jobs
+WHERE id IN (
+    SELECT id
+    FROM jobs
+    WHERE state = 'succeeded'
+      AND finished_at <= now() - make_interval(secs => sqlc.arg('retention_seconds')::float8)
+    ORDER BY finished_at
+    LIMIT sqlc.arg('batch')
+);
