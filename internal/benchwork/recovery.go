@@ -127,7 +127,10 @@ func RunRecovery(ctx context.Context, p RecoveryParams) (RecoveryResult, error) 
 	procs := make([]*proc, p.Workers)
 	for i := range procs {
 		id := "w" + strconv.Itoa(i+1)
-		procs[i], err = startWorker(ctx, p, id, mockSrv.URL)
+		procs[i], err = startWorker(workerSpec{
+			Bin: p.WorkerBin, DatabaseURL: p.DatabaseURL, MockURL: mockSrv.URL, ID: id,
+			Concurrency: p.Concurrency, Lease: p.Lease, Poll: p.Poll, CommitDelay: p.CommitDelay,
+		})
 		if err != nil {
 			stopAll(procs)
 			return res, err
@@ -210,16 +213,7 @@ func collect(ctx context.Context, pool *pgxpool.Pool, run, victim string, killAt
 	}
 	res.LostJobs = res.Jobs - res.Succeeded
 
-	// Effects per job: more than one is a duplicate, none on a succeeded job is a
-	// missing effect.
-	err = pool.QueryRow(ctx, `
-		SELECT COALESCE(sum(GREATEST(c - 1, 0)), 0)::int,
-		       count(*) FILTER (WHERE c = 0 AND state = 'succeeded')::int
-		FROM (SELECT j.state, count(e.id) AS c
-		      FROM jobs j LEFT JOIN bench.effects e ON e.job_id = j.id
-		      WHERE j.kind = $1 AND j.payload->>'run' = $2 GROUP BY j.id) t`, Kind, run).
-		Scan(&res.DuplicateFx, &res.MissingFx)
-	if err != nil {
+	if res.DuplicateFx, res.MissingFx, err = effectCounts(ctx, pool, run); err != nil {
 		return err
 	}
 	err = pool.QueryRow(ctx, `
@@ -264,17 +258,30 @@ type proc struct {
 	err  error
 }
 
-func startWorker(ctx context.Context, p RecoveryParams, id, mockURL string) (*proc, error) {
-	cmd := exec.Command(p.WorkerBin,
-		"--mock-url", mockURL, "--worker-id", id,
-		"--concurrency", strconv.Itoa(p.Concurrency),
-		"--lease", p.Lease.String(), "--poll", p.Poll.String(),
-		"--commit-delay", p.CommitDelay.String(), "--grace", "2s")
-	cmd.Env = append(os.Environ(), "DATABASE_URL="+p.DatabaseURL)
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start %s: %w", id, err)
+// workerSpec is how to start one benchworker process.
+type workerSpec struct {
+	Bin, DatabaseURL, MockURL, ID string
+	Concurrency                   int
+	Lease, Poll, CommitDelay      time.Duration
+	Lean                          bool
+}
+
+func startWorker(w workerSpec) (*proc, error) {
+	args := []string{
+		"--mock-url", w.MockURL, "--worker-id", w.ID,
+		"--concurrency", strconv.Itoa(w.Concurrency),
+		"--lease", w.Lease.String(), "--poll", w.Poll.String(),
+		"--commit-delay", w.CommitDelay.String(), "--grace", "2s",
 	}
-	pr := &proc{id: id, cmd: cmd, done: make(chan struct{})}
+	if w.Lean {
+		args = append(args, "--lean")
+	}
+	cmd := exec.Command(w.Bin, args...)
+	cmd.Env = append(os.Environ(), "DATABASE_URL="+w.DatabaseURL)
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start %s: %w", w.ID, err)
+	}
+	pr := &proc{id: w.ID, cmd: cmd, done: make(chan struct{})}
 	go func() { pr.err = cmd.Wait(); close(pr.done) }()
 	return pr, nil
 }

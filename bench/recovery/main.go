@@ -23,12 +23,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"sort"
 	"strings"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/benchwork"
 	"github.com/riyne/fifty-fifty/internal/mockllm"
@@ -48,41 +44,19 @@ type params struct {
 	MaxAttempts int      `json:"max_attempts"`
 }
 
-type env struct {
-	Machine     string `json:"machine"`
-	CPUs        int    `json:"cpus"`
-	MemoryBytes string `json:"memory_bytes"`
-	OS          string `json:"os"`
-	GoVersion   string `json:"go_version"`
-	Postgres    string `json:"postgres_version"`
-	Docker      string `json:"docker_postgres_container"`
-	DockerInfo  string `json:"docker_engine"`
-	LoadAvg     string `json:"load_average_at_start"`
-	Commit      string `json:"commit"`
-	Dirty       bool   `json:"working_tree_dirty"`
-}
-
-type dist struct {
-	N      int     `json:"n"`
-	Min    float64 `json:"min"`
-	Median float64 `json:"median"`
-	P90    float64 `json:"p90"`
-	Max    float64 `json:"max"`
-}
-
 type summary struct {
-	Trials         int  `json:"trials"`
-	Jobs           int  `json:"jobs_total"`
-	Succeeded      int  `json:"succeeded_total"`
-	LostJobs       int  `json:"lost_jobs_total"`
-	Dead           int  `json:"dead_total"`
-	DuplicateFx    int  `json:"duplicate_effects_total"`
-	MissingFx      int  `json:"missing_effects_total"`
-	Orphans        int  `json:"orphans_total"`
-	TrialsNoOrphan int  `json:"trials_with_no_orphan"`
-	ExtraAttempts  int  `json:"extra_attempts_total"`
-	PerOrphanSecs  dist `json:"recovery_seconds_per_orphan"`
-	PerTrialSecs   dist `json:"recovery_seconds_per_trial_all_orphans_done"`
+	Trials         int            `json:"trials"`
+	Jobs           int            `json:"jobs_total"`
+	Succeeded      int            `json:"succeeded_total"`
+	LostJobs       int            `json:"lost_jobs_total"`
+	Dead           int            `json:"dead_total"`
+	DuplicateFx    int            `json:"duplicate_effects_total"`
+	MissingFx      int            `json:"missing_effects_total"`
+	Orphans        int            `json:"orphans_total"`
+	TrialsNoOrphan int            `json:"trials_with_no_orphan"`
+	ExtraAttempts  int            `json:"extra_attempts_total"`
+	PerOrphanSecs  benchwork.Dist `json:"recovery_seconds_per_orphan"`
+	PerTrialSecs   benchwork.Dist `json:"recovery_seconds_per_trial_all_orphans_done"`
 }
 
 type configReport struct {
@@ -94,7 +68,7 @@ type configReport struct {
 type report struct {
 	StartedAt time.Time      `json:"started_at"`
 	Params    params         `json:"params"`
-	Env       env            `json:"environment"`
+	Env       benchwork.Env  `json:"environment"`
 	Configs   []configReport `json:"results"`
 }
 
@@ -144,7 +118,7 @@ func run() error {
 	p.MockMedian, p.MaxAttempts = median.String(), 5
 
 	ctx := context.Background()
-	e, err := captureEnv(ctx, ownerURL)
+	e, err := benchwork.CaptureEnv(ctx, ownerURL)
 	if err != nil {
 		return err
 	}
@@ -234,22 +208,8 @@ func summarize(trials []benchwork.RecoveryResult) summary {
 			perTrial = append(perTrial, worst)
 		}
 	}
-	s.PerOrphanSecs, s.PerTrialSecs = distribution(per), distribution(perTrial)
+	s.PerOrphanSecs, s.PerTrialSecs = benchwork.Distribution(per), benchwork.Distribution(perTrial)
 	return s
-}
-
-// distribution uses the nearest-rank method for percentiles.
-func distribution(xs []float64) dist {
-	if len(xs) == 0 {
-		return dist{}
-	}
-	sorted := append([]float64(nil), xs...)
-	sort.Float64s(sorted)
-	rank := func(p float64) float64 {
-		i := int(math.Ceil(p/100*float64(len(sorted)))) - 1
-		return sorted[max(i, 0)]
-	}
-	return dist{N: len(sorted), Min: sorted[0], Median: rank(50), P90: rank(90), Max: sorted[len(sorted)-1]}
 }
 
 func render(r report) string {
@@ -271,38 +231,4 @@ func render(r report) string {
 			s.PerTrialSecs.N, s.PerTrialSecs.Min, s.PerTrialSecs.Median, s.PerTrialSecs.P90, s.PerTrialSecs.Max)
 	}
 	return b.String()
-}
-
-func captureEnv(ctx context.Context, ownerURL string) (env, error) {
-	sh := func(name string, args ...string) string {
-		out, err := exec.Command(name, args...).Output()
-		if err != nil {
-			return "unavailable"
-		}
-		return strings.TrimSpace(string(out))
-	}
-	e := env{
-		CPUs: runtime.NumCPU(), GoVersion: runtime.Version(), OS: sh("uname", "-srm"),
-		Machine: sh("sysctl", "-n", "machdep.cpu.brand_string"), MemoryBytes: sh("sysctl", "-n", "hw.memsize"),
-		LoadAvg: sh("uptime"), Commit: sh("git", "rev-parse", "HEAD"),
-		// bench/results is where this program writes, so it must not count as dirty.
-		Dirty: sh("git", "status", "--porcelain", "--", ".", ":(exclude)bench/results") != "",
-	}
-	pool, err := pgxpool.New(ctx, ownerURL)
-	if err != nil {
-		return e, err
-	}
-	defer pool.Close()
-	if err := pool.QueryRow(ctx, `SELECT version()`).Scan(&e.Postgres); err != nil {
-		return e, fmt.Errorf("postgres version: %w", err)
-	}
-	// Docker Desktop runs containers in a VM; the engine's totals bound them.
-	name := sh("docker", "ps", "--filter", "publish=5433", "--format", "{{.Names}}")
-	if name != "" && name != "unavailable" {
-		e.Docker = sh("docker", "inspect", "-f", "{{.Name}} image={{.Config.Image}} memory_limit={{.HostConfig.Memory}} nano_cpus={{.HostConfig.NanoCpus}} (0 means no limit)", name)
-	} else {
-		e.Docker = "unavailable"
-	}
-	e.DockerInfo = sh("docker", "info", "-f", "cpus={{.NCPU}} memory_bytes={{.MemTotal}} server={{.ServerVersion}}")
-	return e, nil
 }

@@ -35,11 +35,13 @@ func run() error {
 	var (
 		mockURL, workerID string
 		commitDelay       time.Duration
+		lean              bool
 		cfg               worker.Config
 	)
 	flag.StringVar(&mockURL, "mock-url", "", "base URL of the mock LLM (required)")
 	flag.StringVar(&workerID, "worker-id", "", "name recorded on this worker's attempts and effects (required)")
 	flag.DurationVar(&commitDelay, "commit-delay", 0, "hold each completion transaction open this long after the effect insert (tests only)")
+	flag.BoolVar(&lean, "lean", false, "skip the attempt and commit-start bookkeeping writes (throughput runs)")
 	flag.IntVar(&cfg.Concurrency, "concurrency", 4, "jobs in flight at once")
 	flag.DurationVar(&cfg.Lease, "lease", 30*time.Second, "lease per claimed job")
 	flag.DurationVar(&cfg.PollInterval, "poll", time.Second, "wait between polls when the queue is empty")
@@ -69,7 +71,7 @@ func run() error {
 	cfg.Pool = pool
 	cfg.Handlers = map[string]worker.Handler{
 		benchwork.Kind: benchwork.Handler(benchwork.HandlerConfig{
-			Pool: pool, MockURL: mockURL, WorkerID: workerID, CommitDelay: commitDelay,
+			Pool: pool, MockURL: mockURL, WorkerID: workerID, CommitDelay: commitDelay, Lean: lean,
 		}),
 	}
 	return worker.Run(ctx, cfg)

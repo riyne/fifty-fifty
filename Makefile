@@ -6,7 +6,7 @@ GOOSE   := go tool -modfile=tools/go.mod goose -dir migrations postgres
 export MIGRATE_DATABASE_URL ?= postgres://fifty:fifty@localhost:5433/fifty?sslmode=disable
 export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test bench-recovery
+.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test bench-recovery bench-queue
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -51,3 +51,8 @@ test:
 # bench/results/recovery-*.json and .txt; commit those with the code's commit hash noted.
 bench-recovery:
 	go run ./bench/recovery
+
+# Queue benchmarks: throughput vs worker count, latency, retry behavior (bench/README.md).
+# About 30 minutes. Needs a clean working tree; writes bench/results/queue-*.json and .txt.
+bench-queue:
+	go run ./bench/queue

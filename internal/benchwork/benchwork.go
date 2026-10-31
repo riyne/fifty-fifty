@@ -119,6 +119,12 @@ type HandlerConfig struct {
 
 	// CallTimeout bounds one mock call. Default 30s.
 	CallTimeout time.Duration
+
+	// Lean skips the bookkeeping writes (the attempt row and the commit-start
+	// marker) that the recovery harness needs, leaving the effect row. Throughput
+	// runs use it so the measured database work is the queue's plus one insert, not
+	// three extra statements per job.
+	Lean bool
 }
 
 // Handler is the worker handler for Kind.
@@ -130,11 +136,13 @@ func Handler(c HandlerConfig) worker.Handler {
 	body := []byte(`{"model":"mock","max_tokens":256,"messages":[{"role":"user","content":"extract"}]}`)
 
 	return func(ctx context.Context, job queue.Claimed) (worker.Commit, error) {
-		_, err := c.Pool.Exec(ctx,
-			`INSERT INTO bench.attempts (job_id, attempt, worker) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-			job.ID, job.Attempt, c.WorkerID)
-		if err != nil {
-			return nil, fmt.Errorf("record attempt: %w", err)
+		if !c.Lean {
+			_, err := c.Pool.Exec(ctx,
+				`INSERT INTO bench.attempts (job_id, attempt, worker) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+				job.ID, job.Attempt, c.WorkerID)
+			if err != nil {
+				return nil, fmt.Errorf("record attempt: %w", err)
+			}
 		}
 		if err := callMock(ctx, client, c.MockURL, body); err != nil {
 			return nil, err
@@ -142,10 +150,12 @@ func Handler(c HandlerConfig) worker.Handler {
 		return func(ctx context.Context, tx pgx.Tx) error {
 			// Outside tx on purpose: the harness must see that phase two began even
 			// when this transaction is rolled back by a killed worker.
-			if _, err := c.Pool.Exec(ctx,
-				`UPDATE bench.attempts SET commit_started_at = clock_timestamp() WHERE job_id = $1 AND attempt = $2`,
-				job.ID, job.Attempt); err != nil {
-				return fmt.Errorf("record commit start: %w", err)
+			if !c.Lean {
+				if _, err := c.Pool.Exec(ctx,
+					`UPDATE bench.attempts SET commit_started_at = clock_timestamp() WHERE job_id = $1 AND attempt = $2`,
+					job.ID, job.Attempt); err != nil {
+					return fmt.Errorf("record commit start: %w", err)
+				}
 			}
 			if _, err := tx.Exec(ctx,
 				`INSERT INTO bench.effects (job_id, attempt, worker) VALUES ($1, $2, $3)`,
