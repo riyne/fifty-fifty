@@ -1,0 +1,64 @@
+Queue benchmarks: real worker processes, Postgres, mock LLM
+Workers: 4 slots each, poll 1s, lease 30s, max_attempts 5. Mock LLM latency: log-normal, median 800ms, sigma 0.40 unless a scenario says 0 ms. 3 run(s) per configuration.
+Commit 0568c7534a539acbb6d1be9af77040a420b5a470 (dirty: false), Apple M3 Pro, 11 CPUs, 19327352832 bytes RAM, Darwin 25.6.0 arm64, go1.27.3
+Postgres: PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+Docker postgres container: /fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit)
+Docker engine: cpus=11 memory_bytes=8214716416 server=29.9.1
+Load average at start: 1:50  up 72 days, 21:53, 1 user, load averages: 9.58 5.67 3.37
+Rows in the jobs table at start: 67186
+
+== throughput-llm: closed loop, 40 jobs per slot preloaded, mock LLM with simulated latency of 800ms median (sigma 0.40)
+   jobs/s = (succeeded-1) / (first success to last success). Theoretical max = slots / mean latency.
+   1 workers  jobs/s per run [4.423 4.421 4.263]: median 4.4 (min 4.3, max 4.4); theoretical max 4.6; median/theoretical 96%; all runs: 480 jobs, 480 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   2 workers  jobs/s per run [9.080 8.900 8.647]: median 8.9 (min 8.6, max 9.1); theoretical max 9.2; median/theoretical 96%; all runs: 960 jobs, 960 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   4 workers  jobs/s per run [17.9 17.8 17.2]: median 17.8 (min 17.2, max 17.9); theoretical max 18.5; median/theoretical 96%; all runs: 1920 jobs, 1920 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   8 workers  jobs/s per run [35.4 35.9 35.9]: median 35.9 (min 35.4, max 35.9); theoretical max 36.9; median/theoretical 97%; all runs: 3840 jobs, 3840 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+
+== throughput-queue: closed loop, 10000 jobs preloaded, mock LLM with simulated latency of 0 ms (the handler still makes one local HTTP call and writes one row)
+   1 workers  jobs/s per run [308 302 303]: median 303 (min 302, max 308); all runs: 30000 jobs, 30000 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   2 workers  jobs/s per run [571 569 571]: median 571 (min 569, max 571); all runs: 30000 jobs, 30000 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   4 workers  jobs/s per run [979 908 960]: median 960 (min 908, max 979); all runs: 30000 jobs, 30000 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   8 workers  jobs/s per run [1168 1181 1294]: median 1181 (min 1168, max 1294); all runs: 30000 jobs, 30000 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+
+== latency: open loop, Poisson arrivals at 50% of theoretical capacity for 30s, mock LLM with simulated latency of 800ms median (sigma 0.40)
+   end-to-end = enqueue to success; queue wait = enqueue to the handler's start. Seconds; per-run p50/p99, then the median of those across runs.
+   1 workers  offered 2.31 jobs/s of a theoretical max 4.6 (jobs per run [82.0 68.0 62.0]); all runs: 212 jobs, 212 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+              end-to-end p50 [1.313 1.243 1.433] -> 1.313   p99 [3.045 2.819 3.205] -> 3.045
+              queue wait p50 [0.449 0.351 0.534] -> 0.449   p99 [1.423 1.083 2.048] -> 1.423
+   2 workers  offered 4.62 jobs/s of a theoretical max 9.2 (jobs per run [143 132 135]); all runs: 410 jobs, 410 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+              end-to-end p50 [1.153 1.079 1.146] -> 1.146   p99 [2.414 2.719 2.347] -> 2.414
+              queue wait p50 [0.239 0.233 0.208] -> 0.233   p99 [0.993 1.040 0.935] -> 0.993
+   4 workers  offered 9.23 jobs/s of a theoretical max 18.5 (jobs per run [298 255 301]); all runs: 854 jobs, 854 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+              end-to-end p50 [0.989 1.020 0.988] -> 0.989   p99 [2.398 2.412 2.193] -> 2.398
+              queue wait p50 [0.126 0.135 0.113] -> 0.126   p99 [1.047 0.727 0.685] -> 0.727
+   8 workers  offered 18.46 jobs/s of a theoretical max 36.9 (jobs per run [576 532 598]); all runs: 1706 jobs, 1706 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+              end-to-end p50 [0.896 0.917 0.955] -> 0.917   p99 [2.246 2.194 2.249] -> 2.246
+              queue wait p50 [0.063 0.072 0.071] -> 0.071   p99 [0.800 0.517 0.843] -> 0.800
+
+== latency-low: open loop, Poisson arrivals at 1.0 jobs/s for 40s (workers mostly idle), mock LLM with simulated latency of 800ms median (sigma 0.40)
+   end-to-end = enqueue to success; queue wait = enqueue to the handler's start. Seconds; per-run p50/p99, then the median of those across runs.
+   1 workers  offered 1.00 jobs/s of a theoretical max 4.6 (jobs per run [52.0 39.0 38.0]); all runs: 129 jobs, 129 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+              end-to-end p50 [1.305 1.402 1.509] -> 1.402   p99 [2.715 2.334 2.418] -> 2.418
+              queue wait p50 [0.455 0.611 0.631] -> 0.611   p99 [1.047 1.014 1.046] -> 1.046
+   4 workers  offered 1.00 jobs/s of a theoretical max 18.5 (jobs per run [52.0 39.0 38.0]); all runs: 129 jobs, 129 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+              end-to-end p50 [1.076 1.010 1.079] -> 1.076   p99 [2.643 2.374 2.263] -> 2.374
+              queue wait p50 [0.231 0.122 0.196] -> 0.196   p99 [0.667 0.769 1.015] -> 0.769
+
+== retry: closed loop, 500 jobs per run on 4 workers, mock LLM with simulated latency of 800ms median (sigma 0.40), max_attempts 5, backoff: full jitter, base 2 s, cap 5 min
+   Faults are drawn per request, mutually exclusive; the 429 retry-after header is not used by the worker (it backs off on its own schedule).
+   no faults  configured faults 429 0%, 5xx 0%, malformed 0% (any: 0%)
+              over 3 runs: 1500 jobs, 1500 succeeded (100.00%), 0 dead-lettered (0.00%; if every attempt failed independently with p=0.00: 0.00%)
+              observed at the mock: 1500 requests, 429 0.0%, 5xx 0.0%, malformed 0.0%; 1.000 attempts per job
+              jobs by number of attempts: 1: 1500, 2: 0, 3: 0, 4: 0, 5: 0
+              succeeded jobs, enqueue to success: p99 per run [326 28.3 327] s; first to last success per run [326 28.6 328] s; all runs: 1500 jobs, 1500 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   moderate   configured faults 429 10%, 5xx 5%, malformed 5% (any: 20%)
+              over 3 runs: 1500 jobs, 1499 succeeded (99.93%), 1 dead-lettered (0.07%; if every attempt failed independently with p=0.20: 0.03%)
+              observed at the mock: 1866 requests, 429 10.0%, 5xx 4.8%, malformed 4.8%; 1.244 attempts per job
+              jobs by number of attempts: 1: 1201, 2: 246, 3: 40, 4: 12, 5: 1
+              succeeded jobs, enqueue to success: p99 per run [361 30.2 30.8] s; first to last success per run [366 35.7 35.1] s; all runs: 1500 jobs, 1499 succeeded, 1 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   heavy      configured faults 429 20%, 5xx 15%, malformed 10% (any: 45%)
+              over 3 runs: 1500 jobs, 1472 succeeded (98.13%), 28 dead-lettered (1.87%; if every attempt failed independently with p=0.45: 1.85%)
+              observed at the mock: 2661 requests, 429 19.7%, 5xx 14.2%, malformed 10.8%; 1.774 attempts per job
+              jobs by number of attempts: 1: 837, 2: 361, 3: 168, 4: 72, 5: 62
+              succeeded jobs, enqueue to success: p99 per run [47.5 37.1 45.2] s; first to last success per run [51.3 48.9 48.7] s; all runs: 1500 jobs, 1472 succeeded, 28 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+

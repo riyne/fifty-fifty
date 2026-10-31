@@ -21,7 +21,7 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 
 ## Queue throughput, latency and retries (`bench/queue`, CLAIMS row 4)
 
-`make bench-queue` (about 30 minutes; `go run ./bench/queue --help` for the knobs). Same preconditions as above. Every scenario starts real `benchworker` processes (4 jobs in flight each, 1 s poll, 30 s lease, the worker defaults), enqueues `mock.extract` jobs, and reads the outcome from Postgres. The mock LLM runs in the harness process. Each configuration is run 3 times with a different mock seed; the per-run values are all reported, not just a summary.
+`make bench-queue` (about 30 minutes; `go run ./bench/queue --help` for the knobs; `--scenarios retry` runs one scenario). Same preconditions as above, and stop the machine from sleeping while it runs (`caffeinate -ims make bench-queue` on macOS): a sleep during a run shows up as a span of minutes instead of seconds, and the harness does not detect it. Every scenario starts real `benchworker` processes (4 jobs in flight each, 1 s poll, 30 s lease, the worker defaults), enqueues `mock.extract` jobs, and reads the outcome from Postgres. The mock LLM runs in the harness process. Each configuration is run 3 times with a different mock seed; the per-run values are all reported, not just a summary.
 
 **Scenarios.**
 - `throughput-llm`: closed loop. 40 jobs per slot are enqueued up front (160 / 320 / 640 / 1280 for 1 / 2 / 4 / 8 workers), then drained. Mock LLM with simulated latency of 800 ms median (log-normal, sigma 0.4). With that latency throughput is bounded by `slots / mean latency`, so the result is reported next to that bound; the ratio says how much the queue costs on top of the LLM wait, and the absolute number mostly says how many slots there were.
@@ -37,3 +37,7 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 - The retry scenario ignores the 429 `retry-after` header: the worker backs off on its own jittered schedule (base 2 s, cap 5 minutes). Honoring the header is not built.
 - One machine; Postgres in Docker Desktop with the default `max_connections` (the harness stays well under it); a mock LLM. The dev database also holds old rows from other tests (the count is recorded). Numbers from another machine, a real LLM or a bigger table would differ.
 - The harness deletes each run's rows afterwards.
+
+**Recorded runs.**
+- `bench/results/queue-20261031T085001Z.{json,txt}`: all scenarios, commit 0568c75. The `throughput-llm`, `throughput-queue`, `latency` and `latency-low` sections are used for CLAIMS row 4. Its `retry` section is kept but not used: 3 of its 9 runs have about 300 s stalls, and the machine went to sleep by accident during that recording.
+- `bench/results/queue-20261031T094708Z.{json,txt}`: `retry` only, commit 0568c75, run under `caffeinate`. Used for CLAIMS row 18. The mock's seed is the run index, so the same fault draws repeat across recordings (the request counts of the two `retry` recordings are identical); the 3 runs per mix are three seeds, and re-recording does not add independent samples.

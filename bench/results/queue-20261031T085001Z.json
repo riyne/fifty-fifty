@@ -1,0 +1,2333 @@
+{
+  "started_at": "2026-10-31T08:50:01.274417Z",
+  "options": {
+    "runs_per_configuration": 3,
+    "scenarios": [
+      "throughput-llm",
+      "throughput-queue",
+      "latency",
+      "latency-low",
+      "retry"
+    ],
+    "worker_counts": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "throughput_jobs_per_slot": 40,
+    "queue_bound_jobs": 10000,
+    "llm_latency_median": "800ms",
+    "llm_latency_sigma": 0.4,
+    "latency_scenario_offered_load_fraction_of_capacity": 0.5,
+    "latency_scenario_arrival_duration": "30s",
+    "latency_low_scenario_offered_jobs_per_second": 1,
+    "latency_low_scenario_worker_counts": [
+      1,
+      4
+    ],
+    "latency_low_scenario_arrival_duration": "40s",
+    "retry_scenario_jobs": 500,
+    "retry_scenario_workers": 4,
+    "concurrency_per_worker": 4,
+    "poll_interval": "1s",
+    "lease": "30s",
+    "max_attempts": 5
+  },
+  "environment": {
+    "machine": "Apple M3 Pro",
+    "cpus": 11,
+    "memory_bytes": "19327352832",
+    "os": "Darwin 25.6.0 arm64",
+    "go_version": "go1.27.3",
+    "postgres_version": "PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+    "docker_postgres_container": "/fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit)",
+    "docker_engine": "cpus=11 memory_bytes=8214716416 server=29.9.1",
+    "load_average_at_start": "1:50  up 72 days, 21:53, 1 user, load averages: 9.58 5.67 3.37",
+    "jobs_table_rows_at_start": 67186,
+    "commit": "0568c7534a539acbb6d1be9af77040a420b5a470",
+    "working_tree_dirty": false
+  },
+  "results": [
+    {
+      "scenario": "throughput-llm",
+      "label": "1 workers",
+      "workers": 1,
+      "mock_llm_simulated_latency": "800ms",
+      "theoretical_max_jobs_per_second": 4.615581732678628,
+      "runs": [
+        {
+          "run": "load-1793436601292098000",
+          "enqueued": 160,
+          "succeeded": 160,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 160,
+          "jobs_by_attempts": {
+            "1": 160
+          },
+          "throughput_jobs_per_second": 4.422837999955939,
+          "first_to_last_success_seconds": 35.949768,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 160,
+            "min": 0.81248,
+            "median": 19.67198,
+            "p90": 33.881487,
+            "p99": 36.703516,
+            "max": 36.762248
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 160,
+            "ok": 160,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793436638216149000",
+          "enqueued": 160,
+          "succeeded": 160,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 160,
+          "jobs_by_attempts": {
+            "1": 160
+          },
+          "throughput_jobs_per_second": 4.42058207444516,
+          "first_to_last_success_seconds": 35.968114,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 160,
+            "min": 0.667371,
+            "median": 18.395284,
+            "p90": 32.424111,
+            "p99": 36.231496,
+            "max": 36.635485
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 160,
+            "ok": 160,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793436675035629000",
+          "enqueued": 160,
+          "succeeded": 160,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 160,
+          "jobs_by_attempts": {
+            "1": 160
+          },
+          "throughput_jobs_per_second": 4.262648302963305,
+          "first_to_last_success_seconds": 37.300755,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 160,
+            "min": 0.954728,
+            "median": 18.98936,
+            "p90": 34.628621,
+            "p99": 37.902506,
+            "max": 38.255483
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 160,
+            "ok": 160,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "throughput-llm",
+      "label": "2 workers",
+      "workers": 2,
+      "mock_llm_simulated_latency": "800ms",
+      "theoretical_max_jobs_per_second": 9.231163465357255,
+      "runs": [
+        {
+          "run": "load-1793436713445488000",
+          "enqueued": 320,
+          "succeeded": 320,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 320,
+          "jobs_by_attempts": {
+            "1": 320
+          },
+          "throughput_jobs_per_second": 9.079856713599089,
+          "first_to_last_success_seconds": 35.132713,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 320,
+            "min": 0.536025,
+            "median": 18.396703,
+            "p90": 32.320765,
+            "p99": 35.425971,
+            "max": 35.668738
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 320,
+            "ok": 320,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793436749205793000",
+          "enqueued": 320,
+          "succeeded": 320,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 320,
+          "jobs_by_attempts": {
+            "1": 320
+          },
+          "throughput_jobs_per_second": 8.900418573572045,
+          "first_to_last_success_seconds": 35.841011,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 320,
+            "min": 0.727302,
+            "median": 18.505969,
+            "p90": 32.628801,
+            "p99": 35.731489,
+            "max": 36.568313
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 320,
+            "ok": 320,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793436785879579000",
+          "enqueued": 320,
+          "succeeded": 320,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 320,
+          "jobs_by_attempts": {
+            "1": 320
+          },
+          "throughput_jobs_per_second": 8.647102295030402,
+          "first_to_last_success_seconds": 36.890971,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 320,
+            "min": 1.00173,
+            "median": 19.384423,
+            "p90": 34.245585,
+            "p99": 37.55528,
+            "max": 37.892701
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 320,
+            "ok": 320,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "throughput-llm",
+      "label": "4 workers",
+      "workers": 4,
+      "mock_llm_simulated_latency": "800ms",
+      "theoretical_max_jobs_per_second": 18.46232693071451,
+      "runs": [
+        {
+          "run": "load-1793436823914484000",
+          "enqueued": 640,
+          "succeeded": 640,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 640,
+          "jobs_by_attempts": {
+            "1": 640
+          },
+          "throughput_jobs_per_second": 17.909476927240494,
+          "first_to_last_success_seconds": 35.679434,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 640,
+            "min": 0.668939,
+            "median": 18.237643,
+            "p90": 32.331929,
+            "p99": 35.347459,
+            "max": 36.348373
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 640,
+            "ok": 640,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793436860499849000",
+          "enqueued": 640,
+          "succeeded": 640,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 640,
+          "jobs_by_attempts": {
+            "1": 640
+          },
+          "throughput_jobs_per_second": 17.777098223391857,
+          "first_to_last_success_seconds": 35.945124,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 640,
+            "min": 0.836848,
+            "median": 18.395316,
+            "p90": 32.855835,
+            "p99": 36.115079,
+            "max": 36.781972
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 640,
+            "ok": 640,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793436897378324000",
+          "enqueued": 640,
+          "succeeded": 640,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 640,
+          "jobs_by_attempts": {
+            "1": 640
+          },
+          "throughput_jobs_per_second": 17.204027325487758,
+          "first_to_last_success_seconds": 37.142466,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 640,
+            "min": 0.960468,
+            "median": 19.207839,
+            "p90": 33.494862,
+            "p99": 36.723881,
+            "max": 38.102934
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 640,
+            "ok": 640,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "throughput-llm",
+      "label": "8 workers",
+      "workers": 8,
+      "mock_llm_simulated_latency": "800ms",
+      "theoretical_max_jobs_per_second": 36.92465386142902,
+      "runs": [
+        {
+          "run": "load-1793436935646761000",
+          "enqueued": 1280,
+          "succeeded": 1280,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 1280,
+          "jobs_by_attempts": {
+            "1": 1280
+          },
+          "throughput_jobs_per_second": 35.4419040133481,
+          "first_to_last_success_seconds": 36.087226,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 1280,
+            "min": 0.993993,
+            "median": 18.512068,
+            "p90": 32.899735,
+            "p99": 36.167426,
+            "max": 37.081219
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 1280,
+            "ok": 1280,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793436972882651000",
+          "enqueued": 1280,
+          "succeeded": 1280,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 1280,
+          "jobs_by_attempts": {
+            "1": 1280
+          },
+          "throughput_jobs_per_second": 35.8773054499815,
+          "first_to_last_success_seconds": 35.649277,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 1280,
+            "min": 1.069157,
+            "median": 18.756993,
+            "p90": 32.826194,
+            "p99": 36.080768,
+            "max": 36.718434
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 1280,
+            "ok": 1280,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437009756931000",
+          "enqueued": 1280,
+          "succeeded": 1280,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 1280,
+          "jobs_by_attempts": {
+            "1": 1280
+          },
+          "throughput_jobs_per_second": 35.85393203400814,
+          "first_to_last_success_seconds": 35.672517,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 1280,
+            "min": 0.950467,
+            "median": 19.136115,
+            "p90": 32.328768,
+            "p99": 35.471913,
+            "max": 36.622984
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 1280,
+            "ok": 1280,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "throughput-queue",
+      "label": "1 workers",
+      "workers": 1,
+      "mock_llm_simulated_latency": "0s",
+      "runs": [
+        {
+          "run": "load-1793437046539914000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 308.4872401544935,
+          "first_to_last_success_seconds": 32.41301,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 4.30758,
+            "median": 20.428086,
+            "p90": 33.455664,
+            "p99": 36.39463,
+            "max": 36.72059
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437083405878000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 301.95290054162484,
+          "first_to_last_success_seconds": 33.114436,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 4.369518,
+            "median": 20.782588,
+            "p90": 34.169784,
+            "p99": 37.159033,
+            "max": 37.483954
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437121048035000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 302.8705824823157,
+          "first_to_last_success_seconds": 33.014101,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 4.310336,
+            "median": 20.793181,
+            "p90": 33.975738,
+            "p99": 36.98344,
+            "max": 37.324437
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "throughput-queue",
+      "label": "2 workers",
+      "workers": 2,
+      "mock_llm_simulated_latency": "0s",
+      "runs": [
+        {
+          "run": "load-1793437158577593000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 571.1319447879512,
+          "first_to_last_success_seconds": 17.507338,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 4.270021,
+            "median": 13.073334,
+            "p90": 20.054906,
+            "p99": 21.607198,
+            "max": 21.777359
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437180503046000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 568.911584915189,
+          "first_to_last_success_seconds": 17.575666,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 4.279763,
+            "median": 13.066856,
+            "p90": 20.110879,
+            "p99": 21.671492,
+            "max": 21.855429
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437202487511000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 571.3631356436312,
+          "first_to_last_success_seconds": 17.500254,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 4.234305,
+            "median": 13.012095,
+            "p90": 19.989438,
+            "p99": 21.554783,
+            "max": 21.734559
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "throughput-queue",
+      "label": "4 workers",
+      "workers": 4,
+      "mock_llm_simulated_latency": "0s",
+      "runs": [
+        {
+          "run": "load-1793437224340498000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 979.2304046192958,
+          "first_to_last_success_seconds": 10.21108,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 4.447497,
+            "median": 9.57332,
+            "p90": 13.6395,
+            "p99": 14.55768,
+            "max": 14.658577
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437239112195000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 908.0688991714768,
+          "first_to_last_success_seconds": 11.011279,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 3.48381,
+            "median": 9.138482,
+            "p90": 13.450279,
+            "p99": 14.395385,
+            "max": 14.495089
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437253803777000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 960.2581432032134,
+          "first_to_last_success_seconds": 10.412825,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 3.957382,
+            "median": 9.126039,
+            "p90": 13.327468,
+            "p99": 14.272507,
+            "max": 14.370207
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "throughput-queue",
+      "label": "8 workers",
+      "workers": 8,
+      "mock_llm_simulated_latency": "0s",
+      "runs": [
+        {
+          "run": "load-1793437268385313000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 1167.9191905977775,
+          "first_to_last_success_seconds": 8.56138,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 4.340517,
+            "median": 8.315194,
+            "p90": 11.316831,
+            "p99": 12.682881,
+            "max": 12.901897
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437283003555000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 1180.6144035901823,
+          "first_to_last_success_seconds": 8.469319,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 3.821997,
+            "median": 8.289311,
+            "p90": 11.503346,
+            "p99": 12.209357,
+            "max": 12.291316
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437295487371000",
+          "enqueued": 10000,
+          "succeeded": 10000,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 10000,
+          "jobs_by_attempts": {
+            "1": 10000
+          },
+          "throughput_jobs_per_second": 1294.0357492420399,
+          "first_to_last_success_seconds": 7.726989,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 10000,
+            "min": 3.880102,
+            "median": 7.786986,
+            "p90": 10.846936,
+            "p99": 11.527994,
+            "max": 11.607091
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 10000,
+            "ok": 10000,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "latency",
+      "label": "1 workers",
+      "workers": 1,
+      "mock_llm_simulated_latency": "800ms",
+      "offered_jobs_per_second": 2.307790866339314,
+      "theoretical_max_jobs_per_second": 4.615581732678628,
+      "runs": [
+        {
+          "run": "load-1793437307206226000",
+          "enqueued": 82,
+          "succeeded": 82,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 82,
+          "jobs_by_attempts": {
+            "1": 82
+          },
+          "throughput_jobs_per_second": 2.782430142196264,
+          "first_to_last_success_seconds": 29.111243,
+          "bookkeeping_attempt_rows": 82,
+          "end_to_end_seconds": {
+            "n": 82,
+            "min": 0.577956,
+            "median": 1.313126,
+            "p90": 2.068387,
+            "p99": 3.044974,
+            "max": 3.044974
+          },
+          "queue_wait_seconds": {
+            "n": 82,
+            "min": 0.031867,
+            "median": 0.448623,
+            "p90": 0.864911,
+            "p99": 1.423058,
+            "max": 1.423058
+          },
+          "mock_llm_stats": {
+            "requests": 82,
+            "ok": 82,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437339915787000",
+          "enqueued": 68,
+          "succeeded": 68,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 68,
+          "jobs_by_attempts": {
+            "1": 68
+          },
+          "throughput_jobs_per_second": 2.248253191160513,
+          "first_to_last_success_seconds": 29.800914,
+          "bookkeeping_attempt_rows": 68,
+          "end_to_end_seconds": {
+            "n": 68,
+            "min": 0.554086,
+            "median": 1.242841,
+            "p90": 1.839272,
+            "p99": 2.818708,
+            "max": 2.818708
+          },
+          "queue_wait_seconds": {
+            "n": 68,
+            "min": 0.028291,
+            "median": 0.350511,
+            "p90": 0.856145,
+            "p99": 1.083287,
+            "max": 1.083287
+          },
+          "mock_llm_stats": {
+            "requests": 68,
+            "ok": 68,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437373522005000",
+          "enqueued": 62,
+          "succeeded": 62,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 62,
+          "jobs_by_attempts": {
+            "1": 62
+          },
+          "throughput_jobs_per_second": 2.041635713014832,
+          "first_to_last_success_seconds": 29.878004,
+          "bookkeeping_attempt_rows": 62,
+          "end_to_end_seconds": {
+            "n": 62,
+            "min": 0.535867,
+            "median": 1.432973,
+            "p90": 2.290164,
+            "p99": 3.205438,
+            "max": 3.205438
+          },
+          "queue_wait_seconds": {
+            "n": 62,
+            "min": 0.01546,
+            "median": 0.533808,
+            "p90": 1.096669,
+            "p99": 2.048092,
+            "max": 2.048092
+          },
+          "mock_llm_stats": {
+            "requests": 62,
+            "ok": 62,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "latency",
+      "label": "2 workers",
+      "workers": 2,
+      "mock_llm_simulated_latency": "800ms",
+      "offered_jobs_per_second": 4.615581732678628,
+      "theoretical_max_jobs_per_second": 9.231163465357255,
+      "runs": [
+        {
+          "run": "load-1793437407458588000",
+          "enqueued": 143,
+          "succeeded": 143,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 143,
+          "jobs_by_attempts": {
+            "1": 143
+          },
+          "throughput_jobs_per_second": 4.87577905592625,
+          "first_to_last_success_seconds": 29.123551,
+          "bookkeeping_attempt_rows": 143,
+          "end_to_end_seconds": {
+            "n": 143,
+            "min": 0.402295,
+            "median": 1.152925,
+            "p90": 1.803494,
+            "p99": 2.413854,
+            "max": 2.566362
+          },
+          "queue_wait_seconds": {
+            "n": 143,
+            "min": 0.026398,
+            "median": 0.238959,
+            "p90": 0.593155,
+            "p99": 0.992746,
+            "max": 0.996746
+          },
+          "mock_llm_stats": {
+            "requests": 143,
+            "ok": 143,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437440152681000",
+          "enqueued": 132,
+          "succeeded": 132,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 132,
+          "jobs_by_attempts": {
+            "1": 132
+          },
+          "throughput_jobs_per_second": 4.376815480509022,
+          "first_to_last_success_seconds": 29.930437,
+          "bookkeeping_attempt_rows": 132,
+          "end_to_end_seconds": {
+            "n": 132,
+            "min": 0.28874,
+            "median": 1.079338,
+            "p90": 1.675387,
+            "p99": 2.719228,
+            "max": 3.114096
+          },
+          "queue_wait_seconds": {
+            "n": 132,
+            "min": 0.019883,
+            "median": 0.232978,
+            "p90": 0.596291,
+            "p99": 1.03988,
+            "max": 1.049145
+          },
+          "mock_llm_stats": {
+            "requests": 132,
+            "ok": 132,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437473868431000",
+          "enqueued": 135,
+          "succeeded": 135,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 135,
+          "jobs_by_attempts": {
+            "1": 135
+          },
+          "throughput_jobs_per_second": 4.514456249073737,
+          "first_to_last_success_seconds": 29.682423,
+          "bookkeeping_attempt_rows": 135,
+          "end_to_end_seconds": {
+            "n": 135,
+            "min": 0.357027,
+            "median": 1.146369,
+            "p90": 1.840383,
+            "p99": 2.34669,
+            "max": 2.386364
+          },
+          "queue_wait_seconds": {
+            "n": 135,
+            "min": 0.015577,
+            "median": 0.208001,
+            "p90": 0.58826,
+            "p99": 0.934773,
+            "max": 0.994731
+          },
+          "mock_llm_stats": {
+            "requests": 135,
+            "ok": 135,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "latency",
+      "label": "4 workers",
+      "workers": 4,
+      "mock_llm_simulated_latency": "800ms",
+      "offered_jobs_per_second": 9.231163465357255,
+      "theoretical_max_jobs_per_second": 18.46232693071451,
+      "runs": [
+        {
+          "run": "load-1793437506625471000",
+          "enqueued": 298,
+          "succeeded": 298,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 298,
+          "jobs_by_attempts": {
+            "1": 298
+          },
+          "throughput_jobs_per_second": 9.992031943281324,
+          "first_to_last_success_seconds": 29.723684,
+          "bookkeeping_attempt_rows": 298,
+          "end_to_end_seconds": {
+            "n": 298,
+            "min": 0.282321,
+            "median": 0.989441,
+            "p90": 1.537983,
+            "p99": 2.397522,
+            "max": 2.495442
+          },
+          "queue_wait_seconds": {
+            "n": 298,
+            "min": 0.011847,
+            "median": 0.125738,
+            "p90": 0.374331,
+            "p99": 1.047111,
+            "max": 1.056538
+          },
+          "mock_llm_stats": {
+            "requests": 298,
+            "ok": 298,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437540003497000",
+          "enqueued": 255,
+          "succeeded": 255,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 255,
+          "jobs_by_attempts": {
+            "1": 255
+          },
+          "throughput_jobs_per_second": 8.397904623608559,
+          "first_to_last_success_seconds": 30.24564,
+          "bookkeeping_attempt_rows": 255,
+          "end_to_end_seconds": {
+            "n": 255,
+            "min": 0.3,
+            "median": 1.0199,
+            "p90": 1.578505,
+            "p99": 2.411683,
+            "max": 2.885894
+          },
+          "queue_wait_seconds": {
+            "n": 255,
+            "min": 0.011053,
+            "median": 0.135087,
+            "p90": 0.393521,
+            "p99": 0.727061,
+            "max": 0.80133
+          },
+          "mock_llm_stats": {
+            "requests": 255,
+            "ok": 255,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437573031230000",
+          "enqueued": 301,
+          "succeeded": 301,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 301,
+          "jobs_by_attempts": {
+            "1": 301
+          },
+          "throughput_jobs_per_second": 9.76850022067042,
+          "first_to_last_success_seconds": 30.710958,
+          "bookkeeping_attempt_rows": 301,
+          "end_to_end_seconds": {
+            "n": 301,
+            "min": 0.321759,
+            "median": 0.988213,
+            "p90": 1.612875,
+            "p99": 2.193477,
+            "max": 2.424904
+          },
+          "queue_wait_seconds": {
+            "n": 301,
+            "min": 0.013012,
+            "median": 0.112532,
+            "p90": 0.313141,
+            "p99": 0.685181,
+            "max": 0.841502
+          },
+          "mock_llm_stats": {
+            "requests": 301,
+            "ok": 301,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "latency",
+      "label": "8 workers",
+      "workers": 8,
+      "mock_llm_simulated_latency": "800ms",
+      "offered_jobs_per_second": 18.46232693071451,
+      "theoretical_max_jobs_per_second": 36.92465386142902,
+      "runs": [
+        {
+          "run": "load-1793437606770845000",
+          "enqueued": 576,
+          "succeeded": 576,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 576,
+          "jobs_by_attempts": {
+            "1": 576
+          },
+          "throughput_jobs_per_second": 19.327860377956814,
+          "first_to_last_success_seconds": 29.749801,
+          "bookkeeping_attempt_rows": 576,
+          "end_to_end_seconds": {
+            "n": 576,
+            "min": 0.264645,
+            "median": 0.896427,
+            "p90": 1.478234,
+            "p99": 2.246106,
+            "max": 2.838331
+          },
+          "queue_wait_seconds": {
+            "n": 576,
+            "min": 0.008173,
+            "median": 0.063296,
+            "p90": 0.191359,
+            "p99": 0.800006,
+            "max": 1.066744
+          },
+          "mock_llm_stats": {
+            "requests": 576,
+            "ok": 576,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437640140778000",
+          "enqueued": 532,
+          "succeeded": 532,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 532,
+          "jobs_by_attempts": {
+            "1": 532
+          },
+          "throughput_jobs_per_second": 17.318409625983016,
+          "first_to_last_success_seconds": 30.661014,
+          "bookkeeping_attempt_rows": 532,
+          "end_to_end_seconds": {
+            "n": 532,
+            "min": 0.333729,
+            "median": 0.917035,
+            "p90": 1.458921,
+            "p99": 2.194342,
+            "max": 2.714865
+          },
+          "queue_wait_seconds": {
+            "n": 532,
+            "min": 0.010079,
+            "median": 0.07206,
+            "p90": 0.214165,
+            "p99": 0.516751,
+            "max": 0.896906
+          },
+          "mock_llm_stats": {
+            "requests": 532,
+            "ok": 532,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437673628890000",
+          "enqueued": 598,
+          "succeeded": 598,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 598,
+          "jobs_by_attempts": {
+            "1": 598
+          },
+          "throughput_jobs_per_second": 19.37260472912864,
+          "first_to_last_success_seconds": 30.816713,
+          "bookkeeping_attempt_rows": 598,
+          "end_to_end_seconds": {
+            "n": 598,
+            "min": 0.284793,
+            "median": 0.95451,
+            "p90": 1.574971,
+            "p99": 2.248562,
+            "max": 2.464415
+          },
+          "queue_wait_seconds": {
+            "n": 598,
+            "min": 0.0085,
+            "median": 0.071041,
+            "p90": 0.225469,
+            "p99": 0.843342,
+            "max": 0.897092
+          },
+          "mock_llm_stats": {
+            "requests": 598,
+            "ok": 598,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "latency-low",
+      "label": "1 workers",
+      "workers": 1,
+      "mock_llm_simulated_latency": "800ms",
+      "offered_jobs_per_second": 1,
+      "theoretical_max_jobs_per_second": 4.615581732678628,
+      "runs": [
+        {
+          "run": "load-1793437707551472000",
+          "enqueued": 52,
+          "succeeded": 52,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 52,
+          "jobs_by_attempts": {
+            "1": 52
+          },
+          "throughput_jobs_per_second": 1.3296645368482503,
+          "first_to_last_success_seconds": 38.355539,
+          "bookkeeping_attempt_rows": 52,
+          "end_to_end_seconds": {
+            "n": 52,
+            "min": 0.531228,
+            "median": 1.305263,
+            "p90": 1.981065,
+            "p99": 2.715176,
+            "max": 2.715176
+          },
+          "queue_wait_seconds": {
+            "n": 52,
+            "min": 0.043448,
+            "median": 0.455161,
+            "p90": 0.838845,
+            "p99": 1.046581,
+            "max": 1.046581
+          },
+          "mock_llm_stats": {
+            "requests": 52,
+            "ok": 52,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437749483238000",
+          "enqueued": 39,
+          "succeeded": 39,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 39,
+          "jobs_by_attempts": {
+            "1": 39
+          },
+          "throughput_jobs_per_second": 0.9785993708945182,
+          "first_to_last_success_seconds": 38.831008,
+          "bookkeeping_attempt_rows": 39,
+          "end_to_end_seconds": {
+            "n": 39,
+            "min": 0.673877,
+            "median": 1.401607,
+            "p90": 2.099737,
+            "p99": 2.333743,
+            "max": 2.333743
+          },
+          "queue_wait_seconds": {
+            "n": 39,
+            "min": 0.054978,
+            "median": 0.610849,
+            "p90": 0.885239,
+            "p99": 1.014107,
+            "max": 1.014107
+          },
+          "mock_llm_stats": {
+            "requests": 39,
+            "ok": 39,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437792237526000",
+          "enqueued": 38,
+          "succeeded": 38,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 38,
+          "jobs_by_attempts": {
+            "1": 38
+          },
+          "throughput_jobs_per_second": 0.9615983615195571,
+          "first_to_last_success_seconds": 38.477603,
+          "bookkeeping_attempt_rows": 38,
+          "end_to_end_seconds": {
+            "n": 38,
+            "min": 0.549931,
+            "median": 1.509381,
+            "p90": 2.217491,
+            "p99": 2.418057,
+            "max": 2.418057
+          },
+          "queue_wait_seconds": {
+            "n": 38,
+            "min": 0.03744,
+            "median": 0.631361,
+            "p90": 1.000735,
+            "p99": 1.046177,
+            "max": 1.046177
+          },
+          "mock_llm_stats": {
+            "requests": 38,
+            "ok": 38,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "latency-low",
+      "label": "4 workers",
+      "workers": 4,
+      "mock_llm_simulated_latency": "800ms",
+      "offered_jobs_per_second": 1,
+      "theoretical_max_jobs_per_second": 18.46232693071451,
+      "runs": [
+        {
+          "run": "load-1793437834779362000",
+          "enqueued": 52,
+          "succeeded": 52,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 52,
+          "jobs_by_attempts": {
+            "1": 52
+          },
+          "throughput_jobs_per_second": 1.3430758121526765,
+          "first_to_last_success_seconds": 37.97254,
+          "bookkeeping_attempt_rows": 52,
+          "end_to_end_seconds": {
+            "n": 52,
+            "min": 0.351546,
+            "median": 1.076449,
+            "p90": 1.685703,
+            "p99": 2.642712,
+            "max": 2.642712
+          },
+          "queue_wait_seconds": {
+            "n": 52,
+            "min": 0.025799,
+            "median": 0.231367,
+            "p90": 0.518003,
+            "p99": 0.667184,
+            "max": 0.667184
+          },
+          "mock_llm_stats": {
+            "requests": 52,
+            "ok": 52,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437876357348000",
+          "enqueued": 39,
+          "succeeded": 39,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 39,
+          "jobs_by_attempts": {
+            "1": 39
+          },
+          "throughput_jobs_per_second": 1.0020520179442203,
+          "first_to_last_success_seconds": 37.922183,
+          "bookkeeping_attempt_rows": 39,
+          "end_to_end_seconds": {
+            "n": 39,
+            "min": 0.515647,
+            "median": 1.010466,
+            "p90": 1.748035,
+            "p99": 2.374069,
+            "max": 2.374069
+          },
+          "queue_wait_seconds": {
+            "n": 39,
+            "min": 0.017905,
+            "median": 0.121657,
+            "p90": 0.427759,
+            "p99": 0.76928,
+            "max": 0.76928
+          },
+          "mock_llm_stats": {
+            "requests": 39,
+            "ok": 39,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793437918246509000",
+          "enqueued": 38,
+          "succeeded": 38,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 38,
+          "jobs_by_attempts": {
+            "1": 38
+          },
+          "throughput_jobs_per_second": 0.9734270976900129,
+          "first_to_last_success_seconds": 38.010037,
+          "bookkeeping_attempt_rows": 38,
+          "end_to_end_seconds": {
+            "n": 38,
+            "min": 0.497139,
+            "median": 1.078625,
+            "p90": 1.807234,
+            "p99": 2.262892,
+            "max": 2.262892
+          },
+          "queue_wait_seconds": {
+            "n": 38,
+            "min": 0.027181,
+            "median": 0.196033,
+            "p90": 0.522755,
+            "p99": 1.01471,
+            "max": 1.01471
+          },
+          "mock_llm_stats": {
+            "requests": 38,
+            "ok": 38,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "retry",
+      "label": "no faults",
+      "workers": 4,
+      "mock_llm_simulated_latency": "800ms",
+      "mock_llm_fault_rates": {
+        "429": 0,
+        "5xx": 0,
+        "malformed_200": 0
+      },
+      "runs": [
+        {
+          "run": "load-1793438258491495000",
+          "enqueued": 500,
+          "succeeded": 500,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 500,
+          "jobs_by_attempts": {
+            "1": 500
+          },
+          "throughput_jobs_per_second": 1.5315383429770426,
+          "first_to_last_success_seconds": 325.816198,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 500,
+            "min": 0.60851,
+            "median": 312.358762,
+            "p90": 323.556709,
+            "p99": 325.923213,
+            "max": 326.424708
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 500,
+            "ok": 500,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793438286813715000",
+          "enqueued": 500,
+          "succeeded": 500,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 500,
+          "jobs_by_attempts": {
+            "1": 500
+          },
+          "throughput_jobs_per_second": 17.449321784376735,
+          "first_to_last_success_seconds": 28.5971,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 500,
+            "min": 0.738347,
+            "median": 14.555112,
+            "p90": 25.632185,
+            "p99": 28.25696,
+            "max": 29.335447
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 500,
+            "ok": 500,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793438614729151000",
+          "enqueued": 500,
+          "succeeded": 500,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 500,
+          "jobs_by_attempts": {
+            "1": 500
+          },
+          "throughput_jobs_per_second": 1.5216030631656554,
+          "first_to_last_success_seconds": 327.943609,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 500,
+            "min": 0.852774,
+            "median": 313.398454,
+            "p90": 325.10015,
+            "p99": 327.422442,
+            "max": 328.796383
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 500,
+            "ok": 500,
+            "rate_limited": 0,
+            "server_error": 0,
+            "malformed": 0,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "retry",
+      "label": "moderate",
+      "workers": 4,
+      "mock_llm_simulated_latency": "800ms",
+      "mock_llm_fault_rates": {
+        "429": 0.1,
+        "5xx": 0.05,
+        "malformed_200": 0.05
+      },
+      "runs": [
+        {
+          "run": "load-1793438645161038000",
+          "enqueued": 500,
+          "succeeded": 499,
+          "dead": 1,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 631,
+          "jobs_by_attempts": {
+            "1": 398,
+            "2": 81,
+            "3": 14,
+            "4": 6,
+            "5": 1
+          },
+          "throughput_jobs_per_second": 1.360288630739856,
+          "first_to_last_success_seconds": 366.098774,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 499,
+            "min": 0.573338,
+            "median": 342.40897,
+            "p90": 353.97793,
+            "p99": 360.649803,
+            "max": 366.672112
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 631,
+            "ok": 499,
+            "rate_limited": 75,
+            "server_error": 27,
+            "malformed": 30,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793439019203319000",
+          "enqueued": 500,
+          "succeeded": 500,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 604,
+          "jobs_by_attempts": {
+            "1": 410,
+            "2": 79,
+            "3": 8,
+            "4": 3
+          },
+          "throughput_jobs_per_second": 13.968743383042652,
+          "first_to_last_success_seconds": 35.722612,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 500,
+            "min": 0.767482,
+            "median": 15.264889,
+            "p90": 26.741001,
+            "p99": 30.151631,
+            "max": 36.490094
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 604,
+            "ok": 500,
+            "rate_limited": 50,
+            "server_error": 24,
+            "malformed": 30,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793439055836039000",
+          "enqueued": 500,
+          "succeeded": 500,
+          "dead": 0,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 631,
+          "jobs_by_attempts": {
+            "1": 393,
+            "2": 86,
+            "3": 18,
+            "4": 3
+          },
+          "throughput_jobs_per_second": 14.22829762610406,
+          "first_to_last_success_seconds": 35.070956,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 500,
+            "min": 0.796726,
+            "median": 16.14166,
+            "p90": 28.041144,
+            "p99": 30.765475,
+            "max": 35.867682
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 631,
+            "ok": 500,
+            "rate_limited": 62,
+            "server_error": 39,
+            "malformed": 30,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "retry",
+      "label": "heavy",
+      "workers": 4,
+      "mock_llm_simulated_latency": "800ms",
+      "mock_llm_fault_rates": {
+        "429": 0.2,
+        "5xx": 0.15,
+        "malformed_200": 0.1
+      },
+      "runs": [
+        {
+          "run": "load-1793439091874732000",
+          "enqueued": 500,
+          "succeeded": 491,
+          "dead": 9,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 877,
+          "jobs_by_attempts": {
+            "1": 288,
+            "2": 115,
+            "3": 54,
+            "4": 18,
+            "5": 25
+          },
+          "throughput_jobs_per_second": 9.542384066508781,
+          "first_to_last_success_seconds": 51.349851,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 491,
+            "min": 0.756597,
+            "median": 16.334504,
+            "p90": 29.178814,
+            "p99": 47.53458,
+            "max": 52.106448
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 877,
+            "ok": 491,
+            "rate_limited": 188,
+            "server_error": 110,
+            "malformed": 88,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793439144071168000",
+          "enqueued": 500,
+          "succeeded": 488,
+          "dead": 12,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 873,
+          "jobs_by_attempts": {
+            "1": 282,
+            "2": 120,
+            "3": 59,
+            "4": 21,
+            "5": 18
+          },
+          "throughput_jobs_per_second": 9.961033948778645,
+          "first_to_last_success_seconds": 48.890507,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 488,
+            "min": 0.745339,
+            "median": 16.658531,
+            "p90": 29.229076,
+            "p99": 37.060786,
+            "max": 49.635846
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 873,
+            "ok": 488,
+            "rate_limited": 147,
+            "server_error": 141,
+            "malformed": 97,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        },
+        {
+          "run": "load-1793439196631058000",
+          "enqueued": 500,
+          "succeeded": 493,
+          "dead": 7,
+          "unfinished": 0,
+          "duplicate_effects": 0,
+          "missing_effects": 0,
+          "total_attempts": 911,
+          "jobs_by_attempts": {
+            "1": 267,
+            "2": 126,
+            "3": 55,
+            "4": 33,
+            "5": 19
+          },
+          "throughput_jobs_per_second": 10.092770821093882,
+          "first_to_last_success_seconds": 48.747763,
+          "bookkeeping_attempt_rows": 0,
+          "end_to_end_seconds": {
+            "n": 493,
+            "min": 0.936848,
+            "median": 17.772591,
+            "p90": 31.091416,
+            "p99": 45.163567,
+            "max": 49.684611
+          },
+          "queue_wait_seconds": {
+            "n": 0,
+            "min": 0,
+            "median": 0,
+            "p90": 0,
+            "p99": 0,
+            "max": 0
+          },
+          "mock_llm_stats": {
+            "requests": 911,
+            "ok": 493,
+            "rate_limited": 189,
+            "server_error": 127,
+            "malformed": 102,
+            "timeouts": 0,
+            "bad_requests": 0
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+Queue benchmarks: real worker processes, Postgres, mock LLM
+Workers: 4 slots each, poll 1s, lease 30s, max_attempts 5. Mock LLM latency: log-normal, median 800ms, sigma 0.40 unless a scenario says 0 ms. 3 run(s) per configuration.
+Commit 0568c7534a539acbb6d1be9af77040a420b5a470 (dirty: false), Apple M3 Pro, 11 CPUs, 19327352832 bytes RAM, Darwin 25.6.0 arm64, go1.27.3
+Postgres: PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+Docker postgres container: /fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit)
+Docker engine: cpus=11 memory_bytes=8214716416 server=29.9.1
+Load average at start: 2:47  up 72 days, 22:50, 1 user, load averages: 3.87 4.06 3.84
+Rows in the jobs table at start: 67186
+
+== retry: closed loop, 500 jobs per run on 4 workers, mock LLM with simulated latency of 800ms median (sigma 0.40), max_attempts 5, backoff: full jitter, base 2 s, cap 5 min
+   Faults are drawn per request, mutually exclusive; the 429 retry-after header is not used by the worker (it backs off on its own schedule).
+   no faults  configured faults 429 0%, 5xx 0%, malformed 0% (any: 0%)
+              over 3 runs: 1500 jobs, 1500 succeeded (100.00%), 0 dead-lettered (0.00%; if every attempt failed independently with p=0.00: 0.00%)
+              observed at the mock: 1500 requests, 429 0.0%, 5xx 0.0%, malformed 0.0%; 1.000 attempts per job
+              jobs by number of attempts: 1: 1500, 2: 0, 3: 0, 4: 0, 5: 0
+              succeeded jobs, enqueue to success: p99 per run [28.0 28.1 29.0] s; first to last success per run [27.5 28.4 29.5] s; all runs: 1500 jobs, 1500 succeeded, 0 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   moderate   configured faults 429 10%, 5xx 5%, malformed 5% (any: 20%)
+              over 3 runs: 1500 jobs, 1499 succeeded (99.93%), 1 dead-lettered (0.07%; if every attempt failed independently with p=0.20: 0.03%)
+              observed at the mock: 1866 requests, 429 10.0%, 5xx 4.8%, malformed 4.8%; 1.244 attempts per job
+              jobs by number of attempts: 1: 1201, 2: 246, 3: 40, 4: 12, 5: 1
+              succeeded jobs, enqueue to success: p99 per run [31.9 30.3 30.8] s; first to last success per run [39.3 39.6 36.4] s; all runs: 1500 jobs, 1499 succeeded, 1 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+   heavy      configured faults 429 20%, 5xx 15%, malformed 10% (any: 45%)
+              over 3 runs: 1500 jobs, 1472 succeeded (98.13%), 28 dead-lettered (1.87%; if every attempt failed independently with p=0.45: 1.85%)
+              observed at the mock: 2661 requests, 429 19.7%, 5xx 14.2%, malformed 10.8%; 1.774 attempts per job
+              jobs by number of attempts: 1: 837, 2: 362, 3: 169, 4: 67, 5: 65
+              succeeded jobs, enqueue to success: p99 per run [44.3 36.5 43.2] s; first to last success per run [49.0 52.3 46.5] s; all runs: 1500 jobs, 1472 succeeded, 28 dead, 0 unfinished, 0 duplicate effects, 0 missing effects
+
