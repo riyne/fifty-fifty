@@ -1,6 +1,6 @@
 # Benchmarks
 
-Every number quoted anywhere comes from a run recorded here, with its environment, and has a row in `docs/CLAIMS.md`. Raw output is committed under `bench/results/`. Benchmarks that use the mock LLM must say "mock LLM with simulated latency of X ms".
+Every number quoted anywhere comes from a run recorded here, with its environment, and has a row in `docs/CLAIMS.md`. Raw output is committed under `bench/results/`. Benchmarks that use the mock LLM must say "mock LLM with simulated latency of X ms", and those that use the mock payment provider must say "mock payment provider with simulated latency of X ms" (settlement is simulated).
 
 ## Crash recovery (`bench/recovery`, CLAIMS row 5)
 
