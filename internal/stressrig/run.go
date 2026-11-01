@@ -2,6 +2,7 @@ package stressrig
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -56,10 +57,13 @@ type Params struct {
 	Logf         func(format string, args ...any)
 }
 
+// MockLatency is the mock payment provider's simulated median latency in a stress run.
+const MockLatency = "100ms"
+
 // DefaultMockFlags is a provider that misbehaves a little in every way the settlement
 // code handles, with webhooks on.
 var DefaultMockFlags = []string{
-	"--latency-median", "100ms",
+	"--latency-median", MockLatency,
 	"--rate-decline", "0.05", "--rate-timeout-before", "0.03", "--rate-5xx-before", "0.03",
 	"--rate-timeout-after", "0.03", "--rate-5xx-after", "0.03", "--rate-read-error", "0.1",
 	"--webhook-drop", "0.2", "--webhook-duplicate", "0.3", "--webhook-delay-max", "200ms", "--webhook-out-of-order", "0.3",
@@ -70,7 +74,7 @@ var DefaultMockFlags = []string{
 // reconcile meet in Resolve far more often than with DefaultMockFlags. For the
 // resolve_* negative controls.
 var ResolveRaceMockFlags = []string{
-	"--latency-median", "100ms",
+	"--latency-median", MockLatency,
 	"--rate-decline", "0.05", "--rate-timeout-after", "0.05", "--rate-5xx-after", "0.05", "--rate-read-error", "0.1",
 	"--webhook-duplicate", "0.8", "--webhook-delay-max", "120ms", "--webhook-out-of-order", "0.3",
 }
@@ -158,6 +162,31 @@ func (r Result) ServerErrors() []string {
 
 // LogErrorPrefix starts the name of every counter of an error the api logged.
 const LogErrorPrefix = "server_log_error/"
+
+// WorkerLogErrorPrefix starts the name of every counter of an error a worker process
+// logged. Unlike LogErrorPrefix counters these do not make a run unclean.
+const WorkerLogErrorPrefix = "worker_log_error/"
+
+var volatileRE = regexp.MustCompile(`127\.0\.0\.1:\d+|\[::1\]:\d+|\d+(\.\d+)?(ms|µs|s)\b`)
+
+// workerLogErrors counts the WARN and ERROR lines of a worker's JSON log by cause (a
+// failed attempt that will be retried is logged at WARN, only the last attempt at ERROR),
+// each class starting with the level.
+func workerLogErrors(log string) map[string]int {
+	out := map[string]int{}
+	for _, line := range strings.Split(log, "\n") {
+		var rec struct {
+			Level string `json:"level"`
+			Msg   string `json:"msg"`
+			Err   string `json:"err"`
+		}
+		if !strings.HasPrefix(line, "{") || json.Unmarshal([]byte(line), &rec) != nil || (rec.Level != "ERROR" && rec.Level != "WARN") {
+			continue
+		}
+		out[rec.Level+" "+volatileRE.ReplaceAllString(classifyLogError(rec.Msg, rec.Err), "<v>")]++
+	}
+	return out
+}
 
 // errCapture is a slog handler that counts errors by cause and prints nothing.
 type errCapture struct{ stats *Stats }
@@ -275,6 +304,7 @@ func Run(ctx context.Context, p Params) (Result, error) {
 	defer slog.SetDefault(prev)
 
 	var mockURL string
+	var workers []*settlerig.Proc
 	if p.SettleWorkers > 0 {
 		flags := append([]string{"--seed", strconv.FormatUint(p.Seed, 10), "--timeout-hold", p.TimeoutHold.String(),
 			"--webhook-url", api.URL + settlements.WebhookPath}, p.MockFlags...)
@@ -284,7 +314,6 @@ func Run(ctx context.Context, p Params) (Result, error) {
 		}
 		defer mock.Stop()
 		mockURL = url
-		var workers []*settlerig.Proc
 		for i := 1; i <= p.Workers; i++ {
 			w, err := settlerig.StartWorker(settlerig.WorkerSpec{Bin: p.Bins.Worker, DatabaseURL: scratch.AppURL, PaymentsURL: mockURL,
 				Name: fmt.Sprintf("worker-%d", i), Concurrency: p.WorkerConcurrency, Lease: p.Lease, Poll: p.Poll, Env: workerEnv})
@@ -405,6 +434,13 @@ func Run(ctx context.Context, p Params) (Result, error) {
 		return res, err
 	}
 	res.Checked, res.Violations, res.Examples = res.Report.Checked, res.Report.Counts, res.Report.Examples
+	// What the worker processes logged: the same causes as the api's, kept apart because
+	// workers legitimately log some failures (a provider that timed out).
+	for _, w := range workers {
+		for class, n := range workerLogErrors(w.Log()) {
+			env.Stats.Add(WorkerLogErrorPrefix+class, int64(n))
+		}
+	}
 	res.Counts, res.Unexpected = env.Stats.Snapshot()
 	res.Elapsed = time.Since(start).Seconds()
 	return res, nil

@@ -6,7 +6,7 @@ GOOSE   := go tool -modfile=tools/go.mod goose -dir migrations postgres
 export MIGRATE_DATABASE_URL ?= postgres://fifty:fifty@localhost:5433/fifty?sslmode=disable
 export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement
+.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -79,3 +79,12 @@ bench-queue:
 # as `caffeinate -ims make bench-settlement` on a quiet machine.
 bench-settlement:
 	go run ./bench/settlement
+
+# Ledger stress benchmark and its negative controls (bench/README.md): the production
+# build first (nothing disabled), then the unsafe_controls build with one protection off at
+# a time. Needs a clean git tree and a quiet machine; run as `caffeinate -ims make
+# bench-stress`. Writes bench/results/stress-production-*.{json,txt} and
+# stress-controls-*.{json,txt}. The unsafe_controls build must never be shipped.
+bench-stress:
+	go run ./bench/stress
+	go run -tags unsafe_controls ./bench/stress

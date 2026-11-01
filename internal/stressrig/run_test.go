@@ -107,3 +107,29 @@ func TestVacuousAndClean(t *testing.T) {
 		t.Error("a violated invariant must make a run unclean")
 	}
 }
+
+func TestWorkerLogErrors(t *testing.T) {
+	log := strings.Join([]string{
+		`{"time":"2026-11-01T00:00:00Z","level":"INFO","msg":"worker started"}`,
+		`{"time":"2026-11-01T00:00:01Z","level":"ERROR","msg":"job failed","err":"post: Post \"http://127.0.0.1:50234/v1/payments\": context deadline exceeded after 10.0s"}`,
+		`{"time":"2026-11-01T00:00:02Z","level":"ERROR","msg":"job failed","err":"post: Post \"http://127.0.0.1:50999/v1/payments\": context deadline exceeded after 10.0s"}`,
+		`{"time":"2026-11-01T00:00:03Z","level":"WARN","msg":"job failed; will retry","err":"ERROR: duplicate key value violates unique constraint \"ledger_transactions_one_settlement_posting\" (SQLSTATE 23505)"}`,
+		`2026/11/01 00:00:04 not json at all`,
+	}, "\n")
+	got := workerLogErrors(log)
+	if len(got) != 2 {
+		t.Fatalf("classes = %v", got)
+	}
+	if got["WARN unique:ledger_transactions_one_settlement_posting"] != 1 {
+		t.Errorf("constraint class missing: %v", got)
+	}
+	n := 0
+	for k, v := range got {
+		if strings.HasPrefix(k, "ERROR client_gone") { // a deadline in the message is a client going away
+			n += v
+		}
+	}
+	if n != 2 {
+		t.Errorf("the two timeouts should count together: %v", got)
+	}
+}
