@@ -57,14 +57,21 @@ func WithWebhookSecret(secret string) Option {
 	return func(c *config) { c.webhookSecret = secret }
 }
 
-// New starts the stack. The test is skipped if TEST_DATABASE_URL is unset.
+// New starts the stack on the shared test database. The test is skipped if
+// TEST_DATABASE_URL is unset.
 func New(t testing.TB, opts ...Option) *Stack {
+	t.Helper()
+	return NewOn(t, testutil.Pool(t), opts...)
+}
+
+// NewOn starts the stack on pool, for tests that bring their own database (the
+// end-to-end tests use a scratch one).
+func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 	t.Helper()
 	cfg := config{joinRate: rate.Inf, joinBurst: 1_000_000}
 	for _, o := range opts {
 		o(&cfg)
 	}
-	pool := testutil.Pool(t)
 	iss := authtest.NewIssuer(t)
 	verifier, err := auth.NewOIDCVerifier(context.Background(), iss.URL, "", ClientID)
 	if err != nil {
