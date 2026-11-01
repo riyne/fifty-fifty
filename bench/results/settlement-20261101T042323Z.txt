@@ -1,0 +1,68 @@
+Settlement fault-injection benchmark (simulated settlement: mock payment provider with simulated latency of 300ms median, log-normal sigma 0.4)
+started 2026-11-01T04:23:23Z, commit eb91381a2492723c9af9c8d62bfb7405fb8005b0 (working tree dirty: false)
+machine: Apple M3 Pro, 11 CPUs, 19327352832 bytes RAM, Darwin 25.6.0 arm64; PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+docker: /fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit); engine cpus=11 memory_bytes=8214716416 server=29.9.1
+load average at start: 21:23  up 73 days, 17:27, 1 user, load averages: 3.10 3.42 3.57
+per run: 300 settlements arriving at 8/s (Poisson), 3 worker processes x 4 jobs in flight, lease 5s, poll 1s, timeout faults held 3s then aborted; scratch database per run (jobs table empty at start)
+reconcile schedule (placeholders, not tuned): first check 5s, doubling to 5m0s, 12 checks. Times of resolving an unknown settlement measure THESE constants.
+
+== no faults ()
+run seed 1: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 0, watchdog requeues 0, worker killed false
+    end to end s: p50 0.10 p90 0.34 p99 0.75 max 0.80 (n=300) | went unknown: 0, unknown to final s: min 0.0 median 0.0 p90 0.0 max 0.0
+    provider saw: 300 create calls (0 replays), 300 payments (300 charges, 0 declined); timeouts before/after 0/0, 5xx before/after 0/0; reads 0 (0 failed); webhooks: 600 events, 0 dropped, 0 duplicated, 0 reordered payments, 600 deliveries (0 refused or failed)
+run seed 2: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 0, watchdog requeues 0, worker killed false
+    end to end s: p50 0.11 p90 0.33 p99 0.81 max 0.88 (n=300) | went unknown: 0, unknown to final s: min 0.0 median 0.0 p90 0.0 max 0.0
+    provider saw: 300 create calls (0 replays), 300 payments (300 charges, 0 declined); timeouts before/after 0/0, 5xx before/after 0/0; reads 0 (0 failed); webhooks: 600 events, 0 dropped, 0 duplicated, 0 reordered payments, 600 deliveries (0 refused or failed)
+run seed 3: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 0, watchdog requeues 0, worker killed false
+    end to end s: p50 0.12 p90 0.42 p99 0.67 max 0.86 (n=300) | went unknown: 0, unknown to final s: min 0.0 median 0.0 p90 0.0 max 0.0
+    provider saw: 300 create calls (0 replays), 300 payments (300 charges, 0 declined); timeouts before/after 0/0, 5xx before/after 0/0; reads 0 (0 failed); webhooks: 600 events, 0 dropped, 0 duplicated, 0 reordered payments, 600 deliveries (0 refused or failed)
+over 3 runs (median [min-max] of the per-run value): end-to-end p50 0.11 [0.10-0.12] s, p99 0.75 [0.67-0.81] s
+
+== lost responses, webhooks delivered (--rate-timeout-after 0.1 --rate-5xx-after 0.1 --webhook-duplicate 0.3 --webhook-delay-max 200ms --webhook-out-of-order 0.3)
+run seed 1: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 6, watchdog requeues 0, worker killed false
+    end to end s: p50 0.31 p90 0.58 p99 0.95 max 1.03 (n=300) | went unknown: 6, unknown to final s: min 0.0 median 0.0 p90 0.2 max 0.2
+    provider saw: 324 create calls (24 replays), 300 payments (300 charges, 0 declined); timeouts before/after 0/29, 5xx before/after 0/25; reads 0 (0 failed); webhooks: 600 events, 0 dropped, 170 duplicated, 80 reordered payments, 770 deliveries (0 refused or failed)
+run seed 2: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 3, watchdog requeues 0, worker killed false
+    end to end s: p50 0.32 p90 0.57 p99 1.06 max 1.13 (n=300) | went unknown: 3, unknown to final s: min 0.0 median 0.1 p90 0.2 max 0.2
+    provider saw: 322 create calls (22 replays), 300 payments (300 charges, 0 declined); timeouts before/after 0/36, 5xx before/after 0/27; reads 0 (0 failed); webhooks: 600 events, 0 dropped, 184 duplicated, 89 reordered payments, 784 deliveries (0 refused or failed)
+run seed 3: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 8, watchdog requeues 0, worker killed false
+    end to end s: p50 0.31 p90 0.55 p99 0.86 max 1.03 (n=300) | went unknown: 8, unknown to final s: min 0.0 median 0.0 p90 0.1 max 0.1
+    provider saw: 331 create calls (31 replays), 300 payments (300 charges, 0 declined); timeouts before/after 0/39, 5xx before/after 0/29; reads 0 (0 failed); webhooks: 600 events, 0 dropped, 169 duplicated, 83 reordered payments, 769 deliveries (0 refused or failed)
+over 3 runs (median [min-max] of the per-run value): end-to-end p50 0.31 [0.31-0.32] s, p99 0.95 [0.86-1.06] s; unknown-to-final median 0.04 [0.01-0.09] s
+
+== lost responses, no webhooks (--rate-timeout-after 0.1 --rate-5xx-after 0.1)
+run seed 1: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 34, watchdog requeues 0, worker killed false
+    end to end s: p50 0.54 p90 5.72 p99 9.02 max 9.10 (n=300) | went unknown: 34, unknown to final s: min 5.2 median 5.5 p90 5.8 max 6.0
+    provider saw: 323 create calls (23 replays), 300 payments (300 charges, 0 declined); timeouts before/after 0/28, 5xx before/after 0/29; reads 34 (0 failed); webhooks: 0 events, 0 dropped, 0 duplicated, 0 reordered payments, 0 deliveries (0 refused or failed)
+run seed 2: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 45, watchdog requeues 0, worker killed false
+    end to end s: p50 0.51 p90 5.84 p99 8.81 max 12.18 (n=300) | went unknown: 45, unknown to final s: min 5.2 median 5.4 p90 5.7 max 6.1
+    provider saw: 321 create calls (21 replays), 300 payments (300 charges, 0 declined); timeouts before/after 0/27, 5xx before/after 0/39; reads 45 (0 failed); webhooks: 0 events, 0 dropped, 0 duplicated, 0 reordered payments, 0 deliveries (0 refused or failed)
+run seed 3: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 34, watchdog requeues 0, worker killed false
+    end to end s: p50 0.53 p90 5.77 p99 11.47 max 11.71 (n=300) | went unknown: 34, unknown to final s: min 5.2 median 5.4 p90 5.8 max 6.1
+    provider saw: 336 create calls (36 replays), 300 payments (300 charges, 0 declined); timeouts before/after 0/45, 5xx before/after 0/25; reads 34 (0 failed); webhooks: 0 events, 0 dropped, 0 duplicated, 0 reordered payments, 0 deliveries (0 refused or failed)
+over 3 runs (median [min-max] of the per-run value): end-to-end p50 0.53 [0.51-0.54] s, p99 9.02 [8.81-11.47] s; unknown-to-final median 5.45 [5.42-5.48] s
+
+== requests never arrive (--rate-timeout-before 0.1 --rate-5xx-before 0.1 --webhook-duplicate 0.3 --webhook-delay-max 200ms --webhook-out-of-order 0.3)
+run seed 1: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 47, watchdog requeues 0, worker killed false
+    end to end s: p50 0.34 p90 5.64 p99 22.55 max 37.58 (n=300) | went unknown: 38, unknown to final s: min 5.3 median 5.6 p90 22.4 max 37.2
+    provider saw: 367 create calls (0 replays), 300 payments (300 charges, 0 declined); timeouts before/after 28/0, 5xx before/after 39/0; reads 47 (0 failed); webhooks: 600 events, 0 dropped, 178 duplicated, 79 reordered payments, 778 deliveries (0 refused or failed)
+run seed 2: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 37, watchdog requeues 0, worker killed false
+    end to end s: p50 0.35 p90 5.62 p99 11.62 max 22.28 (n=300) | went unknown: 35, unknown to final s: min 5.3 median 5.6 p90 8.8 max 22.1
+    provider saw: 363 create calls (0 replays), 300 payments (300 charges, 0 declined); timeouts before/after 35/0, 5xx before/after 28/0; reads 37 (0 failed); webhooks: 600 events, 0 dropped, 163 duplicated, 99 reordered payments, 763 deliveries (0 refused or failed)
+run seed 3: final map[succeeded:300], unresolved 0, anomalies 0 | postings 300, provider charges 300 | dead jobs 0, execute jobs retried 0, reconcile jobs 45, watchdog requeues 0, worker killed false
+    end to end s: p50 0.37 p90 5.73 p99 16.63 max 36.60 (n=300) | went unknown: 37, unknown to final s: min 5.4 median 5.8 p90 16.6 max 36.6
+    provider saw: 374 create calls (0 replays), 300 payments (300 charges, 0 declined); timeouts before/after 35/0, 5xx before/after 39/0; reads 45 (0 failed); webhooks: 600 events, 0 dropped, 174 duplicated, 88 reordered payments, 774 deliveries (0 refused or failed)
+over 3 runs (median [min-max] of the per-run value): end-to-end p50 0.35 [0.34-0.37] s, p99 16.63 [11.62-22.55] s; unknown-to-final median 5.64 [5.63-5.78] s
+
+== everything, one worker killed (--rate-decline 0.05 --rate-timeout-before 0.05 --rate-5xx-before 0.05 --rate-timeout-after 0.05 --rate-5xx-after 0.05 --rate-read-error 0.1 --webhook-drop 0.2 --webhook-duplicate 0.3 --webhook-delay-max 300ms --webhook-out-of-order 0.3)
+run seed 1: final map[failed:14 succeeded:286], unresolved 0, anomalies 0 | postings 286, provider charges 286 | dead jobs 0, execute jobs retried 3, reconcile jobs 31, watchdog requeues 0, worker killed true
+    end to end s: p50 0.56 p90 3.54 p99 9.14 max 16.85 (n=300) | went unknown: 28, unknown to final s: min 0.0 median 5.8 p90 8.9 max 16.6
+    provider saw: 351 create calls (17 replays), 300 payments (286 charges, 14 declined); timeouts before/after 15/22, 5xx before/after 19/14; reads 27 (1 failed); webhooks: 475 events, 125 dropped, 138 duplicated, 86 reordered payments, 613 deliveries (0 refused or failed)
+run seed 2: final map[failed:12 succeeded:288], unresolved 0, anomalies 0 | postings 288, provider charges 288 | dead jobs 0, execute jobs retried 0, reconcile jobs 27, watchdog requeues 0, worker killed true
+    end to end s: p50 0.48 p90 1.43 p99 16.32 max 17.23 (n=300) | went unknown: 22, unknown to final s: min 0.0 median 5.8 p90 16.3 max 17.0
+    provider saw: 340 create calls (8 replays), 300 payments (288 charges, 12 declined); timeouts before/after 15/17, 5xx before/after 17/13; reads 23 (3 failed); webhooks: 484 events, 116 dropped, 149 duplicated, 92 reordered payments, 633 deliveries (0 refused or failed)
+run seed 3: final map[failed:15 succeeded:285], unresolved 0, anomalies 0 | postings 285, provider charges 285 | dead jobs 0, execute jobs retried 2, reconcile jobs 28, watchdog requeues 0, worker killed true
+    end to end s: p50 0.47 p90 3.38 p99 10.53 max 36.52 (n=300) | went unknown: 23, unknown to final s: min 0.0 median 5.6 p90 15.7 max 36.4
+    provider saw: 344 create calls (11 replays), 300 payments (285 charges, 15 declined); timeouts before/after 20/16, 5xx before/after 13/18; reads 22 (4 failed); webhooks: 477 events, 123 dropped, 136 duplicated, 90 reordered payments, 613 deliveries (0 refused or failed)
+over 3 runs (median [min-max] of the per-run value): end-to-end p50 0.48 [0.47-0.56] s, p99 10.53 [9.14-16.32] s; unknown-to-final median 5.77 [5.63-5.82] s
+
