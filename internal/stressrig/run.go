@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/mockpay"
@@ -42,6 +44,14 @@ type Params struct {
 	WebhookSecret              string
 	ResolveTimeout             time.Duration
 
+	// Controls names protections to switch off (see internal/controls), in this process and
+	// in the workers. Needs a binary and Bins built with the unsafe_controls tag; Run
+	// refuses otherwise. DropPostingIndex also drops the unique index on a settlement's
+	// ledger posting in the scratch database, the last layer behind Resolve's lock and
+	// guards. Both are for negative-control runs only.
+	Controls         []string
+	DropPostingIndex bool
+
 	APIPoolConns int // connections the api may use (default 30)
 	Logf         func(format string, args ...any)
 }
@@ -53,6 +63,16 @@ var DefaultMockFlags = []string{
 	"--rate-decline", "0.05", "--rate-timeout-before", "0.03", "--rate-5xx-before", "0.03",
 	"--rate-timeout-after", "0.03", "--rate-5xx-after", "0.03", "--rate-read-error", "0.1",
 	"--webhook-drop", "0.2", "--webhook-duplicate", "0.3", "--webhook-delay-max", "200ms", "--webhook-out-of-order", "0.3",
+}
+
+// ResolveRaceMockFlags makes more settlements resolve from two places at once: most
+// webhook events arrive twice and soon, so a duplicate, the worker's own completion and
+// reconcile meet in Resolve far more often than with DefaultMockFlags. For the
+// resolve_* negative controls.
+var ResolveRaceMockFlags = []string{
+	"--latency-median", "100ms",
+	"--rate-decline", "0.05", "--rate-timeout-after", "0.05", "--rate-5xx-after", "0.05", "--rate-read-error", "0.1",
+	"--webhook-duplicate", "0.8", "--webhook-delay-max", "120ms", "--webhook-out-of-order", "0.3",
 }
 
 // LockWaits is what a sampler saw of the database while the workload ran: direct
@@ -87,8 +107,10 @@ func (r Result) Vacuous(p Params) []string {
 			out = append(out, fmt.Sprintf("%s never happened (%s)", key, why))
 		}
 	}
-	need("replayed/create", "no retry or duplicate of a create was answered from the stored response")
-	need("duplicate_waited_and_replayed/create", "no concurrent duplicate waited on the first and replayed it")
+	if !slices.Contains(p.Controls, "idempotency_check") { // with the check off nothing is ever replayed
+		need("replayed/create", "no retry or duplicate of a create was answered from the stored response")
+		need("duplicate_waited_and_replayed/create", "no concurrent duplicate waited on the first and replayed it")
+	}
 	need("abandoned/create", "no request was abandoned by the client")
 	need("claim/409_not_claimable", "no claim was refused for arriving after finalize")
 	need("finalize/200", "no finalize succeeded")
@@ -104,7 +126,9 @@ func (r Result) Vacuous(p Params) []string {
 	if p.SettleWorkers > 0 {
 		need("settle/202", "no settlement was accepted")
 		need("refused/settle", "no settlement was refused for exceeding what the sender owes")
-		need("replayed/settle", "no settlement retry was answered from the stored response")
+		if !slices.Contains(p.Controls, "idempotency_check") {
+			need("replayed/settle", "no settlement retry was answered from the stored response")
+		}
 		if r.Counts["settlements_succeeded"] == 0 {
 			out = append(out, "no settlement reached succeeded")
 		}
@@ -125,7 +149,7 @@ func (r Result) Clean(p Params) bool {
 func (r Result) ServerErrors() []string {
 	var out []string
 	for _, k := range Keys(r.Counts) {
-		if strings.HasPrefix(k, LogErrorPrefix) && k != LogErrorPrefix+"client_gone" {
+		if strings.HasPrefix(k, LogErrorPrefix) && k != LogErrorPrefix+"client_gone" && k != LogErrorPrefix+"client_gone_io_timeout" {
 			out = append(out, fmt.Sprintf("%s=%d", k, r.Counts[k]))
 		}
 	}
@@ -143,12 +167,18 @@ var constraintRE = regexp.MustCompile(`violates ([a-z ]+?) constraint "([^"]+)"`
 var uuidRE = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
 
 // classifyLogError names the cause of a logged error so equal causes count together:
-// "client_gone" for a request the client abandoned, "unique:<constraint>" (or check,
+// "client_gone" (and "client_gone_io_timeout") for a request the client abandoned, "unique:<constraint>" (or check,
 // foreign key...) for a constraint the database enforced, otherwise the message with
 // ids replaced by <id> (a deadlock, a guarded update that moved no row, ...).
 func classifyLogError(msg, errText string) string {
 	if strings.Contains(errText, "context canceled") || strings.Contains(errText, "context deadline exceeded") {
 		return "client_gone"
+	}
+	// A client that gives up while the api is writing to the database leaves the
+	// connection with an expired deadline: an i/o timeout, not a database fault. It is
+	// counted apart so it stays visible.
+	if strings.Contains(errText, "i/o timeout") {
+		return "client_gone_io_timeout"
 	}
 	if m := constraintRE.FindStringSubmatch(errText); m != nil {
 		return m[1] + ":" + m[2]
@@ -188,6 +218,12 @@ func Run(ctx context.Context, p Params) (Result, error) {
 	}
 	start := time.Now()
 
+	workerEnv, undo, err := applyControls(p.Controls)
+	if err != nil {
+		return res, err
+	}
+	defer undo()
+
 	scratch, err := settlerig.NewScratch(ctx, p.OwnerURL, p.AppURL)
 	if err != nil {
 		return res, err
@@ -197,6 +233,18 @@ func Run(ctx context.Context, p Params) (Result, error) {
 			logf("drop %s: %v", scratch.Name, err)
 		}
 	}()
+
+	if p.DropPostingIndex {
+		conn, err := pgx.Connect(ctx, scratch.OwnerURL)
+		if err != nil {
+			return res, err
+		}
+		_, err = conn.Exec(ctx, `DROP INDEX ledger_transactions_one_settlement_posting`)
+		conn.Close(ctx)
+		if err != nil {
+			return res, fmt.Errorf("drop posting index: %w", err)
+		}
+	}
 
 	cfg, err := pgxpool.ParseConfig(scratch.AppURL)
 	if err != nil {
@@ -236,13 +284,25 @@ func Run(ctx context.Context, p Params) (Result, error) {
 		}
 		defer mock.Stop()
 		mockURL = url
+		var workers []*settlerig.Proc
 		for i := 1; i <= p.Workers; i++ {
 			w, err := settlerig.StartWorker(settlerig.WorkerSpec{Bin: p.Bins.Worker, DatabaseURL: scratch.AppURL, PaymentsURL: mockURL,
-				Name: fmt.Sprintf("worker-%d", i), Concurrency: p.WorkerConcurrency, Lease: p.Lease, Poll: p.Poll})
+				Name: fmt.Sprintf("worker-%d", i), Concurrency: p.WorkerConcurrency, Lease: p.Lease, Poll: p.Poll, Env: workerEnv})
 			if err != nil {
 				return res, err
 			}
 			defer w.Stop()
+			workers = append(workers, w)
+		}
+		if len(p.Controls) > 0 {
+			// A worker binary built without the tag would ignore the variable and the run
+			// would report protections as disabled that were not. The tagged worker says so
+			// at start-up; wait for that line.
+			for _, w := range workers {
+				if err := waitForLog(w, "protections OFF", 15*time.Second); err != nil {
+					return res, fmt.Errorf("%s did not report the controls off (is Bins built with the unsafe_controls tag?): %w", w.Name, err)
+				}
+			}
 		}
 	}
 
@@ -350,6 +410,21 @@ func Run(ctx context.Context, p Params) (Result, error) {
 	return res, nil
 }
 
+func waitForLog(p *settlerig.Proc, substr string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if strings.Contains(p.Log(), substr) {
+			return nil
+		}
+		select {
+		case <-p.Done():
+			return fmt.Errorf("exited: %s", p.Log())
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("no %q in its output after %s", substr, timeout)
+}
+
 func settlementIDs(ctx context.Context, pool *pgxpool.Pool) ([]uuid.UUID, error) {
 	rows, err := pool.Query(ctx, `SELECT id FROM settlements`)
 	if err != nil {
@@ -401,4 +476,42 @@ func startSampler(ctx context.Context, pool *pgxpool.Pool) func() LockWaits {
 
 func fetchProviderStats(ctx context.Context, baseURL string) (mockpay.Stats, error) {
 	return settlerig.FetchStats(ctx, baseURL)
+}
+
+// Summary is a human-readable account of a run: the violations of every invariant (zeros
+// included, because "the database's zero-sum rule held under this control" is a result),
+// what the clients saw, and the errors the api logged, which show the layer that stopped
+// something.
+func (r Result) Summary() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "violations:")
+	for _, inv := range Invariants {
+		fmt.Fprintf(&b, " %s=%d", inv, r.Violations[inv])
+	}
+	fmt.Fprintf(&b, "\nclients saw: http_5xx=%d unexpected=%d settle/202=%d refused/settle=%d finalize/200=%d void/200=%d claim/409=%d",
+		r.Counts["http_5xx"], len(r.Unexpected), r.Counts["settle/202"], r.Counts["refused/settle"], r.Counts["finalize/200"], r.Counts["void/200"], r.Counts["claim/409_not_claimable"])
+	fmt.Fprintf(&b, "\nchecked: %+v; unresolved settlements: %d; settlements succeeded: %d", r.Checked, r.Unresolved, r.Counts["settlements_succeeded"])
+	fmt.Fprintf(&b, "\nlock waits: %+v", r.Locks)
+	b.WriteString("\napi logged errors:")
+	n := 0
+	for _, k := range Keys(r.Counts) {
+		if strings.HasPrefix(k, LogErrorPrefix) {
+			fmt.Fprintf(&b, "\n  %s = %d", strings.TrimPrefix(k, LogErrorPrefix), r.Counts[k])
+			n++
+		}
+	}
+	if n == 0 {
+		b.WriteString(" none")
+	}
+	if r.Provider != nil {
+		fmt.Fprintf(&b, "\nprovider: create_calls=%d payments=%d charges=%d", r.Provider.CreateCalls, r.Provider.Payments, r.Provider.Charges)
+	}
+	for _, a := range r.Examples {
+		d := a.Detail
+		if len(d) > 200 {
+			d = d[:200] + "..."
+		}
+		fmt.Fprintf(&b, "\n  e.g. %s: %s", a.Invariant, d)
+	}
+	return b.String()
 }

@@ -391,7 +391,7 @@ func fire(fns ...func()) {
 }
 
 // raceLoop runs rounds of the situation the locks exist for: an expense with some items
-// claimed, then, released together, two finalizes, a void and several claims and
+// claimed, then, released together, two finalizes, two voids and several claims and
 // unclaims by other members. Random user loops collide with a finalize only by luck;
 // this makes it the common case. The round records whether the burst was split by the
 // finalize (some claims accepted, some refused), which is the sign the two really
@@ -422,7 +422,7 @@ func (e *Env) raceLoop(ctx context.Context, g *group, stream uint64) {
 
 		// Each goroutine of the burst gets its own generator: a rand.Rand is not safe for
 		// concurrent use.
-		s1, s2, s3 := rng.Uint64(), rng.Uint64(), rng.Uint64()
+		s1, s2, s3, s4 := rng.Uint64(), rng.Uint64(), rng.Uint64(), rng.Uint64()
 		var mu sync.Mutex
 		var claimOK, claimRefused, finOK, finInvalid, voidOK int
 		fns := []func(){
@@ -441,7 +441,16 @@ func (e *Env) raceLoop(ctx context.Context, g *group, stream uint64) {
 				}
 			},
 			func() {
-				for _, r := range e.void(parent, newRNG(s3, 3), g, x, 0) {
+				for _, r := range e.void(parent, newRNG(s3, 3), g, x, 0) { // the group owner
+					if r.Status == http.StatusOK {
+						mu.Lock()
+						voidOK++
+						mu.Unlock()
+					}
+				}
+			},
+			func() {
+				for _, r := range e.void(parent, newRNG(s4, 4), g, x, x.payer) { // and the payer, with another key
 					if r.Status == http.StatusOK {
 						mu.Lock()
 						voidOK++

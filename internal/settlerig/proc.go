@@ -19,14 +19,22 @@ import (
 type Bins struct{ Worker, Mockpay string }
 
 // Build compiles the worker and the mock provider into dir.
-func Build(ctx context.Context, dir string) (Bins, error) {
+func Build(ctx context.Context, dir string) (Bins, error) { return BuildWithTags(ctx, dir, "") }
+
+// BuildWithTags is Build with go build tags (the negative-control runs build the worker
+// with unsafe_controls). Never use it for anything that ships.
+func BuildWithTags(ctx context.Context, dir, tags string) (Bins, error) {
 	root, err := RepoRoot()
 	if err != nil {
 		return Bins{}, err
 	}
 	b := Bins{Worker: filepath.Join(dir, "worker"), Mockpay: filepath.Join(dir, "mockpay")}
 	for bin, pkg := range map[string]string{b.Worker: "./cmd/worker", b.Mockpay: "./cmd/mockpay"} {
-		cmd := exec.CommandContext(ctx, "go", "build", "-o", bin, pkg)
+		args := []string{"build", "-o", bin}
+		if tags != "" {
+			args = append(args, "-tags", tags)
+		}
+		cmd := exec.CommandContext(ctx, "go", append(args, pkg)...)
 		cmd.Dir = root
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return Bins{}, fmt.Errorf("build %s: %v\n%s", pkg, err, out)
@@ -127,13 +135,14 @@ type WorkerSpec struct {
 	Bin, DatabaseURL, PaymentsURL, Name string
 	Concurrency                         int
 	Lease, Poll                         time.Duration
+	Env                                 []string // extra environment variables
 }
 
 // StartWorker runs a real worker binary against the database and provider.
 func StartWorker(w WorkerSpec) (*Proc, error) {
 	return Start(w.Name, w.Bin,
 		[]string{"run", "--concurrency", strconv.Itoa(w.Concurrency), "--lease", w.Lease.String(), "--poll", w.Poll.String(), "--grace", "2s"},
-		[]string{"DATABASE_URL=" + w.DatabaseURL, "PAYMENTS_URL=" + w.PaymentsURL})
+		append([]string{"DATABASE_URL=" + w.DatabaseURL, "PAYMENTS_URL=" + w.PaymentsURL}, w.Env...))
 }
 
 // StartMockpay runs the mock provider on a free port and waits until it answers.

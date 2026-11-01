@@ -9,6 +9,7 @@ func TestClassifyLogError(t *testing.T) {
 	cases := []struct{ msg, err, want string }{
 		{"finalize", "lock expense: context canceled", "client_gone"},
 		{"create", "claim key: context deadline exceeded", "client_gone"},
+		{"void", "begin: write failed: write tcp 127.0.0.1:1->127.0.0.1:2: i/o timeout", "client_gone_io_timeout"},
 		{"finalize", `ERROR: duplicate key value violates unique constraint "ledger_transactions_one_expense_posting" (SQLSTATE 23505)`, "unique:ledger_transactions_one_expense_posting"},
 		{"add claim", `ERROR: insert or update on table "claims" violates foreign key constraint "claims_fk" (SQLSTATE 23503)`, "foreign key:claims_fk"},
 		{"add claim", "ERROR: deadlock detected (SQLSTATE 40P01)", "other:add claim: ERROR: deadlock detected (SQLSTATE 40P01)"},
@@ -84,7 +85,7 @@ func TestVacuousAndClean(t *testing.T) {
 	if bad.Clean(p) || len(bad.ServerErrors()) != 1 {
 		t.Errorf("a logged constraint violation must make a run unclean: %v", bad.ServerErrors())
 	}
-	bad.Counts = map[string]int64{LogErrorPrefix + "client_gone": 5}
+	bad.Counts = map[string]int64{LogErrorPrefix + "client_gone": 5, LogErrorPrefix + "client_gone_io_timeout": 2}
 	for k, v := range full.Counts {
 		bad.Counts[k] = v
 	}

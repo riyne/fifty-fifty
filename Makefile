@@ -6,7 +6,7 @@ GOOSE   := go tool -modfile=tools/go.mod goose -dir migrations postgres
 export MIGRATE_DATABASE_URL ?= postgres://fifty:fifty@localhost:5433/fifty?sslmode=disable
 export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-e2e bench-recovery bench-queue bench-settlement
+.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -52,6 +52,12 @@ test:
 # protection still ON, which must behave exactly like the production build.
 test-unsafe:
 	go test -count=1 -tags unsafe_controls ./...
+
+# The negative controls at smoke size: the stress workload with one protection switched
+# off at a time, expecting the harness to see the effect (or the layer that caught it).
+# Starts real processes; about 5 minutes. Build tag unsafe_controls; never ship it.
+test-controls:
+	E2E=1 go test -tags unsafe_controls -count=1 -run StressControls -v -timeout 30m ./test/e2e
 
 # End-to-end settlement tests: real worker and mock-provider processes, a scratch database
 # created and dropped per scenario. Takes minutes; skipped by `make test` unless E2E=1.
