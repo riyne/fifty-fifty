@@ -401,6 +401,86 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/NotClaimable" }
+  /v1/groups/{id}/settlements:
+    parameters:
+      - { $ref: "#/components/parameters/GroupId" }
+    post:
+      summary: Record a payment from yourself to another member through the simulated payment provider (any member). Requires Idempotency-Key.
+      description: >
+        Settlement is SIMULATED: the provider is a mock server and no real money moves. The caller is
+        always the sender (there is no `from` field). The settlement is created `pending`, a
+        `settlement.execute` job is enqueued in the same transaction, and the response is 202; poll
+        `GET .../settlements/{settlementId}` for the outcome. The ledger is posted only when the
+        settlement succeeds, and exactly once. The ledger keeps net balances, not pairwise debts, so the
+        amount may be at most `min(what you owe the group, what the group owes the payee)`, each reduced
+        by your or their open (`pending` or `unknown`) settlements; more is 409 `exceeds_available`.
+        This can differ from `suggested_transfers`, which ignores open settlements. Creation is
+        serialized per group, so concurrent requests cannot reserve the same money twice. Responses below
+        500 are stored under the key for 24 hours and replayed (header Idempotent-Replayed: true),
+        including 409: after a 409, retry with a NEW key. A caller who is not in the group gets 404
+        before the key or the body is looked at.
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [to_member_id, amount_minor]
+              properties:
+                to_member_id: { type: string, format: uuid, description: Another member of this group. }
+                amount_minor: { type: integer, format: int64, minimum: 1, maximum: 100000000, description: Minor units, in the group's currency. }
+      responses:
+        "202":
+          description: Accepted; the settlement is `pending`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The amount is more than can be settled between these two members right now (`exceeds_available`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/KeyReuse" }
+    get:
+      summary: List the group's settlements, newest first, at most 100 (any member).
+      description: 404 if the caller is not in the group (or it does not exist).
+      responses:
+        "200":
+          description: Settlements.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [settlements]
+                properties:
+                  settlements:
+                    type: array
+                    items: { $ref: "#/components/schemas/Settlement" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/groups/{id}/settlements/{settlementId}:
+    get:
+      summary: Read one settlement (any member). Poll this for the outcome.
+      description: >
+        404 if the caller is not in the group, or the settlement does not exist or is in another
+        group (`settlement not found`, indistinguishable).
+      parameters:
+        - { $ref: "#/components/parameters/GroupId" }
+        - { name: settlementId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: The settlement.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settlement" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/join:
     post:
       summary: Join a group with a code. Requires Idempotency-Key; rate limited per user.
@@ -587,6 +667,27 @@ components:
         subtotal_minor: { type: integer, format: int64 }
         total_minor: { type: integer, format: int64 }
         created_at: { type: string, format: date-time }
+    Settlement:
+      type: object
+      required: [id, group_id, from_member_id, to_member_id, amount_minor, currency, status, failure_code, ledger_transaction_id, created_at, resolved_at]
+      properties:
+        id: { type: string, format: uuid }
+        group_id: { type: string, format: uuid }
+        from_member_id: { type: string, format: uuid, description: The sender, who created the settlement. }
+        to_member_id: { type: string, format: uuid }
+        amount_minor: { type: integer, format: int64, minimum: 1 }
+        currency: { type: string, enum: [CAD, USD] }
+        status:
+          type: string
+          enum: [pending, succeeded, failed, unknown]
+          description: >
+            `pending` until the provider answers. `unknown` means the answer was ambiguous (for example a
+            timeout) and the settlement will be reconciled; it still reserves the money. `succeeded` and
+            `failed` are final.
+        failure_code: { type: string, nullable: true, description: "The provider's decline reason; set only when `failed`." }
+        ledger_transaction_id: { type: string, format: uuid, nullable: true, description: "The ledger posting; set only when `succeeded`." }
+        created_at: { type: string, format: date-time }
+        resolved_at: { type: string, format: date-time, nullable: true, description: "Set when `succeeded` or `failed`." }
     Error:
       type: object
       required: [code, message]

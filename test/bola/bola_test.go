@@ -18,6 +18,7 @@ package bola_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -57,6 +58,10 @@ type fixture struct {
 	itemA             string // first item of expA
 	itemB             string // first item of expB
 	ownerID, memberID string // user ids, for bodies that name members
+	outsiderID        string
+	settlementA       string // a pending settlement in A, from `member` to `owner`
+	settlementB       string // a pending settlement in B (see ensureSettlementB)
+	indebted          bool   // ensureDebt has run
 }
 
 const expenseBody = `{"description":"dinner","items":[{"description":"pizza","price_minor":1500},{"description":"beer","price_minor":800}],"tax_minor":300,"tip_minor":200}`
@@ -83,7 +88,54 @@ func newFixture(t *testing.T) *fixture {
 	f.ownerID, f.memberID = s.UserID(t, f.tokens[owner]).String(), s.UserID(t, f.tokens[member]).String()
 	f.itemA = f.firstItem(t, owner, f.groupA, f.expA)
 	f.itemB = f.firstItem(t, outsider, f.groupB, f.expB)
+	f.outsiderID = s.UserID(t, f.tokens[outsider]).String()
+	f.settlementA = f.insertSettlement(t, f.groupA, f.memberID, f.ownerID)
 	return f
+}
+
+// insertSettlement writes a pending settlement directly (no ledger effect, no job):
+// the read scenarios only need a real settlement id that belongs to a group.
+func (f *fixture) insertSettlement(t *testing.T, group, from, to string) string {
+	t.Helper()
+	var id string
+	if err := f.s.Pool.QueryRow(context.Background(),
+		`INSERT INTO settlements (group_id, from_member, to_member, amount_minor) VALUES ($1, $2, $3, 100) RETURNING id`,
+		group, from, to).Scan(&id); err != nil {
+		t.Fatalf("fixture: settlement: %v", err)
+	}
+	return id
+}
+
+// ensureSettlementB creates, once, a settlement in group B. B has one member, so it
+// adds a second who exists only in B. Lazy because other tests assert B's exact
+// membership.
+func (f *fixture) ensureSettlementB(t *testing.T) string {
+	t.Helper()
+	if f.settlementB != "" {
+		return f.settlementB
+	}
+	var bOnly string
+	if err := f.s.Pool.QueryRow(context.Background(),
+		`INSERT INTO users (issuer, subject) VALUES ('bola', $1) RETURNING id`, uuid.NewString()).Scan(&bOnly); err != nil {
+		t.Fatalf("fixture: user: %v", err)
+	}
+	if _, err := f.s.Pool.Exec(context.Background(),
+		`INSERT INTO memberships (group_id, user_id, role) VALUES ($1, $2, 'member')`, f.groupB, bOnly); err != nil {
+		t.Fatalf("fixture: membership: %v", err)
+	}
+	f.settlementB = f.insertSettlement(t, f.groupB, bOnly, f.outsiderID)
+	return f.settlementB
+}
+
+// ensureDebt makes `member` owe money to `owner` in group A (one finalized expense),
+// once, so a settlement from member to owner is allowed. Done lazily so fixtures
+// that need an empty ledger are unaffected.
+func (f *fixture) ensureDebt(t *testing.T) {
+	t.Helper()
+	if !f.indebted {
+		f.finalizeWithMemberClaim(t, owner, f.groupA, expenseBody)
+		f.indebted = true
+	}
 }
 
 // finalizeWithMemberClaim has `payer` create an expense in the group, the fixture
@@ -149,7 +201,7 @@ func (f *fixture) firstItem(t *testing.T, a actor, group, expense string) string
 func (f *fixture) state(t *testing.T) string {
 	t.Helper()
 	q := func(sql string) int { return f.s.QueryInt(t, sql, f.groupA, f.groupB) }
-	return fmt.Sprintf("codes=%d revoked=%d uses=%d members=%d audit=%d expenses=%d items=%d claims=%d finalized=%d ledger_tx=%d ledger_entries=%d",
+	return fmt.Sprintf("codes=%d revoked=%d uses=%d members=%d audit=%d expenses=%d items=%d claims=%d finalized=%d ledger_tx=%d ledger_entries=%d settlements=%d settlement_jobs=%d",
 		q(`SELECT count(*) FROM join_codes WHERE group_id IN ($1, $2)`),
 		q(`SELECT count(revoked_at) FROM join_codes WHERE group_id IN ($1, $2)`),
 		q(`SELECT coalesce(sum(uses), 0) FROM join_codes WHERE group_id IN ($1, $2)`),
@@ -161,6 +213,8 @@ func (f *fixture) state(t *testing.T) string {
 		q(`SELECT count(*) FROM expenses WHERE status <> 'claiming' AND group_id IN ($1, $2)`),
 		q(`SELECT count(*) FROM ledger_transactions WHERE group_id IN ($1, $2)`),
 		q(`SELECT count(*) FROM ledger_entries WHERE group_id IN ($1, $2)`),
+		q(`SELECT count(*) FROM settlements WHERE group_id IN ($1, $2)`),
+		q(`SELECT count(*) FROM jobs j JOIN settlements s ON s.id::text = j.payload->>'settlement_id' WHERE j.kind = 'settlement.execute' AND s.group_id IN ($1, $2)`),
 	)
 }
 
@@ -173,6 +227,9 @@ type scenario struct {
 	body   string
 	// bodyFn, if set, builds the body from the fixture (e.g. to name a member's id).
 	bodyFn func(f *fixture) string
+	// bodyFor, if set, builds the body for one actor (e.g. a settlement that names
+	// somebody other than the sender).
+	bodyFor func(f *fixture, a actor) string
 	// idempotent adds a fresh Idempotency-Key header to every request.
 	idempotent bool
 	// prepare runs before each actor's request (e.g. to mint a fresh code to revoke).
@@ -345,6 +402,54 @@ func scenarios() []scenario {
 			body: `{}`,
 			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
 		},
+		{
+			// The caller is always the sender. `member` owes `owner` (ensureDebt), so member
+			// paying owner is allowed; owner paying member is authorized but refused by the
+			// business rule (the owner is owed money, so cannot send any): 409, not 403.
+			name: "create settlement", opID: "POST /v1/groups/{id}/settlements", method: "POST", idempotent: true,
+			prepare: func(t *testing.T, f *fixture) string {
+				f.ensureDebt(t)
+				return "/v1/groups/" + f.groupA + "/settlements"
+			},
+			bodyFor: func(f *fixture, a actor) string {
+				to := f.ownerID
+				if a == owner {
+					to = f.memberID
+				}
+				return `{"to_member_id":"` + to + `","amount_minor":1}`
+			},
+			want: map[actor]int{anon: 401, outsider: 404, member: 202, owner: 409},
+		},
+		{
+			// Paying a user who is not in the group is refused for everyone who is in it.
+			name: "create settlement to a user outside the group", opID: "POST /v1/groups/{id}/settlements", method: "POST", idempotent: true,
+			path:   groupPath("/settlements"),
+			bodyFn: func(f *fixture) string { return `{"to_member_id":"` + f.outsiderID + `","amount_minor":1}` },
+			want:   map[actor]int{anon: 401, outsider: 404, member: 400, owner: 400},
+		},
+		{
+			name: "list settlements", opID: "GET /v1/groups/{id}/settlements", method: "GET", path: groupPath("/settlements"),
+			want: map[actor]int{anon: 401, outsider: 404, member: 200, owner: 200},
+		},
+		{
+			name: "read settlement", opID: "GET /v1/groups/{id}/settlements/{settlementId}", method: "GET",
+			path: func(f *fixture) string { return "/v1/groups/" + f.groupA + "/settlements/" + f.settlementA },
+			want: map[actor]int{anon: 401, outsider: 404, member: 200, owner: 200},
+		},
+		{
+			// Authorized on A, but the id is B's settlement: it must match nothing.
+			name: "read B's settlement through A's path", opID: "GET /v1/groups/{id}/settlements/{settlementId}", method: "GET",
+			prepare: func(t *testing.T, f *fixture) string {
+				return "/v1/groups/" + f.groupA + "/settlements/" + f.ensureSettlementB(t)
+			},
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
+			// B's owner is authorized on B but names A's settlement.
+			name: "read A's settlement through B's path", opID: "GET /v1/groups/{id}/settlements/{settlementId}", method: "GET",
+			path: func(f *fixture) string { return "/v1/groups/" + f.groupB + "/settlements/" + f.settlementA },
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
 	}
 }
 
@@ -390,6 +495,9 @@ func TestMatrix(t *testing.T) {
 				body := sc.body
 				if sc.bodyFn != nil {
 					body = sc.bodyFn(f)
+				}
+				if sc.bodyFor != nil {
+					body = sc.bodyFor(f, a)
 				}
 				var headers []string
 				if sc.idempotent {
@@ -680,5 +788,45 @@ func TestEveryOperationIsCovered(t *testing.T) {
 	sort.Strings(problems)
 	for _, p := range problems {
 		t.Error(p)
+	}
+}
+
+// A user who is a member of both groups reads settlements only through the path of
+// the group that owns them, and each group's list holds only its own.
+func TestSettlementsAreScopedToTheirGroup(t *testing.T) {
+	f := newFixture(t)
+	sB := f.ensureSettlementB(t)
+	_, codeB := f.s.CreateJoinCode(t, f.tokens[outsider], f.groupB, 0, 0)
+	if r := f.s.Join(t, f.tokens[member], codeB); r.Status != http.StatusCreated {
+		t.Fatalf("join B = %d: %s", r.Status, r.Body)
+	}
+	read := func(group, settlement string) int {
+		return f.s.Do(t, f.tokens[member], "GET", "/v1/groups/"+group+"/settlements/"+settlement, "").Status
+	}
+	for name, tc := range map[string]struct {
+		group, settlement string
+		want              int
+	}{
+		"A's settlement via A": {f.groupA, f.settlementA, 200},
+		"B's settlement via B": {f.groupB, sB, 200},
+		"B's settlement via A": {f.groupA, sB, 404},
+		"A's settlement via B": {f.groupB, f.settlementA, 404},
+	} {
+		if got := read(tc.group, tc.settlement); got != tc.want {
+			t.Errorf("%s = %d, want %d", name, got, tc.want)
+		}
+	}
+	list := func(group string) string {
+		r := f.s.Do(t, f.tokens[member], "GET", "/v1/groups/"+group+"/settlements", "")
+		if r.Status != 200 {
+			t.Fatalf("list %s = %d", group, r.Status)
+		}
+		return string(r.Body)
+	}
+	if a := list(f.groupA); !strings.Contains(a, f.settlementA) || strings.Contains(a, sB) {
+		t.Errorf("A's list is wrong: %s", a)
+	}
+	if b := list(f.groupB); !strings.Contains(b, sB) || strings.Contains(b, f.settlementA) {
+		t.Errorf("B's list is wrong: %s", b)
 	}
 }

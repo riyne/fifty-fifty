@@ -12,6 +12,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpx"
+	"github.com/riyne/fifty-fifty/internal/settlements"
 )
 
 // Pinger is the part of the database pool that the readiness check needs.
@@ -37,12 +38,13 @@ func New(db Pinger, v1 http.Handler) http.Handler {
 
 // NewV1 builds the authenticated API. authn wraps the whole mux, so a route
 // added here cannot accidentally be served without authentication.
-func NewV1(authn func(http.Handler) http.Handler, g *groups.Handler, e *expenses.Handler, b *balances.Handler) http.Handler {
+func NewV1(authn func(http.Handler) http.Handler, g *groups.Handler, e *expenses.Handler, b *balances.Handler, st *settlements.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/me", me)
 	g.Register(mux)
 	e.Register(mux)
 	b.Register(mux)
+	st.Register(mux)
 	return authn(mux)
 }
 

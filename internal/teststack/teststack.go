@@ -25,6 +25,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
+	"github.com/riyne/fifty-fifty/internal/settlements"
 	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
@@ -67,6 +68,7 @@ func New(t testing.TB, opts ...Option) *Stack {
 		groups.NewHandler(pool, ratelimit.New(cfg.joinRate, cfg.joinBurst)),
 		expenses.NewHandler(pool),
 		balances.NewHandler(pool),
+		settlements.NewHandler(pool),
 	)
 	srv := httptest.NewServer(httpapi.New(pool, v1))
 	t.Cleanup(srv.Close)

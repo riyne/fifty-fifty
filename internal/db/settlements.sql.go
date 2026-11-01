@@ -7,10 +7,47 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const createSettlement = `-- name: CreateSettlement :one
+INSERT INTO settlements (group_id, from_member, to_member, amount_minor)
+VALUES ($1, $2, $3, $4)
+RETURNING id, group_id, from_member, to_member, amount_minor, status, failure_code, ledger_transaction_id, created_at, resolved_at
+`
+
+type CreateSettlementParams struct {
+	GroupID     uuid.UUID
+	FromMember  uuid.UUID
+	ToMember    uuid.UUID
+	AmountMinor int64
+}
+
+func (q *Queries) CreateSettlement(ctx context.Context, arg CreateSettlementParams) (Settlement, error) {
+	row := q.db.QueryRow(ctx, createSettlement,
+		arg.GroupID,
+		arg.FromMember,
+		arg.ToMember,
+		arg.AmountMinor,
+	)
+	var i Settlement
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.FromMember,
+		&i.ToMember,
+		&i.AmountMinor,
+		&i.Status,
+		&i.FailureCode,
+		&i.LedgerTransactionID,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+	)
+	return i, err
+}
 
 const createSettlementTransaction = `-- name: CreateSettlementTransaction :one
 INSERT INTO ledger_transactions (group_id, kind, settlement_id, created_by)
@@ -29,6 +66,193 @@ func (q *Queries) CreateSettlementTransaction(ctx context.Context, arg CreateSet
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const getSettlementCapacity = `-- name: GetSettlementCapacity :one
+SELECT
+    COALESCE((SELECT SUM(le.amount_minor) FROM ledger_entries le
+              WHERE le.group_id = $1::uuid AND le.member_id = $2::uuid), 0)::bigint AS from_balance,
+    COALESCE((SELECT SUM(le.amount_minor) FROM ledger_entries le
+              WHERE le.group_id = $1::uuid AND le.member_id = $3::uuid), 0)::bigint AS to_balance,
+    COALESCE((SELECT SUM(s.amount_minor) FROM settlements s
+              WHERE s.group_id = $1::uuid AND s.from_member = $2::uuid
+                AND s.status IN ('pending', 'unknown')), 0)::bigint AS reserved_out,
+    COALESCE((SELECT SUM(s.amount_minor) FROM settlements s
+              WHERE s.group_id = $1::uuid AND s.to_member = $3::uuid
+                AND s.status IN ('pending', 'unknown')), 0)::bigint AS reserved_in
+`
+
+type GetSettlementCapacityParams struct {
+	GroupID    uuid.UUID
+	FromMember uuid.UUID
+	ToMember   uuid.UUID
+}
+
+type GetSettlementCapacityRow struct {
+	FromBalance int64
+	ToBalance   int64
+	ReservedOut int64
+	ReservedIn  int64
+}
+
+// GetSettlementCapacity reads, in ONE statement (one snapshot), the four numbers
+// the availability rule needs: both members' ledger balances and the money already
+// reserved by their open (pending or unknown) settlements, as sender and as payee.
+func (q *Queries) GetSettlementCapacity(ctx context.Context, arg GetSettlementCapacityParams) (GetSettlementCapacityRow, error) {
+	row := q.db.QueryRow(ctx, getSettlementCapacity, arg.GroupID, arg.FromMember, arg.ToMember)
+	var i GetSettlementCapacityRow
+	err := row.Scan(
+		&i.FromBalance,
+		&i.ToBalance,
+		&i.ReservedOut,
+		&i.ReservedIn,
+	)
+	return i, err
+}
+
+const getSettlementForMember = `-- name: GetSettlementForMember :one
+SELECT s.id, s.group_id, s.from_member, s.to_member, s.amount_minor, s.status, s.failure_code,
+       s.ledger_transaction_id, s.created_at, s.resolved_at, g.currency
+FROM settlements s
+JOIN groups g ON g.id = s.group_id
+JOIN memberships m ON m.group_id = s.group_id AND m.user_id = $1
+WHERE s.id = $2 AND s.group_id = $3
+`
+
+type GetSettlementForMemberParams struct {
+	UserID       uuid.UUID
+	SettlementID uuid.UUID
+	GroupID      uuid.UUID
+}
+
+type GetSettlementForMemberRow struct {
+	ID                  uuid.UUID
+	GroupID             uuid.UUID
+	FromMember          uuid.UUID
+	ToMember            uuid.UUID
+	AmountMinor         int64
+	Status              string
+	FailureCode         pgtype.Text
+	LedgerTransactionID pgtype.UUID
+	CreatedAt           time.Time
+	ResolvedAt          *time.Time
+	Currency            string
+}
+
+// GetSettlementForMember is the fetch and the authorization in one statement: the
+// caller must be a member of the path's group, and the settlement must be in it.
+func (q *Queries) GetSettlementForMember(ctx context.Context, arg GetSettlementForMemberParams) (GetSettlementForMemberRow, error) {
+	row := q.db.QueryRow(ctx, getSettlementForMember, arg.UserID, arg.SettlementID, arg.GroupID)
+	var i GetSettlementForMemberRow
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.FromMember,
+		&i.ToMember,
+		&i.AmountMinor,
+		&i.Status,
+		&i.FailureCode,
+		&i.LedgerTransactionID,
+		&i.CreatedAt,
+		&i.ResolvedAt,
+		&i.Currency,
+	)
+	return i, err
+}
+
+const isGroupMember = `-- name: IsGroupMember :one
+SELECT EXISTS (SELECT 1 FROM memberships WHERE group_id = $1 AND user_id = $2)
+`
+
+type IsGroupMemberParams struct {
+	GroupID uuid.UUID
+	UserID  uuid.UUID
+}
+
+func (q *Queries) IsGroupMember(ctx context.Context, arg IsGroupMemberParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isGroupMember, arg.GroupID, arg.UserID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const listSettlementsForMember = `-- name: ListSettlementsForMember :many
+SELECT s.id, s.group_id, s.from_member, s.to_member, s.amount_minor, s.status, s.failure_code,
+       s.ledger_transaction_id, s.created_at, s.resolved_at, g.currency
+FROM settlements s
+JOIN groups g ON g.id = s.group_id
+JOIN memberships m ON m.group_id = s.group_id AND m.user_id = $1
+WHERE s.group_id = $2
+ORDER BY s.created_at DESC, s.id
+LIMIT 100
+`
+
+type ListSettlementsForMemberParams struct {
+	UserID  uuid.UUID
+	GroupID uuid.UUID
+}
+
+type ListSettlementsForMemberRow struct {
+	ID                  uuid.UUID
+	GroupID             uuid.UUID
+	FromMember          uuid.UUID
+	ToMember            uuid.UUID
+	AmountMinor         int64
+	Status              string
+	FailureCode         pgtype.Text
+	LedgerTransactionID pgtype.UUID
+	CreatedAt           time.Time
+	ResolvedAt          *time.Time
+	Currency            string
+}
+
+func (q *Queries) ListSettlementsForMember(ctx context.Context, arg ListSettlementsForMemberParams) ([]ListSettlementsForMemberRow, error) {
+	rows, err := q.db.Query(ctx, listSettlementsForMember, arg.UserID, arg.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSettlementsForMemberRow
+	for rows.Next() {
+		var i ListSettlementsForMemberRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.FromMember,
+			&i.ToMember,
+			&i.AmountMinor,
+			&i.Status,
+			&i.FailureCode,
+			&i.LedgerTransactionID,
+			&i.CreatedAt,
+			&i.ResolvedAt,
+			&i.Currency,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockGroupForSettlement = `-- name: LockGroupForSettlement :one
+SELECT id FROM groups WHERE id = $1 FOR NO KEY UPDATE
+`
+
+// LockGroupForSettlement serializes settlement creation within a group. It is
+// FOR NO KEY UPDATE, not FOR UPDATE: every foreign-key insert into groups
+// (expenses, memberships, ledger rows) takes FOR KEY SHARE on this row, which
+// FOR UPDATE conflicts with and FOR NO KEY UPDATE does not. It conflicts only
+// with itself, so it stops two settlement creations from both reserving the same
+// money and nothing else (finalize and void do not take it).
+func (q *Queries) LockGroupForSettlement(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, lockGroupForSettlement, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
 const lockSettlement = `-- name: LockSettlement :one
