@@ -402,3 +402,26 @@ func TestE2E(t *testing.T) {
 		t.Run(sc.name, func(t *testing.T) { run(t, sc) })
 	}
 }
+
+// The benchmark runner (bench/settlement) uses settlerig.RunLoad. A small run in the
+// test suite keeps it working: no faults, nothing may be left unresolved or anomalous.
+func TestLoadRunnerSmoke(t *testing.T) {
+	requireEnabled(t)
+	ownerURL, appURL := os.Getenv("TEST_OWNER_DATABASE_URL"), os.Getenv("TEST_DATABASE_URL")
+	if ownerURL == "" || appURL == "" {
+		t.Skip("TEST_OWNER_DATABASE_URL and TEST_DATABASE_URL are required")
+	}
+	res, err := settlerig.RunLoad(ctx, settlerig.LoadParams{
+		OwnerURL: ownerURL, AppURL: appURL, Bins: bins,
+		Mix:         settlerig.Mix{Name: "smoke", Mock: []string{"--latency-median", "50ms", "--rate-5xx-after", "0.2"}, Webhooks: true},
+		Settlements: 20, Rate: 10, Workers: 2, Concurrency: 4, Lease: 5 * time.Second, Poll: 200 * time.Millisecond,
+		TimeoutHold: time.Second, Seed: 1, WebhookSecret: webhookSecret, ResolveTimeout: 2 * time.Minute, Logf: t.Logf,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Unresolved != 0 || len(res.Anomalies) != 0 || res.DeadJobs != 0 || res.ByStatus["succeeded"] != 20 ||
+		res.Postings != 20 || res.Charges != 20 || res.EndToEnd.N != 20 || res.DatabaseJobsRows != 0 {
+		t.Errorf("result = %+v", res)
+	}
+}
