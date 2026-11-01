@@ -211,6 +211,36 @@ func (q *Queries) IsGroupMember(ctx context.Context, arg IsGroupMemberParams) (b
 	return exists, err
 }
 
+const isSettlementStillStuck = `-- name: IsSettlementStillStuck :one
+SELECT EXISTS (
+    SELECT 1 FROM settlements s
+    WHERE s.id = $1::uuid
+      AND s.status = 'pending'
+      AND NOT EXISTS (
+          SELECT 1 FROM jobs j
+          WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text
+            AND (j.state IN ('queued', 'running') OR j.created_at > now() - make_interval(secs => $2::float8)))
+      AND (SELECT count(*) FROM jobs j
+            WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text) < $3::int
+)
+`
+
+type IsSettlementStillStuckParams struct {
+	ID        uuid.UUID
+	StuckSecs float64
+	MaxJobs   int32
+}
+
+// IsSettlementStillStuck repeats ListStuckSettlements' conditions for one settlement
+// that the caller already holds the row lock on, in a statement of its own. Keep the
+// two in step.
+func (q *Queries) IsSettlementStillStuck(ctx context.Context, arg IsSettlementStillStuckParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isSettlementStillStuck, arg.ID, arg.StuckSecs, arg.MaxJobs)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listSettlementsForMember = `-- name: ListSettlementsForMember :many
 SELECT s.id, s.group_id, s.from_member, s.to_member, s.amount_minor, s.status, s.failure_code,
        s.ledger_transaction_id, s.created_at, s.resolved_at, g.currency
@@ -273,6 +303,87 @@ func (q *Queries) ListSettlementsForMember(ctx context.Context, arg ListSettleme
 	return items, nil
 }
 
+const listStuckSettlements = `-- name: ListStuckSettlements :many
+SELECT s.id, s.group_id, s.from_member,
+       (SELECT count(*) FROM jobs j
+         WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text)::int AS execute_jobs
+FROM settlements s
+WHERE s.status = 'pending'
+  AND ($1::uuid IS NULL OR s.group_id = $1::uuid)
+  AND s.created_at < now() - make_interval(secs => $2::float8)
+  AND NOT EXISTS (
+      SELECT 1 FROM jobs j
+      WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text
+        AND (j.state IN ('queued', 'running') OR j.created_at > now() - make_interval(secs => $2::float8)))
+  AND (SELECT count(*) FROM jobs j
+        WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text) < $3::int
+ORDER BY s.created_at, s.id
+LIMIT $4::int
+FOR UPDATE OF s SKIP LOCKED
+`
+
+type ListStuckSettlementsParams struct {
+	GroupID   pgtype.UUID
+	StuckSecs float64
+	MaxJobs   int32
+	Batch     int32
+}
+
+type ListStuckSettlementsRow struct {
+	ID          uuid.UUID
+	GroupID     uuid.UUID
+	FromMember  uuid.UUID
+	ExecuteJobs int32
+}
+
+// ListStuckSettlements finds pending settlements whose execute job has been lost: no
+// execute job is queued or running for them, none was created within the last
+// stuck_secs seconds (so a job that just died is not replaced at once), and fewer than
+// max_jobs have ever been created (so a settlement the provider keeps rejecting
+// cannot loop forever). Oldest first. FOR UPDATE SKIP LOCKED makes two sweeps that
+// overlap take different rows instead of both enqueueing for the same one.
+//
+// SKIP LOCKED alone is NOT enough, and this is easy to get wrong. The statement's
+// snapshot is taken when it starts. If a concurrent sweep commits its new job after
+// that, but before this statement reaches the row, the row's lock is free and its
+// NOT EXISTS was evaluated without the new job, so this statement returns it anyway:
+// Postgres re-checks the WHERE clause after a lock wait only for rows that were
+// UPDATED, and the other sweep only locked the settlement. The caller therefore
+// re-asks IsSettlementStillStuck for each row in a new statement, which sees every job
+// committed so far, and no job for a settlement can be committed while it holds the lock.
+//
+// The kind is a literal on purpose: jobs_settlement_idx is partial, and a parameter
+// would give a cached generic plan that cannot use it.
+func (q *Queries) ListStuckSettlements(ctx context.Context, arg ListStuckSettlementsParams) ([]ListStuckSettlementsRow, error) {
+	rows, err := q.db.Query(ctx, listStuckSettlements,
+		arg.GroupID,
+		arg.StuckSecs,
+		arg.MaxJobs,
+		arg.Batch,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStuckSettlementsRow
+	for rows.Next() {
+		var i ListStuckSettlementsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.GroupID,
+			&i.FromMember,
+			&i.ExecuteJobs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockGroupForSettlement = `-- name: LockGroupForSettlement :one
 SELECT id FROM groups WHERE id = $1 FOR NO KEY UPDATE
 `
@@ -322,6 +433,19 @@ func (q *Queries) LockSettlement(ctx context.Context, id uuid.UUID) (LockSettlem
 		&i.Status,
 	)
 	return i, err
+}
+
+const lockSettlementStatus = `-- name: LockSettlementStatus :one
+SELECT status FROM settlements WHERE id = $1 FOR UPDATE
+`
+
+// LockSettlementStatus is how a handler's commit finds out, under the row lock,
+// where a settlement is NOW (a webhook may have moved it since the handler read it).
+func (q *Queries) LockSettlementStatus(ctx context.Context, id uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, lockSettlementStatus, id)
+	var status string
+	err := row.Scan(&status)
+	return status, err
 }
 
 const markSettlementFailed = `-- name: MarkSettlementFailed :execrows

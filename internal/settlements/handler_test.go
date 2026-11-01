@@ -57,6 +57,12 @@ func newEnv(t *testing.T, names ...string) *env {
 		e.id[n] = e.s.UserID(t, e.tok[n])
 	}
 	e.group = e.s.CreateGroup(t, e.tok[names[0]], "settle")
+	// Creating a settlement enqueues a job nothing here runs; do not leave it for a real
+	// worker (with PAYMENTS_URL set) to find in the shared database.
+	t.Cleanup(func() {
+		e.s.Exec(t, `DELETE FROM jobs WHERE kind IN ('settlement.execute', 'settlement.reconcile')
+		             AND payload->>'settlement_id' IN (SELECT id::text FROM settlements WHERE group_id = $1)`, e.group)
+	})
 	_, code := e.s.CreateJoinCode(t, e.tok[names[0]], e.group, 0, 0)
 	for _, n := range names[1:] {
 		if r := e.s.Join(t, e.tok[n], code); r.Status != http.StatusCreated {

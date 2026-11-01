@@ -45,12 +45,21 @@ func newRig(t *testing.T, cfg mockpay.Config) *rig {
 	// No keep-alive, so Go's transparent retry of a request that carries an
 	// Idempotency-Key cannot add provider calls the test did not plan.
 	hc := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
-	return &rig{
+	r := &rig{
 		world:  newWorld(t),
 		mock:   m,
 		client: &payclient.Client{BaseURL: ts.URL, HTTP: hc},
 		kind:   "test.settle." + uuid.NewString(),
 	}
+	// The handlers enqueue jobs of the real settlement kinds (the reconcile job, the
+	// watchdog's execute job). Nothing in these tests runs them, so remove them with
+	// the test instead of leaving them for a real worker to find.
+	t.Cleanup(func() {
+		_, _ = r.pool.Exec(ctx, `DELETE FROM jobs WHERE kind IN ('settlement.execute', 'settlement.reconcile')
+		                         AND payload->>'settlement_id' IN (SELECT id::text FROM settlements WHERE group_id = $1)`, r.group)
+		_, _ = r.pool.Exec(ctx, `DELETE FROM jobs WHERE kind = $1`, r.kind)
+	})
+	return r
 }
 
 func (r *rig) enqueue(t *testing.T, id uuid.UUID, maxAttempts int) uuid.UUID {

@@ -42,8 +42,8 @@ poll, 20s grace. --metrics-addr (off by default) serves Prometheus metrics at
 requeue moves dead-lettered jobs back to the queue with a fresh set of attempts
 (their last_error is kept). It needs --kind or --id; there is no "all".
 Needs DATABASE_URL. If PAYMENTS_URL (the base URL of the payment provider, for
-example http://127.0.0.1:8090) is set, the worker also runs settlement.execute jobs;
-without it those jobs wait in the queue.`
+example http://127.0.0.1:8090) is set, the worker also runs settlement.execute and
+settlement.reconcile jobs and the settlement watchdog; without it those jobs wait.`
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
@@ -99,6 +99,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	runCfg.Periodic = []queue.PeriodicJob{worker.CleanupSchedule, worker.PruneSchedule}
+	if _, ok := runCfg.Handlers[settlements.KindWatchdog]; ok {
+		runCfg.Periodic = append(runCfg.Periodic, settlements.WatchdogSchedule)
+	}
 
 	if metricsAddr != "" {
 		kinds := make([]string, 0, len(runCfg.Handlers))
@@ -146,8 +149,8 @@ func serveMetrics(ctx context.Context, ln net.Listener, h http.Handler) {
 // ambiguous result (the settlement becomes unknown and is reconciled), not a failure.
 const paymentsTimeout = 10 * time.Second
 
-// handlers is every job kind this worker can run. Settlement execution is registered
-// only when paymentsURL (the PAYMENTS_URL environment variable, the base URL of the
+// handlers is every job kind this worker can run. Settlement execution, reconciliation
+// and the watchdog are registered only when paymentsURL (the PAYMENTS_URL environment variable, the base URL of the
 // payment provider) is set: without a provider the worker must not claim settlement
 // jobs it cannot run, and they wait in the queue for a worker that can. Receipts
 // arrive in M6.
@@ -162,6 +165,8 @@ func handlers(pool *pgxpool.Pool, paymentsURL string) (map[string]worker.Handler
 			return nil, fmt.Errorf("PAYMENTS_URL: %w", err)
 		}
 		h[settlements.KindExecute] = settlements.ExecuteHandler(pool, c)
+		h[settlements.KindReconcile] = settlements.ReconcileHandler(pool, c)
+		h[settlements.KindWatchdog] = settlements.WatchdogHandler(pool, settlements.WatchdogConfig{})
 	}
 	return h, nil
 }

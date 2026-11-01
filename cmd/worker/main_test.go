@@ -135,15 +135,24 @@ func TestHandlers_SettlementExecutionNeedsAProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := h[settlements.KindExecute]; ok {
-		t.Error("settlement.execute is registered without PAYMENTS_URL")
+	for _, k := range []string{settlements.KindExecute, settlements.KindReconcile, settlements.KindWatchdog} {
+		if _, ok := h[k]; ok {
+			t.Errorf("%s is registered without PAYMENTS_URL", k)
+		}
 	}
 	h, err = handlers(nil, "http://127.0.0.1:8090")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := h[settlements.KindExecute]; !ok {
-		t.Error("settlement.execute is not registered with PAYMENTS_URL set")
+	for _, k := range []string{settlements.KindExecute, settlements.KindReconcile, settlements.KindWatchdog} {
+		if _, ok := h[k]; !ok {
+			t.Errorf("%s is not registered with PAYMENTS_URL set", k)
+		}
+	}
+	// The watchdog is periodic, so worker.Run needs a handler for its kind (it
+	// refuses a schedule without one): the schedule must name a registered kind.
+	if _, ok := h[settlements.WatchdogSchedule.Kind]; !ok {
+		t.Error("the watchdog schedule names a kind with no handler")
 	}
 	if _, err := handlers(nil, "127.0.0.1:8090"); err == nil {
 		t.Error("a PAYMENTS_URL without a scheme was accepted")

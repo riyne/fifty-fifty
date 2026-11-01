@@ -77,6 +77,12 @@ func newFixture(t *testing.T) *fixture {
 	}}
 	f.groupA = s.CreateGroup(t, f.tokens[owner], "Group A")
 	f.groupB = s.CreateGroup(t, f.tokens[outsider], "Group B")
+	// The settlement scenarios enqueue execute jobs nothing here runs; do not leave them
+	// in the shared database for a real worker to find.
+	t.Cleanup(func() {
+		s.Exec(t, `DELETE FROM jobs WHERE kind IN ('settlement.execute', 'settlement.reconcile')
+		           AND payload->>'settlement_id' IN (SELECT id::text FROM settlements WHERE group_id IN ($1, $2))`, f.groupA, f.groupB)
+	})
 	var joinCode string
 	f.codeA, joinCode = s.CreateJoinCode(t, f.tokens[owner], f.groupA, 0, 0)
 	f.codeB, _ = s.CreateJoinCode(t, f.tokens[outsider], f.groupB, 0, 0)

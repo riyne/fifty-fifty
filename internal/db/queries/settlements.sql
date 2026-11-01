@@ -92,3 +92,60 @@ SELECT s.id, s.group_id, s.from_member, s.to_member, s.amount_minor, s.status, g
 FROM settlements s
 JOIN groups g ON g.id = s.group_id
 WHERE s.id = $1;
+
+-- LockSettlementStatus is how a handler's commit finds out, under the row lock,
+-- where a settlement is NOW (a webhook may have moved it since the handler read it).
+-- name: LockSettlementStatus :one
+SELECT status FROM settlements WHERE id = $1 FOR UPDATE;
+
+-- ListStuckSettlements finds pending settlements whose execute job has been lost: no
+-- execute job is queued or running for them, none was created within the last
+-- stuck_secs seconds (so a job that just died is not replaced at once), and fewer than
+-- max_jobs have ever been created (so a settlement the provider keeps rejecting
+-- cannot loop forever). Oldest first. FOR UPDATE SKIP LOCKED makes two sweeps that
+-- overlap take different rows instead of both enqueueing for the same one.
+--
+-- SKIP LOCKED alone is NOT enough, and this is easy to get wrong. The statement's
+-- snapshot is taken when it starts. If a concurrent sweep commits its new job after
+-- that, but before this statement reaches the row, the row's lock is free and its
+-- NOT EXISTS was evaluated without the new job, so this statement returns it anyway:
+-- Postgres re-checks the WHERE clause after a lock wait only for rows that were
+-- UPDATED, and the other sweep only locked the settlement. The caller therefore
+-- re-asks IsSettlementStillStuck for each row in a new statement, which sees every job
+-- committed so far, and no job for a settlement can be committed while it holds the lock.
+--
+-- The kind is a literal on purpose: jobs_settlement_idx is partial, and a parameter
+-- would give a cached generic plan that cannot use it.
+-- name: ListStuckSettlements :many
+SELECT s.id, s.group_id, s.from_member,
+       (SELECT count(*) FROM jobs j
+         WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text)::int AS execute_jobs
+FROM settlements s
+WHERE s.status = 'pending'
+  AND (sqlc.narg(group_id)::uuid IS NULL OR s.group_id = sqlc.narg(group_id)::uuid)
+  AND s.created_at < now() - make_interval(secs => sqlc.arg(stuck_secs)::float8)
+  AND NOT EXISTS (
+      SELECT 1 FROM jobs j
+      WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text
+        AND (j.state IN ('queued', 'running') OR j.created_at > now() - make_interval(secs => sqlc.arg(stuck_secs)::float8)))
+  AND (SELECT count(*) FROM jobs j
+        WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text) < sqlc.arg(max_jobs)::int
+ORDER BY s.created_at, s.id
+LIMIT sqlc.arg(batch)::int
+FOR UPDATE OF s SKIP LOCKED;
+
+-- IsSettlementStillStuck repeats ListStuckSettlements' conditions for one settlement
+-- that the caller already holds the row lock on, in a statement of its own. Keep the
+-- two in step.
+-- name: IsSettlementStillStuck :one
+SELECT EXISTS (
+    SELECT 1 FROM settlements s
+    WHERE s.id = sqlc.arg(id)::uuid
+      AND s.status = 'pending'
+      AND NOT EXISTS (
+          SELECT 1 FROM jobs j
+          WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text
+            AND (j.state IN ('queued', 'running') OR j.created_at > now() - make_interval(secs => sqlc.arg(stuck_secs)::float8)))
+      AND (SELECT count(*) FROM jobs j
+            WHERE j.kind = 'settlement.execute' AND j.payload->>'settlement_id' = s.id::text) < sqlc.arg(max_jobs)::int
+);
