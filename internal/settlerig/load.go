@@ -211,7 +211,7 @@ func RunLoad(ctx context.Context, p LoadParams) (LoadResult, error) {
 		return res, err
 	}
 	res.ByStatus, res.Postings, res.Charges, res.Anomalies = rep.ByStatus, rep.Postings, rep.ProviderCharges, rep.Anomalies
-	if res.Provider, err = fetchStats(ctx, mockURL); err != nil {
+	if res.Provider, err = FetchStats(ctx, mockURL); err != nil {
 		return res, err
 	}
 	if err := timings(ctx, pool, &res); err != nil {
@@ -269,7 +269,8 @@ func insertSettlement(ctx context.Context, pool *pgxpool.Pool, q *db.Queries, gr
 	return s.ID, tx.Commit(ctx)
 }
 
-func fetchStats(ctx context.Context, baseURL string) (mockpay.Stats, error) {
+// FetchStats reads the mock provider's own counters.
+func FetchStats(ctx context.Context, baseURL string) (mockpay.Stats, error) {
 	var s mockpay.Stats
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/stats", nil)
 	if err != nil {
