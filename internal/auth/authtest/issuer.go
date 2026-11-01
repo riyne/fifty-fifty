@@ -11,12 +11,20 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"testing"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 )
+
+// T is the part of testing.TB the issuer needs. testing.TB satisfies it, so tests pass
+// their *testing.T as before; a program that is not a test (the stress harness) passes
+// a small implementation of its own, because it cannot get a testing.TB.
+type T interface {
+	Helper()
+	Fatalf(format string, args ...any)
+	Cleanup(func())
+}
 
 // Issuer is a running fake identity provider.
 type Issuer struct {
@@ -29,7 +37,7 @@ type Issuer struct {
 
 // NewIssuer starts a fake issuer with a fresh signing key. It is shut down
 // when the test ends.
-func NewIssuer(t testing.TB) *Issuer {
+func NewIssuer(t T) *Issuer {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -73,7 +81,7 @@ type Token struct {
 }
 
 // Mint signs a token with this issuer's key.
-func (i *Issuer) Mint(t testing.TB, tok Token) string {
+func (i *Issuer) Mint(t T, tok Token) string {
 	t.Helper()
 	if tok.Issuer == "" {
 		tok.Issuer = i.URL

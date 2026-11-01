@@ -10,10 +10,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/mockpay"
 )
+
+// Querier is the part of a connection pool (or a transaction) that Verify reads through.
+type Querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
 
 // Report is what Verify found for a set of settlements.
 type Report struct {
@@ -70,7 +76,7 @@ func FetchProvider(ctx context.Context, baseURL string) ([]mockpay.Ledger, error
 //
 // It does not require the settlements to be final: ones still being resolved are counted
 // in the report, and the caller decides whether that is acceptable.
-func Verify(ctx context.Context, pool *pgxpool.Pool, provider []mockpay.Ledger, ids []uuid.UUID) (Report, error) {
+func Verify(ctx context.Context, pool Querier, provider []mockpay.Ledger, ids []uuid.UUID) (Report, error) {
 	rep := Report{ByStatus: map[string]int{}}
 	byRef := map[string][]mockpay.Ledger{}
 	for _, p := range provider {
