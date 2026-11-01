@@ -76,9 +76,21 @@ func run() error {
 
 	v1 := httpapi.NewV1(auth.Middleware(verifier, db.New(pool)), groups.NewHandler(pool, joinLimiter), expenses.NewHandler(pool), balances.NewHandler(pool), settlements.NewHandler(pool))
 
+	// Payment webhooks are accepted only when a signing secret is configured; without
+	// one the route does not exist (404), never "accept anything".
+	var webhooks http.Handler
+	if secret := os.Getenv("PAYMENTS_WEBHOOK_SECRET"); secret != "" {
+		wh, err := settlements.NewWebhookHandler(pool, []byte(secret))
+		if err != nil {
+			return fmt.Errorf("payment webhooks: %w", err)
+		}
+		webhooks = wh
+		slog.Info("payment webhooks enabled", "path", settlements.WebhookPath)
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           httpapi.New(pool, v1),
+		Handler:           httpapi.New(pool, v1, webhooks),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

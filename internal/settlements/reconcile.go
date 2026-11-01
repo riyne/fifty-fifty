@@ -45,35 +45,41 @@ func NextReconcileDelay(done int) time.Duration {
 	return d
 }
 
-// Reader is the part of the payment provider that reconcile needs.
-type Reader interface {
+// Gateway is the part of the payment provider that reconcile needs: a read by key and,
+// when the provider has nothing, the same create that execute sent.
+type Gateway interface {
 	Get(ctx context.Context, key string) (payclient.Payment, error)
+	Create(ctx context.Context, key string, r payclient.Request) (payclient.Payment, error)
 }
 
 // errNoAnswerYet is returned, wrapped, when the final check still gets no answer.
 var errNoAnswerYet = errors.New("no answer from the provider")
 
-// ReconcileHandler is the handler of KindReconcile: it asks the provider what became of
-// an `unknown` settlement and records the answer.
+// ReconcileHandler is the handler of KindReconcile: it finds out what became of an
+// `unknown` settlement and records the answer.
 //
-// Phase one only reads (a GET by the settlement id), so a re-run is harmless. Phase two
-// is in the job's completion transaction:
+// Phase one asks the provider by the settlement id. If the provider has no payment for
+// the key, it sends the SAME create request again with the same key. That is safe, and
+// is what resolves the settlements the original call never reached: the provider
+// dedupes by key, so if the original request is still in flight (or lands later) there
+// is one payment, and this call returns it. (Without this, a request that timed out
+// before the provider acted would leave the settlement unknown for all the checks and
+// then dead-letter, holding its reservation.) A re-run of phase one is harmless for the
+// same reason. Phase two is in the job's completion transaction:
 //
 //	payment succeeded or failed -> Resolve: the ledger is posted on success
-//	no answer (the provider has no payment for the key, or the read failed or was
-//	unreadable)                  -> the next check is enqueued with its own delay, in the
+//	no answer (the read or the re-send was ambiguous: a timeout, a 5xx, an unreadable
+//	body)                        -> the next check is enqueued with its own delay, in the
 //	                               same transaction, if the settlement is still unknown
 //
-// A missing payment is not treated as a failure: the original request may still be in
-// flight at the provider. After MaxReconcileChecks checks without an answer the job
-// returns an error, so it retries a few times (each retry reads again), then
-// dead-letters with the reason: the settlement stays `unknown` and the dead job is the
-// operator's signal (the dead-jobs gauge). `worker requeue` reads once more; if the
-// payment has appeared by then, the settlement resolves.
+// After MaxReconcileChecks checks without an answer the job returns an error, so it
+// retries a few times (each retry asks again), then dead-letters with the reason: the
+// settlement stays `unknown` and the dead job is the operator's signal (the dead-jobs
+// gauge). `worker requeue` asks once more.
 //
 // A settlement that is no longer `unknown` (a webhook got there first) is left alone.
-// A rejected read (a 4xx) is our bug and fails the attempt.
-func ReconcileHandler(pool *pgxpool.Pool, r Reader) worker.Handler {
+// A rejected request (a 4xx) is our bug and fails the attempt.
+func ReconcileHandler(pool *pgxpool.Pool, g Gateway) worker.Handler {
 	q := db.New(pool)
 	return func(ctx context.Context, job queue.Claimed) (worker.Commit, error) {
 		var p ReconcilePayload
@@ -93,16 +99,20 @@ func ReconcileHandler(pool *pgxpool.Pool, r Reader) worker.Handler {
 			return nil, nil // resolved meanwhile, or not ambiguous: nothing to find out
 		}
 
-		pay, err := r.Get(ctx, id.String())
+		pay, err := g.Get(ctx, id.String())
+		if errors.Is(err, payclient.ErrNotFound) {
+			pay, err = g.Create(ctx, id.String(), paymentRequest(s))
+		}
 		switch {
 		case err == nil:
 			return resolveCommit(id, outcomeOf(pay)), nil
-		case errors.Is(err, payclient.ErrNotFound), errors.Is(err, payclient.ErrAmbiguous):
+		case errors.Is(err, payclient.ErrAmbiguous):
 			if p.Check >= MaxReconcileChecks {
 				return nil, fmt.Errorf("settlement.reconcile %s: gave up after %d checks, the settlement stays unknown: %w", id, p.Check, errNoAnswerYet)
 			}
 			return nextCheckCommit(id, p.Check), nil
 		default:
+			// A rejected request, or our own context ending: not "no answer".
 			return nil, fmt.Errorf("settlement.reconcile %s: %w", id, err)
 		}
 	}

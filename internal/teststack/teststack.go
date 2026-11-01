@@ -39,8 +39,9 @@ type Stack struct {
 }
 
 type config struct {
-	joinRate  rate.Limit
-	joinBurst int
+	joinRate      rate.Limit
+	joinBurst     int
+	webhookSecret string
 }
 
 type Option func(*config)
@@ -48,6 +49,12 @@ type Option func(*config)
 // WithJoinLimit overrides the join-attempt rate limit (default: effectively unlimited).
 func WithJoinLimit(r rate.Limit, burst int) Option {
 	return func(c *config) { c.joinRate, c.joinBurst = r, burst }
+}
+
+// WithWebhookSecret enables the payment webhook endpoint with this signing secret
+// (without it the route is not mounted, as in a deployment with no secret).
+func WithWebhookSecret(secret string) Option {
+	return func(c *config) { c.webhookSecret = secret }
 }
 
 // New starts the stack. The test is skipped if TEST_DATABASE_URL is unset.
@@ -70,7 +77,15 @@ func New(t testing.TB, opts ...Option) *Stack {
 		balances.NewHandler(pool),
 		settlements.NewHandler(pool),
 	)
-	srv := httptest.NewServer(httpapi.New(pool, v1))
+	var webhooks http.Handler
+	if cfg.webhookSecret != "" {
+		wh, err := settlements.NewWebhookHandler(pool, []byte(cfg.webhookSecret))
+		if err != nil {
+			t.Fatalf("webhook handler: %v", err)
+		}
+		webhooks = wh
+	}
+	srv := httptest.NewServer(httpapi.New(pool, v1, webhooks))
 	t.Cleanup(srv.Close)
 	return &Stack{Server: srv, Issuer: iss, Pool: pool}
 }

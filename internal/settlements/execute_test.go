@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -79,8 +80,11 @@ func (r *rig) enqueue(t *testing.T, id uuid.UUID, maxAttempts int) uuid.UUID {
 	return job
 }
 
-// run starts a fast worker for the rig's kind with handler h and stops it at cleanup.
-func (r *rig) run(t *testing.T, h worker.Handler) {
+// run starts a fast worker for the rig's kind with handler h. It returns a function that
+// stops the worker and waits for it (also run at cleanup). A test that needs two handlers
+// on the rig's kind must stop the first before starting the second: two workers on one
+// kind would split the jobs between the wrong handlers.
+func (r *rig) run(t *testing.T, h worker.Handler) (stop func()) {
 	t.Helper()
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
@@ -93,17 +97,22 @@ func (r *rig) run(t *testing.T, h worker.Handler) {
 			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		})
 	}()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Errorf("Run: %v", err)
+	var once sync.Once
+	stop = func() {
+		once.Do(func() {
+			cancel()
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("Run: %v", err)
+				}
+			case <-time.After(10 * time.Second):
+				t.Error("Run did not return")
 			}
-		case <-time.After(10 * time.Second):
-			t.Error("Run did not return")
-		}
-	})
+		})
+	}
+	t.Cleanup(stop)
+	return stop
 }
 
 type jobInfo struct {

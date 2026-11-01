@@ -481,6 +481,70 @@ paths:
               schema: { $ref: "#/components/schemas/Settlement" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/webhooks/payments:
+    post:
+      summary: Receive a payment-provider event (called by the provider; users never call this).
+      description: >
+        The only route under /v1 that is not behind user authentication. The caller is proved by an
+        HMAC-SHA256 signature over `<unix seconds>.<body>`, sent as `X-Payments-Signature:
+        t=<unix seconds>,v1=<hex>`; a missing, wrong or stale (more than 5 minutes from now) signature is
+        401, with the same answer whatever the reason, and is checked before the body is parsed. The route
+        exists only when the api is configured with a signing secret (PAYMENTS_WEBHOOK_SECRET); otherwise it is not routed at all
+        (401 without a user token, 404 with one), never "accept anything".
+        `payment.succeeded` and `payment.failed` resolve the settlement named by the payment's
+        `idempotency_key` (the settlement id), through the same function the worker uses, so events that
+        are duplicated, out of order, or arrive after the worker or a reconcile already resolved the
+        settlement change nothing and still get 200. An event that contradicts a final status is not applied and
+        is recorded in the audit log. An event whose amount, currency or parties disagree with the settlement
+        is not applied and is recorded. `payment.processing`, unknown event types, unknown settlements and
+        payments that are not ours get 200 and no effect. 500 means nothing was committed and the provider
+        should retry. Settlement is simulated; the provider is a mock.
+      security: []
+      parameters:
+        - { name: X-Payments-Signature, in: header, required: true, schema: { type: string }, description: "t=<unix seconds>,v1=<hex HMAC-SHA256>." }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, data]
+              properties:
+                id: { type: string }
+                type: { type: string, example: payment.succeeded }
+                data:
+                  type: object
+                  required: [payment]
+                  properties:
+                    payment:
+                      type: object
+                      required: [idempotency_key, reference, from, to, amount_minor, currency, status]
+                      properties:
+                        idempotency_key: { type: string, description: The settlement id. }
+                        reference: { type: string, description: The settlement id. }
+                        from: { type: string }
+                        to: { type: string }
+                        amount_minor: { type: integer, format: int64 }
+                        currency: { type: string }
+                        status: { type: string }
+                        failure_code: { type: string, nullable: true }
+      responses:
+        "200":
+          description: Received (applied, or deliberately ignored).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: { type: boolean }
+                  result: { type: string, enum: [apply, ignore, conflict, ignored] }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413":
+          description: The body is larger than 64 KiB.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/join:
     post:
       summary: Join a group with a code. Requires Idempotency-Key; rate limited per user.

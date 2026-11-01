@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -147,16 +148,16 @@ func TestReconcile_FindsADeclineAndFailsWithoutPosting(t *testing.T) {
 	}
 }
 
-// No answer is not an answer: a missing payment (the request may still be in flight) and
-// a failed read both schedule the next check, with the delay for how many checks have
+// No answer is not an answer: a failed read, or a missing payment whose re-send also fails,
+// schedules the next check, with the delay for how many checks have
 // been made, and leave the settlement unknown.
 func TestReconcile_NoAnswerSchedulesTheNextCheck(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		cfg  mockpay.Config
 	}{
-		{"the provider has no payment for the key", mockpay.Config{}},
 		{"the read fails", mockpay.Config{RateReadError: 1}},
+		{"the provider has nothing and the re-send fails too", mockpay.Config{Rate5xxBefore: 1}},
 	} {
 		for _, check := range []int{1, 2, 5, settlements.MaxReconcileChecks - 1} {
 			t.Run(fmt.Sprintf("%s, check %d", tc.name, check), func(t *testing.T) {
@@ -189,8 +190,10 @@ func TestReconcile_NoAnswerSchedulesTheNextCheck(t *testing.T) {
 func TestReconcile_GivesUpLoudlyAndCanBeRequeued(t *testing.T) {
 	r := newRig(t, mockpay.Config{})
 	id := r.unknownSettlement(t, 700, "")
+	gw := &toggled{inner: r.client}
+	gw.down.Store(true)
 	job := r.enqueueReconcile(t, id, settlements.MaxReconcileChecks, 2)
-	r.run(t, settlements.ReconcileHandler(r.pool, r.client))
+	r.run(t, settlements.ReconcileHandler(r.pool, gw))
 
 	j := r.waitJob(t, job, "dead", "succeeded")
 	if j.state != "dead" || j.attempts != 2 || !strings.Contains(j.lastError, "gave up") || !strings.Contains(j.lastError, id.String()) {
@@ -199,15 +202,12 @@ func TestReconcile_GivesUpLoudlyAndCanBeRequeued(t *testing.T) {
 	if r.row(t, id).status != "unknown" || len(r.nextChecks(t, id)) != 0 {
 		t.Error("the settlement moved or another check was scheduled")
 	}
-	if st := r.mock.Stats(); st.Reads != 2 {
-		t.Errorf("reads = %d, want 2 (every attempt reads again)", st.Reads)
+	if gw.gets.Load() != 2 {
+		t.Errorf("asked %d times, want 2 (every attempt asks again)", gw.gets.Load())
 	}
 
-	// The payment shows up at the provider; the operator requeues the dead job.
-	if _, err := r.client.Create(ctx, id.String(), payclient.Request{
-		Reference: id.String(), From: r.from.String(), To: r.to.String(), AmountMinor: 700, Currency: "CAD"}); err != nil {
-		t.Fatal(err)
-	}
+	// The provider comes back; the operator requeues the dead job.
+	gw.down.Store(false)
 	if ids, err := queue.Requeue(ctx, r.pool, queue.RequeueParams{IDs: []uuid.UUID{job}}); err != nil || len(ids) != 1 {
 		t.Fatalf("requeue: %v %v", ids, err)
 	}
@@ -216,6 +216,104 @@ func TestReconcile_GivesUpLoudlyAndCanBeRequeued(t *testing.T) {
 	}
 	if r.row(t, id).status != "succeeded" || r.postings(t, id) != 1 {
 		t.Error("the requeued reconcile did not resolve the settlement exactly once")
+	}
+}
+
+// The provider has nothing for the key (the original request never reached it): reconcile
+// sends the same request again with the same key, and records what comes back.
+func TestReconcile_ResendsWhenTheProviderHasNothing(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		cfg        mockpay.Config
+		wantStatus string
+		wantPosted int
+	}{
+		{"the payment goes through", mockpay.Config{}, "succeeded", 1},
+		{"the payment is declined", mockpay.Config{RateDecline: 1}, "failed", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t, tc.cfg)
+			id := r.unknownSettlement(t, 700, "")
+			job := r.enqueueReconcile(t, id, 1, 0)
+			r.run(t, settlements.ReconcileHandler(r.pool, r.client))
+			if j := r.waitJob(t, job, "succeeded", "dead"); j.state != "succeeded" || j.attempts != 1 {
+				t.Fatalf("job = %+v", j)
+			}
+			if r.row(t, id).status != tc.wantStatus || r.postings(t, id) != tc.wantPosted {
+				t.Errorf("settlement %q with %d postings, want %q and %d", r.row(t, id).status, r.postings(t, id), tc.wantStatus, tc.wantPosted)
+			}
+			st := r.mock.Stats()
+			if st.Reads != 1 || st.CreateCalls != 1 || st.Payments != 1 {
+				t.Errorf("provider stats = %+v, want 1 read then 1 create", st)
+			}
+			p := r.mock.Payments()[0]
+			if p.IdempotencyKey != id.String() || p.Reference != id.String() || p.From != r.from.String() || p.To != r.to.String() || p.AmountMinor != 700 {
+				t.Errorf("the re-send differs from execute's request: %+v", p.Payment)
+			}
+			if len(r.nextChecks(t, id)) != 0 {
+				t.Error("a next check was scheduled after an answer")
+			}
+		})
+	}
+}
+
+// The whole story the re-send exists for: execute's request never reaches the provider,
+// the settlement goes unknown, reconcile finds nothing and sends it again.
+func TestReconcile_RecoversARequestThatNeverReachedTheProvider(t *testing.T) {
+	r := newRig(t, mockpay.Config{})
+	id := r.settlement(t, 700)
+	execJob := r.enqueue(t, id, 0)
+	lost := providerFunc(func(context.Context, string, payclient.Request) (payclient.Payment, error) {
+		return payclient.Payment{}, fmt.Errorf("%w: timeout before the provider acted", payclient.ErrAmbiguous)
+	})
+	stopExecute := r.run(t, r.executeHandler(lost))
+	r.waitJob(t, execJob, "succeeded", "dead")
+	stopExecute() // the next worker on this kind runs a different handler
+	if r.row(t, id).status != "unknown" || len(r.mock.Payments()) != 0 {
+		t.Fatalf("setup: settlement %q, provider holds %d payments", r.row(t, id).status, len(r.mock.Payments()))
+	}
+
+	// The reconcile job execute scheduled, run now under this test's kind.
+	n := r.nextChecks(t, id)
+	if len(n) != 1 || n[0].check != 1 {
+		t.Fatalf("execute scheduled %+v", n)
+	}
+	rec := r.enqueueReconcile(t, id, n[0].check, 0)
+	r.run(t, settlements.ReconcileHandler(r.pool, r.client))
+	if j := r.waitJob(t, rec, "succeeded", "dead"); j.state != "succeeded" {
+		t.Fatalf("reconcile job = %+v", j)
+	}
+	if r.row(t, id).status != "succeeded" || r.postings(t, id) != 1 {
+		t.Error("the settlement was not posted exactly once")
+	}
+	if st := r.mock.Stats(); st.Payments != 1 || st.Charges != 1 {
+		t.Errorf("provider stats = %+v", st)
+	}
+}
+
+// The reason the re-send is safe: the read says "nothing", but the original request lands
+// at the provider before the re-send does. The re-send gets that payment back; the
+// provider has one payment and took one charge.
+func TestReconcile_AResendCannotDoubleCharge(t *testing.T) {
+	r := newRig(t, mockpay.Config{})
+	id := r.unknownSettlement(t, 700, "succeeded") // the original request has landed
+	stale := gateway{
+		get: func(context.Context, string) (payclient.Payment, error) {
+			return payclient.Payment{}, payclient.ErrNotFound
+		},
+		create: r.client.Create,
+	}
+	job := r.enqueueReconcile(t, id, 1, 0)
+	r.run(t, settlements.ReconcileHandler(r.pool, stale))
+	if j := r.waitJob(t, job, "succeeded", "dead"); j.state != "succeeded" {
+		t.Fatalf("job = %+v", j)
+	}
+	st := r.mock.Stats()
+	if st.CreateCalls != 2 || st.Replays != 1 || st.Payments != 1 || st.Charges != 1 {
+		t.Errorf("provider stats = %+v, want 2 create calls, 1 replay, 1 payment, 1 charge", st)
+	}
+	if r.row(t, id).status != "succeeded" || r.postings(t, id) != 1 {
+		t.Error("the settlement was not posted exactly once")
 	}
 }
 
@@ -236,8 +334,8 @@ func TestReconcile_LeavesSettlementsThatAreNotUnknownAlone(t *testing.T) {
 			if j := r.waitJob(t, job, "succeeded", "dead"); j.state != "succeeded" {
 				t.Fatalf("job = %+v", j)
 			}
-			if st := r.mock.Stats(); st.Reads != 0 {
-				t.Errorf("the provider was read %d times for a %s settlement", st.Reads, state)
+			if st := r.mock.Stats(); st.Reads != 0 || st.CreateCalls != 0 {
+				t.Errorf("the provider was called (%d reads, %d creates) for a %s settlement", st.Reads, st.CreateCalls, state)
 			}
 			if r.row(t, id).status != state || r.postings(t, id) != before || len(r.nextChecks(t, id)) != 0 {
 				t.Error("something changed")
@@ -252,9 +350,9 @@ func TestReconcile_ARejectedReadIsAJobFailure(t *testing.T) {
 	r := newRig(t, mockpay.Config{})
 	id := r.unknownSettlement(t, 700, "")
 	job := r.enqueueReconcile(t, id, 1, 2)
-	r.run(t, settlements.ReconcileHandler(r.pool, readerFunc(func(context.Context, string) (payclient.Payment, error) {
+	r.run(t, settlements.ReconcileHandler(r.pool, gateway{get: func(context.Context, string) (payclient.Payment, error) {
 		return payclient.Payment{}, fmt.Errorf("%w: status 400", payclient.ErrRejected)
-	})))
+	}}))
 	if j := r.waitJob(t, job, "dead", "succeeded"); j.state != "dead" || !strings.Contains(j.lastError, "rejected") {
 		t.Fatalf("job = %+v", j)
 	}
@@ -263,10 +361,46 @@ func TestReconcile_ARejectedReadIsAJobFailure(t *testing.T) {
 	}
 }
 
-type readerFunc func(ctx context.Context, key string) (payclient.Payment, error)
+// gateway builds a Gateway from functions; a nil one answers "ambiguous".
+type gateway struct {
+	get    func(ctx context.Context, key string) (payclient.Payment, error)
+	create func(ctx context.Context, key string, r payclient.Request) (payclient.Payment, error)
+}
 
-func (f readerFunc) Get(ctx context.Context, key string) (payclient.Payment, error) {
-	return f(ctx, key)
+func (g gateway) Get(ctx context.Context, key string) (payclient.Payment, error) {
+	if g.get == nil {
+		return payclient.Payment{}, fmt.Errorf("%w: down", payclient.ErrAmbiguous)
+	}
+	return g.get(ctx, key)
+}
+
+func (g gateway) Create(ctx context.Context, key string, r payclient.Request) (payclient.Payment, error) {
+	if g.create == nil {
+		return payclient.Payment{}, fmt.Errorf("%w: down", payclient.ErrAmbiguous)
+	}
+	return g.create(ctx, key, r)
+}
+
+// toggled passes calls to the real client unless down is set, when every call is ambiguous.
+type toggled struct {
+	inner settlements.Gateway
+	down  atomic.Bool
+	gets  atomic.Int32
+}
+
+func (g *toggled) Get(ctx context.Context, key string) (payclient.Payment, error) {
+	g.gets.Add(1)
+	if g.down.Load() {
+		return payclient.Payment{}, fmt.Errorf("%w: down", payclient.ErrAmbiguous)
+	}
+	return g.inner.Get(ctx, key)
+}
+
+func (g *toggled) Create(ctx context.Context, key string, r payclient.Request) (payclient.Payment, error) {
+	if g.down.Load() {
+		return payclient.Payment{}, fmt.Errorf("%w: down", payclient.ErrAmbiguous)
+	}
+	return g.inner.Create(ctx, key, r)
 }
 
 func TestReconcile_BadJobsAndCancellation(t *testing.T) {
@@ -308,7 +442,7 @@ func TestReconcile_NoNextCheckForASettlementResolvedMeanwhile(t *testing.T) {
 	r := newRig(t, mockpay.Config{})
 	id := r.unknownSettlement(t, 700, "")
 	r.enqueueReconcile(t, id, 1, 0)
-	h := settlements.ReconcileHandler(r.pool, r.client)
+	h := settlements.ReconcileHandler(r.pool, gateway{}) // the provider cannot be reached: no answer
 
 	c := claim(t, r, 10*time.Second)
 	commit, err := h(ctx, c)

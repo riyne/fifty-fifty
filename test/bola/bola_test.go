@@ -748,6 +748,7 @@ func TestEveryOperationIsCovered(t *testing.T) {
 	}
 
 	authenticated := map[string]bool{}
+	public := map[string]bool{}
 	for path, item := range doc.Paths {
 		for method, node := range item {
 			switch method {
@@ -762,7 +763,8 @@ func TestEveryOperationIsCovered(t *testing.T) {
 				t.Fatalf("decode %s %s: %v", method, path, err)
 			}
 			if op.Security != nil && len(*op.Security) == 0 {
-				continue // explicitly public (health checks)
+				public[strings.ToUpper(method)+" "+path] = true
+				continue // explicitly public
 			}
 			authenticated[strings.ToUpper(method)+" "+path] = true
 		}
@@ -789,6 +791,24 @@ func TestEveryOperationIsCovered(t *testing.T) {
 	for op := range exempt {
 		if !authenticated[op] {
 			problems = append(problems, "exemption names an operation that is not an authenticated route in the spec: "+op)
+		}
+	}
+	// A route without user authentication is a decision, not a default: the list is
+	// fixed here, and adding one means changing it on purpose. (The webhook is tested
+	// in internal/settlements: it authenticates by HMAC signature instead.)
+	allowedPublic := map[string]string{
+		"GET /healthz":               "health check",
+		"GET /readyz":                "readiness check",
+		"POST /v1/webhooks/payments": "payment-provider webhook, authenticated by signature",
+	}
+	for op := range public {
+		if allowedPublic[op] == "" {
+			problems = append(problems, "route without user authentication is not on the allowed list: "+op)
+		}
+	}
+	for op := range allowedPublic {
+		if !public[op] {
+			problems = append(problems, "allowed public route is missing from the spec or is not marked public: "+op)
 		}
 	}
 	sort.Strings(problems)

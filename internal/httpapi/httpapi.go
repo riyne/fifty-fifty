@@ -25,13 +25,22 @@ const readyTimeout = 2 * time.Second
 // New returns the root handler. Health routes are unauthenticated. v1 serves
 // everything under /v1/ and must already be wrapped in authentication (see
 // NewV1); a nil v1 mounts nothing, so a missing wiring fails closed with 404s.
+//
+// webhooks, if not nil, is mounted at POST /v1/webhooks/payments, OUTSIDE v1 and so
+// outside user authentication: the payment provider is not a user, and the handler
+// authenticates it by signature. It is the only route besides health that is. The more
+// specific pattern wins over "/v1/", and a nil webhooks mounts nothing, so a deployment
+// without a webhook secret answers 404 rather than accepting unsigned events.
 // Routes use Go 1.22+ method-aware patterns.
-func New(db Pinger, v1 http.Handler) http.Handler {
+func New(db Pinger, v1 http.Handler, webhooks http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	mux.HandleFunc("GET /readyz", readyz(db))
 	if v1 != nil {
 		mux.Handle("/v1/", v1)
+	}
+	if webhooks != nil {
+		mux.Handle("POST "+settlements.WebhookPath, webhooks)
 	}
 	return mux
 }

@@ -56,7 +56,8 @@ type Provider interface {
 //	ambiguous (timeout, dropped connection, 5xx, unreadable answer)
 //	                      -> Resolve(unknown) and a reconcile job, in the same transaction.
 //	                         Execute never sends again: a 5xx can come after the provider
-//	                         took the payment, and only a read can tell.
+//	                         took the payment, and only a read can tell. If the read finds
+//	                         nothing, reconcile sends the same request again (same key).
 //	rejected (a 4xx)      -> an error: our request is wrong, so the job retries, then is
 //	                         dead-lettered where an operator sees it. The settlement
 //	                         stays pending.
@@ -83,10 +84,7 @@ func ExecuteHandler(pool *pgxpool.Pool, p Provider) worker.Handler {
 			return nil, nil // someone already moved it; nothing to send, nothing to write
 		}
 
-		pay, err := p.Create(ctx, id.String(), payclient.Request{
-			Reference: id.String(), From: s.FromMember.String(), To: s.ToMember.String(),
-			AmountMinor: s.AmountMinor, Currency: s.Currency,
-		})
+		pay, err := p.Create(ctx, id.String(), paymentRequest(s))
 		switch {
 		case err == nil:
 			return resolveCommit(id, outcomeOf(pay)), nil
@@ -97,6 +95,15 @@ func ExecuteHandler(pool *pgxpool.Pool, p Provider) worker.Handler {
 			// payment outcome. The worker decides what to do with the error.
 			return nil, fmt.Errorf("settlement.execute %s: %w", id, err)
 		}
+	}
+}
+
+// paymentRequest is the provider request for a settlement. Execute and reconcile must
+// send exactly the same request: the provider refuses a key reused for a different one.
+func paymentRequest(s db.GetSettlementForExecutionRow) payclient.Request {
+	return payclient.Request{
+		Reference: s.ID.String(), From: s.FromMember.String(), To: s.ToMember.String(),
+		AmountMinor: s.AmountMinor, Currency: s.Currency,
 	}
 }
 

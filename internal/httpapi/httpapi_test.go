@@ -15,7 +15,7 @@ type fakeDB struct{ err error }
 func (f fakeDB) Ping(context.Context) error { return f.err }
 
 // newHealthOnly builds the handler without the /v1 API (nil v1 mounts nothing).
-func newHealthOnly(db httpapi.Pinger) http.Handler { return httpapi.New(db, nil) }
+func newHealthOnly(db httpapi.Pinger) http.Handler { return httpapi.New(db, nil, nil) }
 
 func get(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
