@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/riyne/fifty-fifty/internal/queue"
+	"github.com/riyne/fifty-fifty/internal/settlements"
 	"github.com/riyne/fifty-fifty/internal/testutil"
 	"github.com/riyne/fifty-fifty/internal/worker"
 )
@@ -116,11 +117,36 @@ func TestParseRun(t *testing.T) {
 // Every kind the binary can run has a handler, and the periodic schedule only names
 // kinds that have one (worker.Run refuses otherwise).
 func TestHandlersCoverTheSchedule(t *testing.T) {
-	h := handlers(nil)
+	h, err := handlers(nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, sched := range []queue.PeriodicJob{worker.CleanupSchedule, worker.PruneSchedule} {
 		if _, ok := h[sched.Kind]; !ok {
 			t.Errorf("no handler for the scheduled kind %q", sched.Kind)
 		}
+	}
+}
+
+// Settlement execution is registered only with a provider to talk to, and a bad URL
+// stops the worker at startup instead of failing every settlement later.
+func TestHandlers_SettlementExecutionNeedsAProvider(t *testing.T) {
+	h, err := handlers(nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := h[settlements.KindExecute]; ok {
+		t.Error("settlement.execute is registered without PAYMENTS_URL")
+	}
+	h, err = handlers(nil, "http://127.0.0.1:8090")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := h[settlements.KindExecute]; !ok {
+		t.Error("settlement.execute is not registered with PAYMENTS_URL set")
+	}
+	if _, err := handlers(nil, "127.0.0.1:8090"); err == nil {
+		t.Error("a PAYMENTS_URL without a scheme was accepted")
 	}
 }
 

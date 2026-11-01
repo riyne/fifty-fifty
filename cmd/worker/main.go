@@ -22,7 +22,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/riyne/fifty-fifty/internal/payclient"
 	"github.com/riyne/fifty-fifty/internal/queue"
+	"github.com/riyne/fifty-fifty/internal/settlements"
 	"github.com/riyne/fifty-fifty/internal/worker"
 )
 
@@ -39,7 +41,9 @@ poll, 20s grace. --metrics-addr (off by default) serves Prometheus metrics at
 
 requeue moves dead-lettered jobs back to the queue with a fresh set of attempts
 (their last_error is kept). It needs --kind or --id; there is no "all".
-Needs DATABASE_URL.`
+Needs DATABASE_URL. If PAYMENTS_URL (the base URL of the payment provider, for
+example http://127.0.0.1:8090) is set, the worker also runs settlement.execute jobs;
+without it those jobs wait in the queue.`
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
@@ -90,7 +94,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	runCfg.Pool = pool
-	runCfg.Handlers = handlers(pool)
+	runCfg.Handlers, err = handlers(pool, os.Getenv("PAYMENTS_URL"))
+	if err != nil {
+		return err
+	}
 	runCfg.Periodic = []queue.PeriodicJob{worker.CleanupSchedule, worker.PruneSchedule}
 
 	if metricsAddr != "" {
@@ -135,13 +142,28 @@ func serveMetrics(ctx context.Context, ln net.Listener, h http.Handler) {
 	}
 }
 
-// handlers is every job kind this worker can run. Later milestones register
-// theirs here (settlements in M4, receipts in M6).
-func handlers(pool *pgxpool.Pool) map[string]worker.Handler {
-	return map[string]worker.Handler{
+// paymentsTimeout bounds one call to the payment provider. Running out of it is an
+// ambiguous result (the settlement becomes unknown and is reconciled), not a failure.
+const paymentsTimeout = 10 * time.Second
+
+// handlers is every job kind this worker can run. Settlement execution is registered
+// only when paymentsURL (the PAYMENTS_URL environment variable, the base URL of the
+// payment provider) is set: without a provider the worker must not claim settlement
+// jobs it cannot run, and they wait in the queue for a worker that can. Receipts
+// arrive in M6.
+func handlers(pool *pgxpool.Pool, paymentsURL string) (map[string]worker.Handler, error) {
+	h := map[string]worker.Handler{
 		worker.KindIdempotencyCleanup: worker.IdempotencyCleanup(pool),
 		worker.KindJobsPrune:          worker.JobsPrune(pool, worker.JobRetention),
 	}
+	if paymentsURL != "" {
+		c, err := payclient.New(paymentsURL, paymentsTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("PAYMENTS_URL: %w", err)
+		}
+		h[settlements.KindExecute] = settlements.ExecuteHandler(pool, c)
+	}
+	return h, nil
 }
 
 func parseRun(args []string, stderr io.Writer) (cfg worker.Config, metricsAddr string, err error) {

@@ -83,3 +83,12 @@ JOIN memberships m ON m.group_id = s.group_id AND m.user_id = sqlc.arg(user_id)
 WHERE s.group_id = sqlc.arg(group_id)
 ORDER BY s.created_at DESC, s.id
 LIMIT 100;
+
+-- GetSettlementForExecution is for the worker (settlement.execute and, later,
+-- reconcile): it has no caller to authorize, it is given a job. It reads the current
+-- state, so a re-run sees what an earlier run or a webhook already did.
+-- name: GetSettlementForExecution :one
+SELECT s.id, s.group_id, s.from_member, s.to_member, s.amount_minor, s.status, g.currency
+FROM settlements s
+JOIN groups g ON g.id = s.group_id
+WHERE s.id = $1;

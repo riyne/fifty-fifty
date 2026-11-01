@@ -110,6 +110,41 @@ func (q *Queries) GetSettlementCapacity(ctx context.Context, arg GetSettlementCa
 	return i, err
 }
 
+const getSettlementForExecution = `-- name: GetSettlementForExecution :one
+SELECT s.id, s.group_id, s.from_member, s.to_member, s.amount_minor, s.status, g.currency
+FROM settlements s
+JOIN groups g ON g.id = s.group_id
+WHERE s.id = $1
+`
+
+type GetSettlementForExecutionRow struct {
+	ID          uuid.UUID
+	GroupID     uuid.UUID
+	FromMember  uuid.UUID
+	ToMember    uuid.UUID
+	AmountMinor int64
+	Status      string
+	Currency    string
+}
+
+// GetSettlementForExecution is for the worker (settlement.execute and, later,
+// reconcile): it has no caller to authorize, it is given a job. It reads the current
+// state, so a re-run sees what an earlier run or a webhook already did.
+func (q *Queries) GetSettlementForExecution(ctx context.Context, id uuid.UUID) (GetSettlementForExecutionRow, error) {
+	row := q.db.QueryRow(ctx, getSettlementForExecution, id)
+	var i GetSettlementForExecutionRow
+	err := row.Scan(
+		&i.ID,
+		&i.GroupID,
+		&i.FromMember,
+		&i.ToMember,
+		&i.AmountMinor,
+		&i.Status,
+		&i.Currency,
+	)
+	return i, err
+}
+
 const getSettlementForMember = `-- name: GetSettlementForMember :one
 SELECT s.id, s.group_id, s.from_member, s.to_member, s.amount_minor, s.status, s.failure_code,
        s.ledger_transaction_id, s.created_at, s.resolved_at, g.currency

@@ -157,14 +157,14 @@ func TestCreate_Validation(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			beforeExp := w.s.QueryInt(t, `SELECT count(*) FROM expenses`)
+			beforeExp := w.count(t, "expenses", w.group) // this group only: the database is shared with other packages' tests
 			key := uuid.NewString()
 			r := w.post(t, w.member, w.group, tc.body, key)
 			if r.Status != tc.want {
 				t.Fatalf("status = %d, want %d: %s", r.Status, tc.want, r.Body)
 			}
 			if tc.want == 400 {
-				if w.s.QueryInt(t, `SELECT count(*) FROM expenses`) != beforeExp {
+				if w.count(t, "expenses", w.group) != beforeExp {
 					t.Error("a rejected request created an expense")
 				}
 				// Validation happens before the key is claimed, so the key is not burned.
