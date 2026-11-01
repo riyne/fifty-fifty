@@ -105,14 +105,15 @@ type LedgerEntry struct {
 }
 
 type LedgerTransaction struct {
-	ID         uuid.UUID
-	GroupID    uuid.UUID
-	Kind       string
-	ExpenseID  pgtype.UUID
-	ReversesID pgtype.UUID
-	CreatedBy  uuid.UUID
-	CreatedAt  time.Time
-	Txid       pgtype.Uint64
+	ID           uuid.UUID
+	GroupID      uuid.UUID
+	Kind         string
+	ExpenseID    pgtype.UUID
+	ReversesID   pgtype.UUID
+	CreatedBy    uuid.UUID
+	CreatedAt    time.Time
+	Txid         pgtype.Uint64
+	SettlementID pgtype.UUID
 }
 
 type Membership struct {
@@ -120,6 +121,19 @@ type Membership struct {
 	UserID   uuid.UUID
 	Role     string
 	JoinedAt time.Time
+}
+
+type Settlement struct {
+	ID                  uuid.UUID
+	GroupID             uuid.UUID
+	FromMember          uuid.UUID
+	ToMember            uuid.UUID
+	AmountMinor         int64
+	Status              string
+	FailureCode         pgtype.Text
+	LedgerTransactionID pgtype.UUID
+	CreatedAt           time.Time
+	ResolvedAt          *time.Time
 }
 
 type User struct {

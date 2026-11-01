@@ -13,6 +13,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -156,6 +157,33 @@ func inTxAlwaysRollback(pool *pgxpool.Pool, fn func(tx pgx.Tx) error) error {
 	return fn(tx)
 }
 
+// runRefused runs one destructive statement in an always-rolled-back transaction and
+// returns the error it raised. TRUNCATE ... CASCADE takes ACCESS EXCLUSIVE locks on
+// every table that references the ledger (since migration 00011 that includes
+// settlements), in an order that can deadlock with a settlement or finalize
+// transaction running in another test package. A short lock_timeout makes this
+// statement give up quickly instead of holding locks and letting the deadlock
+// detector pick a victim; contention (55P03, 40P01) is retried, anything else is
+// returned as the real answer.
+func runRefused(pool *pgxpool.Pool, sql string) (err error) {
+	const lockNotAvailable, deadlock = "55P03", "40P01"
+	for range 100 {
+		err = inTxAlwaysRollback(pool, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, `SET LOCAL lock_timeout = '100ms'`); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, sql)
+			return err
+		})
+		var pg *pgconn.PgError
+		if !errors.As(err, &pg) || (pg.Code != lockNotAvailable && pg.Code != deadlock) {
+			return err
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return err
+}
+
 func wantCode(t *testing.T, err error, want string, what string) {
 	t.Helper()
 	var pg *pgconn.PgError
@@ -288,7 +316,7 @@ func TestLedgerAppendOnly_AppRole(t *testing.T) {
 	w.postSomething(t)
 	for _, m := range mutations {
 		// TRUNCATE is not granted to the app role at all, so it fails the same way.
-		err := inTxAlwaysRollback(w.pool, func(tx pgx.Tx) error { _, err := tx.Exec(ctx, m.sql); return err })
+		err := runRefused(w.pool, m.sql)
 		wantCode(t, err, codePrivilege, "app role: "+m.name)
 	}
 	// audit_events is written once and never changed.
@@ -306,7 +334,7 @@ func TestLedgerAppendOnly_EvenOwnerIsRefused(t *testing.T) {
 	w.postSomething(t)
 	owner := testutil.OwnerPool(t)
 	for _, m := range mutations {
-		err := inTxAlwaysRollback(owner, func(tx pgx.Tx) error { _, err := tx.Exec(ctx, m.sql); return err })
+		err := runRefused(owner, m.sql)
 		wantCode(t, err, codeRestrict, "owner: "+m.name)
 		if err != nil && !strings.Contains(err.Error(), "append-only") {
 			t.Errorf("owner: %s: refused for the wrong reason: %v", m.name, err)
