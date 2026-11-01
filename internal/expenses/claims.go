@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/riyne/fifty-fifty/internal/auth"
+	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 )
@@ -55,7 +56,7 @@ func (h *Handler) setClaim(w http.ResponseWriter, r *http.Request, claim bool) {
 	defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after Commit
 	q := h.q.WithTx(tx)
 
-	status, err := q.LockExpenseForClaim(r.Context(), db.LockExpenseForClaimParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
+	status, err := controls.LockExpenseForClaim(r.Context(), q, db.LockExpenseForClaimParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		expenseNotFound(w)
 		return

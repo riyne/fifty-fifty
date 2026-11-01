@@ -42,6 +42,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
 )
 
@@ -105,10 +106,14 @@ func Do(
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op after Commit
 	q := db.New(tx)
 
-	claimed := false
+	// controls.Disabled is constant false outside the unsafe_controls build.
+	claimed := controls.Disabled(controls.IdempotencyCheck)
 	// The loop only repeats if a row we conflicted with disappears before we can
 	// read it (expiry cleanup). Two passes is more than enough.
 	for range 2 {
+		if claimed {
+			break
+		}
 		_, err := q.ClaimIdempotencyKey(ctx, db.ClaimIdempotencyKeyParams{UserID: userID, Key: key, Fingerprint: fingerprint})
 		if err == nil {
 			claimed = true

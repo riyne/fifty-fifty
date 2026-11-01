@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/auth"
+	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
@@ -189,7 +190,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) insert(ctx context.Context, tx pgx.Tx, from, to, groupID uuid.UUID, currency string, amount int64) (idempotency.Result, error) {
 	q := h.q.WithTx(tx)
 
-	if _, err := q.LockGroupForSettlement(ctx, groupID); errors.Is(err, pgx.ErrNoRows) {
+	if _, err := controls.LockGroupForSettlement(ctx, q, groupID); errors.Is(err, pgx.ErrNoRows) {
 		return jsonResult(http.StatusNotFound, errBody("not_found", "group not found")), nil
 	} else if err != nil {
 		return idempotency.Result{}, fmt.Errorf("lock group: %w", err)

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/riyne/fifty-fifty/internal/auth"
+	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
@@ -97,7 +98,7 @@ func (h *Handler) void(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) doVoid(ctx context.Context, tx pgx.Tx, callerID uuid.UUID, callerRole string, groupID, expenseID uuid.UUID) (idempotency.Result, error) {
 	q := h.q.WithTx(tx)
 
-	status, err := q.LockExpenseForVoid(ctx, db.LockExpenseForVoidParams{UserID: callerID, ExpenseID: expenseID, GroupID: groupID})
+	status, err := controls.LockExpenseForVoid(ctx, q, db.LockExpenseForVoidParams{UserID: callerID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return jsonResult(http.StatusNotFound, errBody("not_found", "expense not found")), nil
 	}

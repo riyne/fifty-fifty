@@ -15,6 +15,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/allocator"
 	"github.com/riyne/fifty-fifty/internal/auth"
+	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
@@ -138,7 +139,7 @@ func (h *Handler) finalize(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) doFinalize(ctx context.Context, tx pgx.Tx, payerID, groupID, expenseID uuid.UUID, split []uuid.UUID) (idempotency.Result, error) {
 	q := h.q.WithTx(tx)
 
-	locked, err := q.LockExpenseForFinalize(ctx, db.LockExpenseForFinalizeParams{UserID: payerID, ExpenseID: expenseID, GroupID: groupID})
+	locked, err := controls.LockExpenseForFinalize(ctx, q, db.LockExpenseForFinalizeParams{UserID: payerID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return jsonResult(http.StatusNotFound, errBody("not_found", "expense not found")), nil
 	}

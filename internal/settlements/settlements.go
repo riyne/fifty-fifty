@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/ledger"
 )
@@ -140,7 +141,7 @@ func Resolve(ctx context.Context, tx pgx.Tx, id uuid.UUID, o Outcome) (Result, e
 		return Result{}, fmt.Errorf("settlements: invalid outcome: %w", err)
 	}
 	q := db.New(tx)
-	s, err := q.LockSettlement(ctx, id)
+	s, err := controls.LockSettlement(ctx, q, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Result{}, ErrNotFound
 	}
@@ -184,19 +185,19 @@ func Resolve(ctx context.Context, tx pgx.Tx, id uuid.UUID, o Outcome) (Result, e
 		if err := q.CreateLedgerEntries(ctx, p); err != nil {
 			return Result{}, fmt.Errorf("create ledger entries: %w", err)
 		}
-		if err := mustMoveOne(q.MarkSettlementSucceeded(ctx, db.MarkSettlementSucceededParams{ID: s.ID, LedgerTransactionID: pgtype.UUID{Bytes: txID, Valid: true}})); err != nil {
+		if err := mustMoveOne(controls.MarkSettlementSucceeded(ctx, q, db.MarkSettlementSucceededParams{ID: s.ID, LedgerTransactionID: pgtype.UUID{Bytes: txID, Valid: true}})); err != nil {
 			return Result{}, fmt.Errorf("mark succeeded: %w", err)
 		}
 		res.LedgerTransactionID = txID
 		data["ledger_transaction_id"] = txID
 		data["amount_minor"] = s.AmountMinor
 	case KindFailed:
-		if err := mustMoveOne(q.MarkSettlementFailed(ctx, db.MarkSettlementFailedParams{ID: s.ID, FailureCode: pgtype.Text{String: o.FailureCode, Valid: true}})); err != nil {
+		if err := mustMoveOne(controls.MarkSettlementFailed(ctx, q, db.MarkSettlementFailedParams{ID: s.ID, FailureCode: pgtype.Text{String: o.FailureCode, Valid: true}})); err != nil {
 			return Result{}, fmt.Errorf("mark failed: %w", err)
 		}
 		data["failure_code"] = o.FailureCode
 	case KindUnknown:
-		if err := mustMoveOne(q.MarkSettlementUnknown(ctx, s.ID)); err != nil {
+		if err := mustMoveOne(controls.MarkSettlementUnknown(ctx, q, s.ID)); err != nil {
 			return Result{}, fmt.Errorf("mark unknown: %w", err)
 		}
 	}
