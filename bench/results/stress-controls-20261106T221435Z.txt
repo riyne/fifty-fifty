@@ -1,0 +1,557 @@
+Ledger stress benchmark, controls build (simulated settlement: mock payment provider with simulated latency of 100ms median, log-normal sigma 0.4)
+started 2026-11-06T22:14:35Z, commit 2766d9f09bc417d5e8294b32867f8331249558c8 (working tree dirty: false)
+machine: Apple M3 Pro, 11 CPUs, 19327352832 bytes RAM, Darwin 25.6.0 arm64; PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+docker: /fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit); engine cpus=11 memory_bytes=8214716416 server=29.9.1
+load average at start: 15:14  up 79 days, 11:18, 1 user, load averages: 11.35 10.33 8.30
+per run: 24 users in 4 expense groups acting for 1m0s (each user a loop of create/claim/unclaim/finalize/void/balances; 2 barrier-race loops per group); 3 goroutines running settle rounds (a fresh group of 6 per round, 300ms apart); then settlements drain.
+api pool 30 connections; 3 worker processes x 4 jobs in flight, lease 5s, poll 1s; provider timeout faults held 3s; a scratch database per run; seeds 1..3 (the seed fixes each goroutine's sequence of operations, not the interleaving)
+mock provider flags: --latency-median 100ms --rate-decline 0.05 --rate-timeout-before 0.03 --rate-5xx-before 0.03 --rate-timeout-after 0.03 --rate-5xx-after 0.03 --rate-read-error 0.1 --webhook-drop 0.2 --webhook-duplicate 0.3 --webhook-delay-max 200ms --webhook-out-of-order 0.3
+  (resolve-race cases use: --latency-median 100ms --rate-decline 0.05 --rate-timeout-after 0.05 --rate-5xx-after 0.05 --rate-read-error 0.1 --webhook-duplicate 0.8 --webhook-delay-max 120ms --webhook-out-of-order 0.3)
+
+== claim_lock
+protections disabled: [claim_lock]; unique posting index dropped: false
+run seed 1: matches expectation (71 s)
+    checked: 14593 expenses (7287 finalized, 4632 voided), 1668 settlements (1596 with a posting), 17593 logical creates, 13515 ledger transactions; settlements unresolved 0, succeeded 1596
+    invariants violated: ledger_differs_from_claims=16
+    clients saw: 5xx 2, settle accepted 3053 / refused for capacity 1867 / replayed 1920, finalize ok 9421, void ok 6356, claims refused after finalize 2234, requests abandoned 6549, races: 2839 rounds, 0 with a finalize landing mid-burst
+    retries answered from the stored response: create 5326 finalize 6093 void 4220 settle 1920; concurrent duplicates that waited and replayed: create 2114 finalize 2616 void 1727 settle 288
+    database lock waits seen by a 20 ms sampler: 2948 of 3004 samples had a backend waiting (at most 27)
+    provider saw: 1845 create calls (50 replays), 1668 payments (1596 charges, 72 declined); timeouts before/after 63/53, 5xx before/after 64/48; webhooks: 2645 events, 691 dropped, 831 duplicated, 523 reordered payments, 3476 deliveries
+    api logged: 8396 from clients going away; other errors:
+        other:add claim: ERROR: deadlock detected (SQLSTATE 40P01) = 1
+        other:finalize: split the rest: ERROR: deadlock detected (SQLSTATE 40P01) = 1
+    workers logged: 0 from clients going away; no other error
+    unexpected responses (first 1 shown): claim: status 500 body {"code":"internal","message":"internal error"}
+
+    e.g. ledger_differs_from_claims: expense de67fce5-a4e1-472d-842d-3bb9d9b0b890: ledger has map[a334931c-0594-499f-88a0-bec2f2cf9f25:-5047 ad1d7eb8-d9c8-48f2-953b-da5852d5aac6:5047], its claims imply [{a334931c-0594-499f-88a0-bec2f2cf9f25 -4743} {ad1d7eb8...
+    e.g. ledger_differs_from_claims: expense 774e384d-3b2d-4ac4-98b3-c9ff80e37e4b: ledger has map[2269be62-47ec-4238-9511-22b4ca54c279:-2310 2a97d3bc-231c-4646-8622-ee65745be4fe:-3453 5fda1818-b3aa-4cd7-b502-8145f9ba799a:11555 c72cb6cb-5b01-4e21-9bb1-468a5c...
+    e.g. ledger_differs_from_claims: expense cd6391d5-e11d-47e1-97b0-11e32e194d84: ledger has map[0601d972-2fad-4c5c-a315-60518bab1840:-1853 32e3beda-b8ee-4e0f-8cd9-18d8e2015fdc:-1853 89636801-5049-4ccd-ae39-c3da106b14d5:-1853 8b1ba491-2c49-4e1c-ae4d-24ec62...
+    e.g. ledger_differs_from_claims: expense 2e5881d9-39b0-40ce-ba77-cf6ac93d30eb: ledger has map[88945527-708b-4da5-89f2-0997d765efd9:5800 a0db0290-1ced-42fc-a09c-170b136deb9e:-3926 bd016377-15ab-4c2f-90c8-1af9823d2841:-1874], its claims imply [{88945527-7...
+    e.g. ledger_differs_from_claims: expense 120243d7-06a7-472b-b138-d110b6e3d327: ledger has map[0f5f90b6-aaee-4401-b2fd-0688494acd1a:9935 88945527-708b-4da5-89f2-0997d765efd9:-3314 a0db0290-1ced-42fc-a09c-170b136deb9e:-3312 bd016377-15ab-4c2f-90c8-1af9823...
+run seed 2: matches expectation (93 s)
+    checked: 12360 expenses (5751 finalized, 3412 voided), 1496 settlements (1427 with a posting), 15060 logical creates, 10590 ledger transactions; settlements unresolved 0, succeeded 1427
+    invariants violated: ledger_differs_from_claims=21
+    clients saw: 5xx 5, settle accepted 2684 / refused for capacity 1654 / replayed 1638, finalize ok 7691, void ok 4773, claims refused after finalize 2028, requests abandoned 5329, races: 2276 rounds, 0 with a finalize landing mid-burst
+    retries answered from the stored response: create 4946 finalize 5323 void 3327 settle 1638; concurrent duplicates that waited and replayed: create 1985 finalize 2105 void 1248 settle 222
+    database lock waits seen by a 20 ms sampler: 2985 of 3005 samples had a backend waiting (at most 24)
+    provider saw: 1615 create calls (38 replays), 1496 payments (1427 charges, 69 declined); timeouts before/after 32/50, 5xx before/after 49/49; webhooks: 2397 events, 595 dropped, 699 duplicated, 457 reordered payments, 3096 deliveries
+    api logged: 6820 from clients going away; other errors:
+        other:add claim: ERROR: deadlock detected (SQLSTATE 40P01) = 5
+    workers logged: 0 from clients going away; no other error
+    unexpected responses (first 3 shown): claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+
+    e.g. ledger_differs_from_claims: expense 79ee2a5d-8373-40c0-9165-e55796076000: ledger has map[41057af7-0b2d-40ca-8d09-031e3a4c3c47:-1649 681c2576-e62a-482c-93aa-90921c9b3f48:-882 be90ab76-92d1-4991-ab63-e4093eca3d2f:-1683 ead318c6-54d7-40b4-a926-05eb92d...
+    e.g. ledger_differs_from_claims: expense 7713f9da-ea08-4a45-a936-934b0b747825: ledger has map[62a56785-54aa-4176-a5ef-c8f11d00d2da:-5979 90b2da73-4c20-459f-ba9b-870faf9f93be:5979], its claims imply [{62a56785-54aa-4176-a5ef-c8f11d00d2da -6266} {90b2da73...
+    e.g. ledger_differs_from_claims: expense cdc6d300-313c-4af5-85de-4e845cb6e09e: ledger has map[21692786-9145-4f64-a72e-d40e989d7dc2:-882 456fadcd-6308-4f14-b604-e5472e2ed077:6516 9e6344a6-eaad-4979-9742-366200bb1351:-1833 c2b2e131-bf3f-47e6-b43f-12a41550...
+    e.g. ledger_differs_from_claims: expense 1405cb00-7814-4833-9936-0b4ec347f4bc: ledger has map[62a56785-54aa-4176-a5ef-c8f11d00d2da:9114 99ea0f01-ec2e-48f8-bb96-64076f4cea77:-3040 af72aa11-d21c-43d9-9465-edb5b5975388:-3038 dcdb6dcc-fee8-4429-a012-7cceee1...
+    e.g. ledger_differs_from_claims: expense 0c8b5a3d-87f4-46b3-8bec-4a76cea90fb6: ledger has map[62a56785-54aa-4176-a5ef-c8f11d00d2da:12430 90b2da73-4c20-459f-ba9b-870faf9f93be:-3334 99ea0f01-ec2e-48f8-bb96-64076f4cea77:-4416 af72aa11-d21c-43d9-9465-edb5b5...
+run seed 3: matches expectation (212 s)
+    checked: 13959 expenses (6910 finalized, 4367 voided), 1584 settlements (1499 with a posting), 16839 logical creates, 12776 ledger transactions; settlements unresolved 0, succeeded 1499
+    invariants violated: ledger_differs_from_claims=20
+    clients saw: 5xx 3, settle accepted 2818 / refused for capacity 1748 / replayed 1686, finalize ok 9326, void ok 5777, claims refused after finalize 2740, requests abandoned 6115, races: 2679 rounds, 0 with a finalize landing mid-burst
+    retries answered from the stored response: create 5331 finalize 6295 void 3619 settle 1686; concurrent duplicates that waited and replayed: create 2238 finalize 2394 void 1463 settle 231
+    database lock waits seen by a 20 ms sampler: 2954 of 3003 samples had a backend waiting (at most 24)
+    provider saw: 1744 create calls (50 replays), 1584 payments (1499 charges, 85 declined); timeouts before/after 56/58, 5xx before/after 54/48; webhooks: 2525 events, 643 dropped, 750 duplicated, 418 reordered payments, 3275 deliveries
+    api logged: 7733 from clients going away; other errors:
+        other:add claim: ERROR: deadlock detected (SQLSTATE 40P01) = 3
+    workers logged: 0 from clients going away; no other error
+    unexpected responses (first 3 shown): claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+
+    e.g. ledger_differs_from_claims: expense b0efeec5-a98e-4072-8b8a-7b5770a330d0: ledger has map[280f2a96-a137-4d00-828c-cd1f32697460:-2457 4bfd5beb-2902-4ace-8b80-fe284128c7e7:-2457 7030de23-b47d-478c-a337-15ebe504c52e:-209 7ee9aeed-2834-42fb-ae07-d4fea0d...
+    e.g. ledger_differs_from_claims: expense ee1c76ac-b523-4410-b40b-efb7c8a152f0: ledger has map[22214401-a34b-497c-8a88-c6ff98defd12:-2691 478f827f-02a3-486c-a3ca-0dfe65ce3b43:7838 6ded9810-49a5-4457-b826-624852e81c2b:-2377 8aeb6cdc-7654-467c-a54e-50c380d...
+    e.g. ledger_differs_from_claims: expense 43a8e706-5167-4d46-ba96-0ce71a9f80b5: ledger has map[4eb634e5-ae0f-4a2b-b161-c226ddd54765:-2213 8aeb6cdc-7654-467c-a54e-50c380d4014f:2213], its claims imply [{4eb634e5-ae0f-4a2b-b161-c226ddd54765 -1888} {8aeb6cdc...
+    e.g. ledger_differs_from_claims: expense 263139e2-96b7-45a9-bef2-c53c118f6395: ledger has map[280f2a96-a137-4d00-828c-cd1f32697460:-709 4bfd5beb-2902-4ace-8b80-fe284128c7e7:12787 7030de23-b47d-478c-a337-15ebe504c52e:-8923 7ee9aeed-2834-42fb-ae07-d4fea0d...
+    e.g. ledger_differs_from_claims: expense f22e8603-3ec1-44ed-8e2d-6c997fb57f04: ledger has map[986d65c9-bca8-49e7-9ae9-13eb8f24d815:-1200 9b22d7f3-9be7-4191-8bc5-4aef2f54eca9:-4269 a0c0d723-c29f-47c8-bd7f-f951f399c8a6:6795 d48ed460-8642-4eb8-a160-497eb86...
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[16 21 20] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+
+== finalize_lock
+protections disabled: [finalize_lock]; unique posting index dropped: false
+run seed 1: matches expectation (73 s)
+    checked: 14207 expenses (7152 finalized, 3437 voided), 1610 settlements (1530 with a posting), 17087 logical creates, 13795 ledger transactions; settlements unresolved 0, succeeded 1530
+    invariants violated: ledger_differs_from_claims=2209
+    clients saw: 5xx 2513, settle accepted 2938 / refused for capacity 1775 / replayed 1833, finalize ok 9322, void ok 7028, claims refused after finalize 2240, requests abandoned 6368, races: 2796 rounds, 6 with a finalize landing mid-burst
+    retries answered from the stored response: create 5189 finalize 5319 void 4151 settle 1833; concurrent duplicates that waited and replayed: create 2054 finalize 2389 void 1690 settle 273
+    database lock waits seen by a 20 ms sampler: 2937 of 3002 samples had a backend waiting (at most 27)
+    provider saw: 1737 create calls (40 replays), 1610 payments (1530 charges, 80 declined); timeouts before/after 43/47, 5xx before/after 44/50; webhooks: 2567 events, 653 dropped, 706 duplicated, 464 reordered payments, 3273 deliveries
+    api logged: 8160 from clients going away; other errors:
+        other:add claim: ERROR: deadlock detected (SQLSTATE 40P01) = 7
+        other:finalize: allocate: item <id>: allocator: item has no claimants = 167
+        other:finalize: mark finalized: rows=0 err=ERROR: deadlock detected (SQLSTATE 40P01) = 1
+        unique:claims_pkey = 1266
+        unique:ledger_transactions_one_expense_posting = 1072
+    workers logged: 0 from clients going away; no other error
+    unexpected responses (first 3 shown): claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+
+    e.g. ledger_differs_from_claims: expense d9857b97-37be-4c06-a571-793cb85d9916 is void but its claims cannot be allocated: item 34a80e9e-e3de-4fc4-a679-2f0e7d6f03de: allocator: item has no claimants
+    e.g. ledger_differs_from_claims: expense b549a87c-99ef-4df6-8df9-610cd609b7ab is finalized but its claims cannot be allocated: item 9bbdcd89-c8e4-4b58-92b4-f1c6599e9a1b: allocator: item has no claimants
+    e.g. ledger_differs_from_claims: expense 25aa2d88-8ce5-4f10-9fde-6f9fc428b7e2 is void but its claims cannot be allocated: item 1ef67cfc-0ba1-45d8-8337-a938b217adbc: allocator: item has no claimants
+    e.g. ledger_differs_from_claims: expense cab7ab45-4412-4d97-91b1-2e996caa8550 is void but its claims cannot be allocated: item c66d25da-1bbb-46dd-acf1-1c109f0cc8b2: allocator: item has no claimants
+    e.g. ledger_differs_from_claims: expense 8eb7cd07-4560-48c8-98af-08248dad41fc: ledger has map[1346f30a-da48-48ac-a54b-2fa4cd651498:-3969 5e0ac94a-98eb-438a-8f3b-96dea2bfbc07:-249 821f1a8c-dc06-41aa-bf18-295cbbf8b1e4:-1647 8a094161-5a17-4eb3-b943-4d40755...
+run seed 2: matches expectation (70 s)
+    checked: 15378 expenses (7368 finalized, 3388 voided), 1660 settlements (1549 with a posting), 18458 logical creates, 14060 ledger transactions; settlements unresolved 0, succeeded 1549
+    invariants violated: ledger_differs_from_claims=2355
+    clients saw: 5xx 2676, settle accepted 2966 / refused for capacity 1970 / replayed 1856, finalize ok 10089, void ok 7087, claims refused after finalize 2551, requests abandoned 6427, races: 2928 rounds, 12 with a finalize landing mid-burst
+    retries answered from the stored response: create 6342 finalize 6088 void 4165 settle 1856; concurrent duplicates that waited and replayed: create 2536 finalize 2622 void 1573 settle 238
+    database lock waits seen by a 20 ms sampler: 2942 of 3007 samples had a backend waiting (at most 27)
+    provider saw: 1794 create calls (33 replays), 1660 payments (1549 charges, 111 declined); timeouts before/after 54/41, 5xx before/after 47/57; webhooks: 2699 events, 621 dropped, 813 duplicated, 502 reordered payments, 3512 deliveries
+    api logged: 8330 from clients going away; other errors:
+        other:add claim: ERROR: deadlock detected (SQLSTATE 40P01) = 5
+        other:finalize: allocate: item <id>: allocator: item has no claimants = 156
+        other:finalize: mark finalized: rows=0 err=ERROR: deadlock detected (SQLSTATE 40P01) = 3
+        unique:claims_pkey = 1414
+        unique:ledger_transactions_one_expense_posting = 1098
+    workers logged: 0 from clients going away; no other error
+    unexpected responses (first 3 shown): claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+
+    e.g. ledger_differs_from_claims: expense 2b83b337-c1ce-4f98-8868-00d2535777c4: ledger has map[07064253-e1f6-497e-8930-5e1bb7c26fda:-4690 3cc53c8a-7528-4e1f-9050-b938344b48d9:-2106 6078a889-1a37-4876-878d-14bb29c35579:10077 728d611b-5ee6-4f7a-86cf-e9cb27...
+    e.g. ledger_differs_from_claims: expense 483a742e-edf3-4e60-b421-7136d8bfa256 is void but its claims cannot be allocated: item 05ec32ae-a3ef-4ef4-a67c-942446922d58: allocator: item has no claimants
+    e.g. ledger_differs_from_claims: expense a3d7595a-85bb-49e9-8b66-aacd504346c3 is void but its claims cannot be allocated: item 5440f98c-531e-4545-9e3f-ebbaf7bc9852: allocator: item has no claimants
+    e.g. ledger_differs_from_claims: expense 1806c7e1-1591-43f0-9cfa-c09146c90ad4: ledger has map[189ce831-7d74-41a5-95b5-a352f843f4c8:-809 27933c60-ad7f-430b-a55c-7912989eb3a5:-1197 37cfa399-b249-436e-a1f3-64a46b322be3:8297 5f15c349-ee49-4315-b502-896f524b...
+    e.g. ledger_differs_from_claims: expense e7dd7275-5bb2-4297-aa63-29dd35dd5973: ledger has map[0b64e109-a2d7-4ffb-a0d0-dd5fc2bf352c:-428 0df6ae2b-171d-4671-8286-7e9fddb24b4a:-4981 1ba1d33e-ac19-4684-a5f4-00b00e3516bb:14897 4c783541-f1c0-4aec-ac02-7fc071f...
+run seed 3: matches expectation (101 s)
+    checked: 14449 expenses (7323 finalized, 3550 voided), 1634 settlements (1540 with a posting), 17389 logical creates, 14036 ledger transactions; settlements unresolved 0, succeeded 1540
+    invariants violated: ledger_differs_from_claims=2211
+    clients saw: 5xx 2509, settle accepted 2924 / refused for capacity 1735 / replayed 1719, finalize ok 9878, void ok 6851, claims refused after finalize 2828, requests abandoned 6380, races: 2816 rounds, 16 with a finalize landing mid-burst
+    retries answered from the stored response: create 5542 finalize 5854 void 3755 settle 1719; concurrent duplicates that waited and replayed: create 2334 finalize 2346 void 1537 settle 234
+    database lock waits seen by a 20 ms sampler: 2899 of 3003 samples had a backend waiting (at most 26)
+    provider saw: 1784 create calls (45 replays), 1634 payments (1540 charges, 94 declined); timeouts before/after 58/51, 5xx before/after 47/63; webhooks: 2623 events, 645 dropped, 775 duplicated, 499 reordered payments, 3398 deliveries
+    api logged: 8069 from clients going away; other errors:
+        other:add claim: ERROR: deadlock detected (SQLSTATE 40P01) = 2
+        other:finalize: allocate: item <id>: allocator: item has no claimants = 143
+        other:finalize: mark finalized: rows=0 err=ERROR: deadlock detected (SQLSTATE 40P01) = 2
+        unique:claims_pkey = 1302
+        unique:ledger_transactions_one_expense_posting = 1060
+    workers logged: 0 from clients going away; no other error
+    unexpected responses (first 2 shown): claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+
+    e.g. ledger_differs_from_claims: expense cc032a78-1598-4768-b943-1baba9337d61 is finalized but its claims cannot be allocated: item f13dc01d-1eab-4fd1-a8f3-6cc9dd72cdb5: allocator: item has no claimants
+    e.g. ledger_differs_from_claims: expense 40f87f5b-0fbd-456d-b049-ef50856a8904: ledger has map[041dc011-aaa2-4324-9497-f9a5475595fc:12354 205404ca-b2e4-4e58-87da-4ed9ef1dd3be:-725 4d44bd5b-538a-446a-9077-8418a4a33e72:-3317 55306478-e938-4586-8ae4-91253c3...
+    e.g. ledger_differs_from_claims: expense dc548009-56e3-4fbf-8a98-8f93bac3a8f8 is void but its claims cannot be allocated: item 18439a77-71c3-4d90-9c66-6b292e08769e: allocator: item has no claimants
+    e.g. ledger_differs_from_claims: expense 803a8e98-185f-47a6-ab31-ff4ddb8d8595 is void but its claims cannot be allocated: item 2a2cfada-7751-4f22-b68c-c9d5d9666a3f: allocator: item has no claimants
+    e.g. ledger_differs_from_claims: expense 92957eb9-ecc4-4a61-a841-5efcab93d478 is void but its claims cannot be allocated: item 4d5e6b41-24ce-4efb-ae48-0a8dc333b632: allocator: item has no claimants
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[2209 2355 2211] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+
+== void_lock
+protections disabled: [void_lock]; unique posting index dropped: false
+run seed 1: matches expectation (71 s)
+    checked: 12479 expenses (6336 finalized, 3779 voided), 1457 settlements (1389 with a posting), 15119 logical creates, 11504 ledger transactions; settlements unresolved 0, succeeded 1389
+    invariants violated: none
+    clients saw: 5xx 9, settle accepted 2665 / refused for capacity 1646 / replayed 1671, finalize ok 8356, void ok 5229, claims refused after finalize 1937, requests abandoned 5694, races: 2484 rounds, 12 with a finalize landing mid-burst
+    retries answered from the stored response: create 4610 finalize 5471 void 3742 settle 1671; concurrent duplicates that waited and replayed: create 1895 finalize 2354 void 1507 settle 252
+    database lock waits seen by a 20 ms sampler: 2906 of 2995 samples had a backend waiting (at most 24)
+    provider saw: 1592 create calls (36 replays), 1457 payments (1389 charges, 68 declined); timeouts before/after 43/44, 5xx before/after 56/35; webhooks: 2335 events, 579 dropped, 700 duplicated, 428 reordered payments, 3035 deliveries
+    api logged: 7312 from clients going away; other errors:
+        unique:ledger_transactions_one_void = 9
+    workers logged: 0 from clients going away; no other error
+run seed 2: matches expectation (83 s)
+    checked: 14331 expenses (6658 finalized, 3954 voided), 1585 settlements (1492 with a posting), 17211 logical creates, 12104 ledger transactions; settlements unresolved 0, succeeded 1492
+    invariants violated: none
+    clients saw: 5xx 24, settle accepted 2842 / refused for capacity 1793 / replayed 1755, finalize ok 9125, void ok 5533, claims refused after finalize 2459, requests abandoned 6075, races: 2736 rounds, 5 with a finalize landing mid-burst
+    retries answered from the stored response: create 5731 finalize 6131 void 3933 settle 1755; concurrent duplicates that waited and replayed: create 2302 finalize 2426 void 1478 settle 234
+    database lock waits seen by a 20 ms sampler: 2904 of 3004 samples had a backend waiting (at most 24)
+    provider saw: 1756 create calls (48 replays), 1585 payments (1492 charges, 93 declined); timeouts before/after 62/57, 5xx before/after 61/53; webhooks: 2489 events, 681 dropped, 758 duplicated, 500 reordered payments, 3247 deliveries
+    api logged: 7837 from clients going away; other errors:
+        unique:ledger_transactions_one_void = 24
+    workers logged: 0 from clients going away; no other error
+run seed 3: matches expectation (137 s)
+    checked: 14262 expenses (7149 finalized, 4092 voided), 1638 settlements (1551 with a posting), 17202 logical creates, 12792 ledger transactions; settlements unresolved 0, succeeded 1551
+    invariants violated: none
+    clients saw: 5xx 31, settle accepted 2926 / refused for capacity 1733 / replayed 1719, finalize ok 9697, void ok 5423, claims refused after finalize 2794, requests abandoned 6316, races: 2808 rounds, 9 with a finalize landing mid-burst
+    retries answered from the stored response: create 5487 finalize 6412 void 3726 settle 1719; concurrent duplicates that waited and replayed: create 2324 finalize 2434 void 1508 settle 234
+    database lock waits seen by a 20 ms sampler: 2906 of 3010 samples had a backend waiting (at most 23)
+    provider saw: 1774 create calls (49 replays), 1638 payments (1551 charges, 87 declined); timeouts before/after 39/56, 5xx before/after 48/57; webhooks: 2639 events, 637 dropped, 821 duplicated, 448 reordered payments, 3460 deliveries
+    api logged: 7969 from clients going away; other errors:
+        unique:ledger_transactions_one_void = 31
+    workers logged: 0 from clients going away; no other error
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+
+== edit_version_check
+protections disabled: [edit_version_check]; unique posting index dropped: false
+run seed 1: DOES NOT MATCH: vacuous: race_mixed = 2, below 5 (too few finalizes landed in the middle of a burst of claims) (77 s)
+    checked: 13856 expenses (6836 finalized, 4348 voided), 1597 settlements (1480 with a posting), 16736 logical creates, 12664 ledger transactions; settlements unresolved 0, succeeded 1480
+    invariants violated: edit_applied_to_stale_version=2610
+    clients saw: 5xx 0, settle accepted 2910 / refused for capacity 1803 / replayed 1833, finalize ok 8859, void ok 5930, claims refused after finalize 2219, requests abandoned 6173, races: 2598 rounds, 2 with a finalize landing mid-burst
+    retries answered from the stored response: create 5120 finalize 5781 void 3891 settle 1833; concurrent duplicates that waited and replayed: create 2045 finalize 2487 void 1566 settle 273
+    database lock waits seen by a 20 ms sampler: 2935 of 3005 samples had a backend waiting (at most 25)
+    provider saw: 1722 create calls (33 replays), 1597 payments (1480 charges, 117 declined); timeouts before/after 46/42, 5xx before/after 46/60; webhooks: 2577 events, 617 dropped, 793 duplicated, 481 reordered payments, 3370 deliveries
+    api logged: 7906 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 532ea3d2-c19b-46e3-ab01-b05bb9a5f29c made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 295c5f93-e741-4bca-bffb-825b7b6e3069 made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 283b4b87-511a-4fd1-876f-2815a6dcde69 made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 8d8b6f11-60a5-4b24-96e8-bac637f7b3d5 made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 67a3bc27-a9fe-4d6d-bb64-078bc6d2d8e3 made from version 1 produced version 3
+run seed 2: DOES NOT MATCH: vacuous: race_mixed = 3, below 5 (too few finalizes landed in the middle of a burst of claims) (78 s)
+    checked: 12031 expenses (5464 finalized, 3253 voided), 1440 settlements (1363 with a posting), 14671 logical creates, 10080 ledger transactions; settlements unresolved 0, succeeded 1363
+    invariants violated: edit_applied_to_stale_version=2096
+    clients saw: 5xx 0, settle accepted 2584 / refused for capacity 1649 / replayed 1593, finalize ok 7380, void ok 4545, claims refused after finalize 1902, requests abandoned 5129, races: 2085 rounds, 3 with a finalize landing mid-burst
+    retries answered from the stored response: create 4819 finalize 5209 void 3189 settle 1593; concurrent duplicates that waited and replayed: create 1908 finalize 2059 void 1195 settle 216
+    database lock waits seen by a 20 ms sampler: 2961 of 3006 samples had a backend waiting (at most 23)
+    provider saw: 1576 create calls (30 replays), 1440 payments (1363 charges, 77 declined); timeouts before/after 53/39, 5xx before/after 53/48; webhooks: 2242 events, 638 dropped, 668 duplicated, 401 reordered payments, 2910 deliveries
+    api logged: 6530 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 7c7f1b74-650b-4542-aab4-50b814884fab made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 3d5534d5-8b82-4565-81e0-fdcccac18936 made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense a6b630a7-c097-4aad-ae7e-366798e23fd5 made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense e4b9bade-4b79-40b7-a77a-5dcd286edcfa made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense f01ff015-d056-4b00-9a51-48cc5e28a6af made from version 1 produced version 3
+run seed 3: matches expectation (100 s)
+    checked: 14062 expenses (6943 finalized, 4247 voided), 1622 settlements (1544 with a posting), 17002 logical creates, 12734 ledger transactions; settlements unresolved 0, succeeded 1544
+    invariants violated: edit_applied_to_stale_version=2621
+    clients saw: 5xx 0, settle accepted 2871 / refused for capacity 1788 / replayed 1719, finalize ok 9369, void ok 5602, claims refused after finalize 2753, requests abandoned 6063, races: 2608 rounds, 7 with a finalize landing mid-burst
+    retries answered from the stored response: create 5419 finalize 6318 void 3592 settle 1719; concurrent duplicates that waited and replayed: create 2296 finalize 2420 void 1438 settle 234
+    database lock waits seen by a 20 ms sampler: 2941 of 3008 samples had a backend waiting (at most 21)
+    provider saw: 1760 create calls (38 replays), 1622 payments (1544 charges, 78 declined); timeouts before/after 56/45, 5xx before/after 44/52; webhooks: 2620 events, 624 dropped, 826 duplicated, 463 reordered payments, 3446 deliveries
+    api logged: 7653 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 3aec4aad-e6f8-4539-9c7e-e172aa4cb7ce made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 75004690-efbe-4ded-a0bd-d798f221cb5f made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 9cf085eb-b61f-493b-8e63-e39b364fca0e made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense 75f4a401-24ff-43f8-89b8-a201ca4ab1c8 made from version 1 produced version 3
+    e.g. edit_applied_to_stale_version: expense.items_edited of expense ff597387-2387-4d34-bddb-a88472a42e62 made from version 1 produced version 3
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[2610 2096 2621] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+
+== edit_lock
+protections disabled: [edit_lock]; unique posting index dropped: false
+run seed 1: matches expectation (88 s)
+    checked: 16222 expenses (8301 finalized, 5541 voided), 1784 settlements (1690 with a posting), 19462 logical creates, 15532 ledger transactions; settlements unresolved 0, succeeded 1690
+    invariants violated: none
+    clients saw: 5xx 4791, settle accepted 3276 / refused for capacity 2073 / replayed 2109, finalize ok 10923, void ok 7605, claims refused after finalize 2468, requests abandoned 7340, races: 3207 rounds, 12 with a finalize landing mid-burst
+    retries answered from the stored response: create 5928 finalize 6730 void 4682 settle 2109; concurrent duplicates that waited and replayed: create 2384 finalize 2937 void 1945 settle 324
+    database lock waits seen by a 20 ms sampler: 2919 of 3008 samples had a backend waiting (at most 27)
+    provider saw: 1953 create calls (48 replays), 1784 payments (1690 charges, 94 declined); timeouts before/after 60/56, 5xx before/after 61/60; webhooks: 2848 events, 720 dropped, 886 duplicated, 546 reordered payments, 3734 deliveries
+    api logged: 9362 from clients going away; other errors:
+        other:add claim: ERROR: deadlock detected (SQLSTATE 40P01) = 3
+        other:edit expense: mark edited: rows=0 err=<nil> = 4775
+        other:edit expense: mark edited: rows=0 err=ERROR: deadlock detected (SQLSTATE 40P01) = 2
+        other:finalize: lock expense: ERROR: deadlock detected (SQLSTATE 40P01) = 1
+        other:remove claim: ERROR: deadlock detected (SQLSTATE 40P01) = 4
+        other:void: lock expense: ERROR: deadlock detected (SQLSTATE 40P01) = 6
+    workers logged: 0 from clients going away; no other error
+    unexpected responses (first 3 shown): unclaim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+
+run seed 2: matches expectation (88 s)
+    checked: 17024 expenses (7941 finalized, 5329 voided), 1786 settlements (1680 with a posting), 20284 logical creates, 14950 ledger transactions; settlements unresolved 0, succeeded 1680
+    invariants violated: none
+    clients saw: 5xx 4814, settle accepted 3200 / refused for capacity 2033 / replayed 1973, finalize ok 10832, void ok 7383, claims refused after finalize 2814, requests abandoned 7079, races: 3221 rounds, 5 with a finalize landing mid-burst
+    retries answered from the stored response: create 6855 finalize 7231 void 4686 settle 1973; concurrent duplicates that waited and replayed: create 2689 finalize 2929 void 1846 settle 254
+    database lock waits seen by a 20 ms sampler: 2894 of 3006 samples had a backend waiting (at most 24)
+    provider saw: 1969 create calls (43 replays), 1786 payments (1680 charges, 106 declined); timeouts before/after 75/49, 5xx before/after 65/54; webhooks: 2835 events, 737 dropped, 866 duplicated, 508 reordered payments, 3701 deliveries
+    api logged: 9138 from clients going away; other errors:
+        other:add claim: ERROR: deadlock detected (SQLSTATE 40P01) = 3
+        other:edit expense: mark edited: rows=0 err=<nil> = 4805
+        other:edit expense: mark edited: rows=0 err=ERROR: deadlock detected (SQLSTATE 40P01) = 4
+        other:remove claim: ERROR: deadlock detected (SQLSTATE 40P01) = 1
+        other:void: lock expense: ERROR: deadlock detected (SQLSTATE 40P01) = 1
+    workers logged: 0 from clients going away; no other error
+    unexpected responses (first 3 shown): unclaim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+
+run seed 3: matches expectation (74 s)
+    checked: 15896 expenses (8029 finalized, 5183 voided), 1700 settlements (1594 with a posting), 19016 logical creates, 14806 ledger transactions; settlements unresolved 0, succeeded 1594
+    invariants violated: none
+    clients saw: 5xx 4746, settle accepted 3007 / refused for capacity 1943 / replayed 1830, finalize ok 11102, void ok 6844, claims refused after finalize 3109, requests abandoned 7075, races: 3119 rounds, 15 with a finalize landing mid-burst
+    retries answered from the stored response: create 6085 finalize 7280 void 4234 settle 1830; concurrent duplicates that waited and replayed: create 2578 finalize 2888 void 1754 settle 249
+    database lock waits seen by a 20 ms sampler: 2901 of 3004 samples had a backend waiting (at most 24)
+    provider saw: 1857 create calls (44 replays), 1700 payments (1594 charges, 106 declined); timeouts before/after 58/52, 5xx before/after 55/59; webhooks: 2727 events, 673 dropped, 794 duplicated, 508 reordered payments, 3521 deliveries
+    api logged: 8881 from clients going away; other errors:
+        other:add claim: ERROR: deadlock detected (SQLSTATE 40P01) = 4
+        other:edit expense: mark edited: rows=0 err=<nil> = 4741
+        other:edit expense: mark edited: rows=0 err=ERROR: deadlock detected (SQLSTATE 40P01) = 1
+    workers logged: 0 from clients going away; no other error
+    unexpected responses (first 3 shown): claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+ | claim: status 500 body {"code":"internal","message":"internal error"}
+
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+
+== idempotency_check
+protections disabled: [idempotency_check]; unique posting index dropped: false
+run seed 1: matches expectation (98 s)
+    checked: 23133 expenses (8229 finalized, 5489 voided), 2556 settlements (2433 with a posting), 20165 logical creates, 16151 ledger transactions; settlements unresolved 0, succeeded 2433
+    invariants violated: duplicate_per_idempotency_key=5761
+    clients saw: 5xx 0, settle accepted 2556 / refused for capacity 2733 / replayed 0, finalize ok 7909, void ok 5489, claims refused after finalize 2754, requests abandoned 7592, races: 3133 rounds, 12 with a finalize landing mid-burst
+    retries answered from the stored response: create 0 finalize 0 void 0 settle 0; concurrent duplicates that waited and replayed: create 0 finalize 0 void 0 settle 0
+    database lock waits seen by a 20 ms sampler: 2980 of 3007 samples had a backend waiting (at most 27)
+    provider saw: 2761 create calls (53 replays), 2556 payments (2433 charges, 123 declined); timeouts before/after 76/65, 5xx before/after 76/88; webhooks: 4070 events, 1042 dropped, 1217 duplicated, 761 reordered payments, 5287 deliveries
+    api logged: 9517 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+    e.g. duplicate_per_idempotency_key: expense "st-e0a05ef4-7" in group 6d3f1e4d-71fe-41f6-8d59-f6d4992f7dbb exists 3 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-e0a05ef4-4" in group 18bca4b5-0857-494d-bf04-6904c4d42a37 exists 3 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-e0a05ef4-2" in group 18bca4b5-0857-494d-bf04-6904c4d42a37 exists 2 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-e0a05ef4-51" in group b1dc9a57-4315-467c-a49a-45201e44faa8 exists 2 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-e0a05ef4-53" in group 18bca4b5-0857-494d-bf04-6904c4d42a37 exists 2 times for one key
+run seed 2: matches expectation (75 s)
+    checked: 23902 expenses (7655 finalized, 5338 voided), 2570 settlements (2405 with a posting), 20260 logical creates, 15398 ledger transactions; settlements unresolved 0, succeeded 2405
+    invariants violated: duplicate_per_idempotency_key=6411
+    clients saw: 5xx 0, settle accepted 2570 / refused for capacity 2521 / replayed 0, finalize ok 7337, void ok 5338, claims refused after finalize 2701, requests abandoned 7013, races: 3064 rounds, 6 with a finalize landing mid-burst
+    retries answered from the stored response: create 0 finalize 0 void 0 settle 0; concurrent duplicates that waited and replayed: create 0 finalize 0 void 0 settle 0
+    database lock waits seen by a 20 ms sampler: 2972 of 3004 samples had a backend waiting (at most 26)
+    provider saw: 2807 create calls (69 replays), 2570 payments (2405 charges, 165 declined); timeouts before/after 82/74, 5xx before/after 86/78; webhooks: 4189 events, 951 dropped, 1248 duplicated, 799 reordered payments, 5437 deliveries
+    api logged: 9003 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+    e.g. duplicate_per_idempotency_key: expense "st-969a203f-1" in group 4d7bc27a-ff72-428b-8737-e46335813abc exists 2 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-969a203f-17" in group 1d929839-3ccd-4151-b114-0c17af4064c8 exists 2 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-969a203f-28" in group bddd9a90-d7bf-4b1c-983a-c075fe8e85b2 exists 2 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-969a203f-9" in group 4d7bc27a-ff72-428b-8737-e46335813abc exists 2 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-969a203f-29" in group 21a06483-ffa2-4dfc-902b-63dfdafe0f1d exists 2 times for one key
+run seed 3: matches expectation (87 s)
+    checked: 21036 expenses (7503 finalized, 4976 voided), 2383 settlements (2247 with a posting), 18234 logical creates, 14726 ledger transactions; settlements unresolved 0, succeeded 2247
+    invariants violated: duplicate_per_idempotency_key=5555
+    clients saw: 5xx 0, settle accepted 2383 / refused for capacity 2369 / replayed 0, finalize ok 7203, void ok 4976, claims refused after finalize 3039, requests abandoned 6670, races: 2837 rounds, 10 with a finalize landing mid-burst
+    retries answered from the stored response: create 0 finalize 0 void 0 settle 0; concurrent duplicates that waited and replayed: create 0 finalize 0 void 0 settle 0
+    database lock waits seen by a 20 ms sampler: 2957 of 3005 samples had a backend waiting (at most 27)
+    provider saw: 2605 create calls (70 replays), 2383 payments (2247 charges, 136 declined); timeouts before/after 79/78, 5xx before/after 73/75; webhooks: 3800 events, 966 dropped, 1146 duplicated, 729 reordered payments, 4946 deliveries
+    api logged: 8372 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+    e.g. duplicate_per_idempotency_key: expense "st-6c385df9-1" in group bc73c39b-571c-4360-bd48-e980185215d4 exists 3 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-6c385df9-24" in group 636dc126-f4ff-4b4b-b9bb-0ac1d0933af8 exists 2 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-6c385df9-10" in group 235bdd0c-79da-4062-8713-97d3f82ac4ec exists 2 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-6c385df9-28" in group 636dc126-f4ff-4b4b-b9bb-0ac1d0933af8 exists 2 times for one key
+    e.g. duplicate_per_idempotency_key: expense "st-6c385df9-29" in group 0d83450b-2f2a-4202-9585-85bdb3e2d724 exists 2 times for one key
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[5761 6411 5555] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+
+== group_lock
+protections disabled: [group_lock]; unique posting index dropped: false
+run seed 1: matches expectation (71 s)
+    checked: 15575 expenses (7724 finalized, 5055 voided), 1747 settlements (1640 with a posting), 18875 logical creates, 14419 ledger transactions; settlements unresolved 0, succeeded 1640
+    invariants violated: settlement_over_capacity=844
+    clients saw: 5xx 0, settle accepted 2581 / refused for capacity 2876 / replayed 2157, finalize ok 10087, void ok 6937, claims refused after finalize 2390, requests abandoned 6879, races: 2981 rounds, 11 with a finalize landing mid-burst
+    retries answered from the stored response: create 5801 finalize 6505 void 4496 settle 2157; concurrent duplicates that waited and replayed: create 2325 finalize 2778 void 1871 settle 333
+    database lock waits seen by a 20 ms sampler: 2943 of 3003 samples had a backend waiting (at most 20)
+    provider saw: 1926 create calls (56 replays), 1747 payments (1640 charges, 107 declined); timeouts before/after 77/63, 5xx before/after 46/60; webhooks: 2765 events, 729 dropped, 834 duplicated, 523 reordered payments, 3599 deliveries
+    api logged: 8826 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+    e.g. settlement_over_capacity: group 10e08968-4898-492e-a9db-a7b0c6ab3d5e: member 130da6fb-a49e-4880-8e71-81cb36d1de4b sends 22674 in settlements but owed 13739
+    e.g. settlement_over_capacity: group 10e08968-4898-492e-a9db-a7b0c6ab3d5e: member 55a04aa1-1f43-453b-8185-254a8022eb64 sends 9834 in settlements but owed 5951
+    e.g. settlement_over_capacity: group 10e08968-4898-492e-a9db-a7b0c6ab3d5e: member 17669c3d-f879-4ca6-8f64-40bef5e1b847 sends 14274 in settlements but owed 12963
+    e.g. settlement_over_capacity: group 10e08968-4898-492e-a9db-a7b0c6ab3d5e: member 0baf2382-5be5-4f35-8315-74fb45f9f088 sends 6460 in settlements but owed 5854
+    e.g. settlement_over_capacity: group 10e08968-4898-492e-a9db-a7b0c6ab3d5e: member 84f5c2ed-4589-42ec-ae9e-4694dfe86787 receives 34848 in settlements but was owed 20150
+run seed 2: DOES NOT MATCH: vacuous: race_mixed = 4, below 5 (too few finalizes landed in the middle of a burst of claims) (135 s)
+    checked: 16341 expenses (7467 finalized, 4800 voided), 1801 settlements (1705 with a posting), 19701 logical creates, 13972 ledger transactions; settlements unresolved 0, succeeded 1705
+    invariants violated: settlement_over_capacity=878
+    clients saw: 5xx 0, settle accepted 2510 / refused for capacity 2908 / replayed 2058, finalize ok 10131, void ok 6667, claims refused after finalize 2551, requests abandoned 6768, races: 3017 rounds, 4 with a finalize landing mid-burst
+    retries answered from the stored response: create 6723 finalize 7032 void 4438 settle 2058; concurrent duplicates that waited and replayed: create 2650 finalize 2877 void 1706 settle 276
+    database lock waits seen by a 20 ms sampler: 2944 of 3003 samples had a backend waiting (at most 18)
+    provider saw: 1967 create calls (46 replays), 1801 payments (1705 charges, 96 declined); timeouts before/after 54/56, 5xx before/after 66/59; webhooks: 2884 events, 718 dropped, 852 duplicated, 523 reordered payments, 3736 deliveries
+    api logged: 8704 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+    e.g. settlement_over_capacity: group 543af071-9ffb-4ef8-a112-ac3dd86149fe: member b943d656-1bc9-4f0e-a4ad-30015943d4e2 sends 12237 in settlements but owed 11105
+    e.g. settlement_over_capacity: group 543af071-9ffb-4ef8-a112-ac3dd86149fe: member ffcd8968-5de4-4092-92b9-719feb99542d sends 19191 in settlements but owed 11617
+    e.g. settlement_over_capacity: group 543af071-9ffb-4ef8-a112-ac3dd86149fe: member 10373cc1-5c4f-490c-b9ec-5420e61fe29c sends 12111 in settlements but owed 11006
+    e.g. settlement_over_capacity: group 543af071-9ffb-4ef8-a112-ac3dd86149fe: member 8b676cfa-81e6-47b4-86f6-465663790f65 sends 14739 in settlements but owed 8924
+    e.g. settlement_over_capacity: group 543af071-9ffb-4ef8-a112-ac3dd86149fe: member cc2c3a32-b62c-4796-b641-8c3e59853ba0 receives 40850 in settlements but was owed 16628
+run seed 3: matches expectation (98 s)
+    checked: 15912 expenses (7947 finalized, 5030 voided), 1821 settlements (1729 with a posting), 19272 logical creates, 14706 ledger transactions; settlements unresolved 0, succeeded 1729
+    invariants violated: settlement_over_capacity=883
+    clients saw: 5xx 0, settle accepted 2449 / refused for capacity 2876 / replayed 1965, finalize ok 10854, void ok 6705, claims refused after finalize 3047, requests abandoned 7065, races: 3030 rounds, 9 with a finalize landing mid-burst
+    retries answered from the stored response: create 6032 finalize 7269 void 4192 settle 1965; concurrent duplicates that waited and replayed: create 2499 finalize 2880 void 1752 settle 267
+    database lock waits seen by a 20 ms sampler: 2952 of 3006 samples had a backend waiting (at most 17)
+    provider saw: 2001 create calls (47 replays), 1821 payments (1729 charges, 92 declined); timeouts before/after 67/53, 5xx before/after 66/67; webhooks: 2952 events, 690 dropped, 874 duplicated, 549 reordered payments, 3826 deliveries
+    api logged: 8899 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+    e.g. settlement_over_capacity: group bba7ef09-033b-4c97-bba6-34688d5757e6: member 94945dda-fed0-4ab7-af22-1c6bfc799e28 sends 10805 in settlements but owed 9815
+    e.g. settlement_over_capacity: group bba7ef09-033b-4c97-bba6-34688d5757e6: member a9832274-aa28-4f52-85d1-3f7053edf873 sends 14256 in settlements but owed 8620
+    e.g. settlement_over_capacity: group bba7ef09-033b-4c97-bba6-34688d5757e6: member 762536f6-06ec-4200-a0cb-f0cc99e85740 sends 19359 in settlements but owed 11719
+    e.g. settlement_over_capacity: group bba7ef09-033b-4c97-bba6-34688d5757e6: member bd33f685-5e3e-4f17-bf48-b86f203b07b4 sends 14324 in settlements but owed 13019
+    e.g. settlement_over_capacity: group bba7ef09-033b-4c97-bba6-34688d5757e6: member bed37b7a-6431-4e06-989b-ace4caca5916 receives 26763 in settlements but was owed 22566
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[844 878 883] provider_books_differ=[0 0 0]
+
+== resolve_guards (lock still on)
+protections disabled: [resolve_guards]; unique posting index dropped: false
+run seed 1: matches expectation (64 s)
+    checked: 14769 expenses (7327 finalized, 4624 voided), 1663 settlements (1581 with a posting), 17769 logical creates, 13532 ledger transactions; settlements unresolved 0, succeeded 1581
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 3065 / refused for capacity 1855 / replayed 1920, finalize ok 9530, void ok 6318, claims refused after finalize 2307, requests abandoned 6599, races: 2847 rounds, 10 with a finalize landing mid-burst
+    retries answered from the stored response: create 5372 finalize 6212 void 4247 settle 1920; concurrent duplicates that waited and replayed: create 2148 finalize 2668 void 1731 settle 288
+    database lock waits seen by a 20 ms sampler: 2947 of 3002 samples had a backend waiting (at most 25)
+    provider saw: 1733 create calls (70 replays), 1663 payments (1581 charges, 82 declined); timeouts before/after 0/87, 5xx before/after 0/86; webhooks: 3326 events, 0 dropped, 2644 duplicated, 473 reordered payments, 5970 deliveries
+    api logged: 8449 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+run seed 2: matches expectation (65 s)
+    checked: 14208 expenses (6473 finalized, 4095 voided), 1549 settlements (1459 with a posting), 17068 logical creates, 12027 ledger transactions; settlements unresolved 0, succeeded 1459
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 2791 / refused for capacity 1809 / replayed 1740, finalize ok 8798, void ok 5645, claims refused after finalize 2263, requests abandoned 6021, races: 2632 rounds, 10 with a finalize landing mid-burst
+    retries answered from the stored response: create 5744 finalize 6037 void 3836 settle 1740; concurrent duplicates that waited and replayed: create 2292 finalize 2385 void 1448 settle 232
+    database lock waits seen by a 20 ms sampler: 2941 of 2996 samples had a backend waiting (at most 25)
+    provider saw: 1616 create calls (67 replays), 1549 payments (1459 charges, 90 declined); timeouts before/after 0/79, 5xx before/after 0/71; webhooks: 3098 events, 0 dropped, 2487 duplicated, 481 reordered payments, 5585 deliveries
+    api logged: 7726 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+run seed 3: matches expectation (64 s)
+    checked: 15315 expenses (7612 finalized, 4801 voided), 1685 settlements (1603 with a posting), 18375 logical creates, 14016 ledger transactions; settlements unresolved 0, succeeded 1603
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 3001 / refused for capacity 1850 / replayed 1791, finalize ok 10417, void ok 6298, claims refused after finalize 2998, requests abandoned 6747, races: 2941 rounds, 6 with a finalize landing mid-burst
+    retries answered from the stored response: create 5778 finalize 7036 void 3948 settle 1791; concurrent duplicates that waited and replayed: create 2410 finalize 2785 void 1613 settle 246
+    database lock waits seen by a 20 ms sampler: 2951 of 3002 samples had a backend waiting (at most 25)
+    provider saw: 1758 create calls (73 replays), 1685 payments (1603 charges, 82 declined); timeouts before/after 0/82, 5xx before/after 0/97; webhooks: 3370 events, 0 dropped, 2737 duplicated, 496 reordered payments, 6107 deliveries
+    api logged: 8493 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+
+== resolve_lock
+protections disabled: [resolve_lock]; unique posting index dropped: false
+run seed 1: matches expectation (65 s)
+    checked: 15359 expenses (7643 finalized, 5068 voided), 1750 settlements (1664 with a posting), 18479 logical creates, 14375 ledger transactions; settlements unresolved 0, succeeded 1664
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 3212 / refused for capacity 1924 / replayed 2016, finalize ok 9920, void ok 6932, claims refused after finalize 2396, requests abandoned 6874, races: 2962 rounds, 7 with a finalize landing mid-burst
+    retries answered from the stored response: create 5660 finalize 6420 void 4496 settle 2016; concurrent duplicates that waited and replayed: create 2255 finalize 2769 void 1872 settle 309
+    database lock waits seen by a 20 ms sampler: 2958 of 3006 samples had a backend waiting (at most 26)
+    provider saw: 1829 create calls (79 replays), 1750 payments (1664 charges, 86 declined); timeouts before/after 0/91, 5xx before/after 0/88; webhooks: 3500 events, 0 dropped, 2776 duplicated, 556 reordered payments, 6276 deliveries
+    api logged: 8764 from clients going away; other errors:
+        other:payment webhook: mark failed: settlement was not in a state that allows this change (rows=0) = 3
+        unique:ledger_transactions_one_settlement_posting = 79
+    workers logged: 0 from clients going away; other errors:
+        WARN other:job failed; will retry: mark failed: settlement was not in a state that allows this change (rows=0) = 1
+        WARN unique:ledger_transactions_one_settlement_posting = 54
+run seed 2: matches expectation (64 s)
+    checked: 16122 expenses (7298 finalized, 4769 voided), 1718 settlements (1631 with a posting), 19242 logical creates, 13698 ledger transactions; settlements unresolved 0, succeeded 1631
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 3091 / refused for capacity 1907 / replayed 1878, finalize ok 9870, void ok 6603, claims refused after finalize 2546, requests abandoned 6656, races: 2963 rounds, 11 with a finalize landing mid-burst
+    retries answered from the stored response: create 6594 finalize 6878 void 4335 settle 1878; concurrent duplicates that waited and replayed: create 2598 finalize 2831 void 1650 settle 240
+    database lock waits seen by a 20 ms sampler: 2971 of 3003 samples had a backend waiting (at most 23)
+    provider saw: 1796 create calls (78 replays), 1718 payments (1631 charges, 87 declined); timeouts before/after 0/91, 5xx before/after 0/100; webhooks: 3436 events, 0 dropped, 2744 duplicated, 520 reordered payments, 6180 deliveries
+    api logged: 8580 from clients going away; other errors:
+        other:payment webhook: mark failed: settlement was not in a state that allows this change (rows=0) = 3
+        unique:ledger_transactions_one_settlement_posting = 67
+    workers logged: 0 from clients going away; other errors:
+        WARN other:job failed; will retry: mark failed: settlement was not in a state that allows this change (rows=0) = 5
+        WARN other:job failed; will retry: mark unknown: settlement was not in a state that allows this change (rows=0) = 2
+        WARN unique:ledger_transactions_one_settlement_posting = 69
+run seed 3: matches expectation (64 s)
+    checked: 15387 expenses (7628 finalized, 4825 voided), 1714 settlements (1619 with a posting), 18447 logical creates, 14072 ledger transactions; settlements unresolved 0, succeeded 1619
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 3046 / refused for capacity 1805 / replayed 1791, finalize ok 10435, void ok 6307, claims refused after finalize 2968, requests abandoned 6785, races: 2958 rounds, 13 with a finalize landing mid-burst
+    retries answered from the stored response: create 5872 finalize 7041 void 3930 settle 1791; concurrent duplicates that waited and replayed: create 2480 finalize 2783 void 1618 settle 246
+    database lock waits seen by a 20 ms sampler: 2943 of 3004 samples had a backend waiting (at most 25)
+    provider saw: 1775 create calls (61 replays), 1714 payments (1619 charges, 95 declined); timeouts before/after 0/78, 5xx before/after 0/85; webhooks: 3428 events, 0 dropped, 2764 duplicated, 556 reordered payments, 6192 deliveries
+    api logged: 8533 from clients going away; other errors:
+        other:payment webhook: mark failed: settlement was not in a state that allows this change (rows=0) = 4
+        unique:ledger_transactions_one_settlement_posting = 88
+    workers logged: 0 from clients going away; other errors:
+        WARN other:job failed; will retry: mark failed: settlement was not in a state that allows this change (rows=0) = 4
+        WARN other:job failed; will retry: mark unknown: settlement was not in a state that allows this change (rows=0) = 1
+        WARN unique:ledger_transactions_one_settlement_posting = 69
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+
+== resolve_lock + posting index
+protections disabled: [resolve_lock]; unique posting index dropped: true
+run seed 1: matches expectation (65 s)
+    checked: 15391 expenses (7642 finalized, 4969 voided), 1705 settlements (1617 with a posting), 18511 logical creates, 14228 ledger transactions; settlements unresolved 0, succeeded 1617
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 3140 / refused for capacity 1996 / replayed 2016, finalize ok 9917, void ok 6811, claims refused after finalize 2373, requests abandoned 6814, races: 2950 rounds, 5 with a finalize landing mid-burst
+    retries answered from the stored response: create 5702 finalize 6426 void 4468 settle 2016; concurrent duplicates that waited and replayed: create 2279 finalize 2752 void 1871 settle 309
+    database lock waits seen by a 20 ms sampler: 2953 of 3007 samples had a backend waiting (at most 22)
+    provider saw: 1786 create calls (81 replays), 1705 payments (1617 charges, 88 declined); timeouts before/after 0/86, 5xx before/after 0/93; webhooks: 3410 events, 0 dropped, 2726 duplicated, 521 reordered payments, 6136 deliveries
+    api logged: 8725 from clients going away; other errors:
+        other:payment webhook: mark failed: settlement was not in a state that allows this change (rows=0) = 4
+        other:payment webhook: mark succeeded: settlement was not in a state that allows this change (rows=0) = 84
+    workers logged: 0 from clients going away; other errors:
+        WARN other:job failed; will retry: mark failed: settlement was not in a state that allows this change (rows=0) = 1
+        WARN other:job failed; will retry: mark succeeded: settlement was not in a state that allows this change (rows=0) = 67
+        WARN other:job failed; will retry: mark unknown: settlement was not in a state that allows this change (rows=0) = 3
+run seed 2: matches expectation (64 s)
+    checked: 13621 expenses (6191 finalized, 3867 voided), 1583 settlements (1515 with a posting), 16501 logical creates, 11573 ledger transactions; settlements unresolved 0, succeeded 1515
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 2848 / refused for capacity 1787 / replayed 1755, finalize ok 8364, void ok 5352, claims refused after finalize 2102, requests abandoned 5669, races: 2439 rounds, 11 with a finalize landing mid-burst
+    retries answered from the stored response: create 5584 finalize 5723 void 3570 settle 1755; concurrent duplicates that waited and replayed: create 2222 finalize 2273 void 1330 settle 234
+    database lock waits seen by a 20 ms sampler: 2987 of 3008 samples had a backend waiting (at most 24)
+    provider saw: 1652 create calls (69 replays), 1583 payments (1515 charges, 68 declined); timeouts before/after 0/79, 5xx before/after 0/82; webhooks: 3166 events, 0 dropped, 2557 duplicated, 453 reordered payments, 5723 deliveries
+    api logged: 7288 from clients going away; other errors:
+        other:payment webhook: mark failed: settlement was not in a state that allows this change (rows=0) = 2
+        other:payment webhook: mark succeeded: settlement was not in a state that allows this change (rows=0) = 65
+    workers logged: 0 from clients going away; other errors:
+        WARN other:job failed; will retry: mark failed: settlement was not in a state that allows this change (rows=0) = 3
+        WARN other:job failed; will retry: mark succeeded: settlement was not in a state that allows this change (rows=0) = 64
+        WARN other:job failed; will retry: mark unknown: settlement was not in a state that allows this change (rows=0) = 3
+run seed 3: matches expectation (64 s)
+    checked: 15753 expenses (7758 finalized, 4919 voided), 1749 settlements (1678 with a posting), 18933 logical creates, 14355 ledger transactions; settlements unresolved 0, succeeded 1678
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 3100 / refused for capacity 1937 / replayed 1857, finalize ok 10632, void ok 6537, claims refused after finalize 2949, requests abandoned 6986, races: 3009 rounds, 10 with a finalize landing mid-burst
+    retries answered from the stored response: create 6020 finalize 7219 void 4158 settle 1857; concurrent duplicates that waited and replayed: create 2523 finalize 2875 void 1745 settle 252
+    database lock waits seen by a 20 ms sampler: 2962 of 3007 samples had a backend waiting (at most 25)
+    provider saw: 1826 create calls (77 replays), 1749 payments (1678 charges, 71 declined); timeouts before/after 0/89, 5xx before/after 0/99; webhooks: 3498 events, 0 dropped, 2824 duplicated, 499 reordered payments, 6322 deliveries
+    api logged: 8786 from clients going away; other errors:
+        other:payment webhook: mark failed: settlement was not in a state that allows this change (rows=0) = 4
+        other:payment webhook: mark succeeded: settlement was not in a state that allows this change (rows=0) = 62
+    workers logged: 0 from clients going away; other errors:
+        WARN other:job failed; will retry: mark failed: settlement was not in a state that allows this change (rows=0) = 1
+        WARN other:job failed; will retry: mark succeeded: settlement was not in a state that allows this change (rows=0) = 53
+        WARN other:job failed; will retry: mark unknown: settlement was not in a state that allows this change (rows=0) = 3
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+
+== resolve_lock + posting index + guards
+protections disabled: [resolve_lock resolve_guards]; unique posting index dropped: true
+run seed 1: matches expectation (64 s)
+    checked: 15423 expenses (7696 finalized, 5060 voided), 1674 settlements (1727 with a posting), 18543 logical creates, 14483 ledger transactions; settlements unresolved 0, succeeded 1589
+    invariants violated: settlement_posting_wrong=138 provider_books_differ=138
+    clients saw: 5xx 0, settle accepted 3074 / refused for capacity 2062 / replayed 2016, finalize ok 10070, void ok 6956, claims refused after finalize 2400, requests abandoned 6819, races: 2975 rounds, 10 with a finalize landing mid-burst
+    retries answered from the stored response: create 5764 finalize 6453 void 4502 settle 2016; concurrent duplicates that waited and replayed: create 2310 finalize 2763 void 1881 settle 309
+    database lock waits seen by a 20 ms sampler: 2957 of 3003 samples had a backend waiting (at most 24)
+    provider saw: 1752 create calls (78 replays), 1674 payments (1589 charges, 85 declined); timeouts before/after 0/89, 5xx before/after 0/84; webhooks: 3348 events, 0 dropped, 2645 duplicated, 496 reordered payments, 5993 deliveries
+    api logged: 8742 from clients going away; no other error
+    workers logged: 0 from clients going away; other errors:
+        WARN check:settlements_check2 = 1
+    e.g. settlement_posting_wrong: settlement 01d60c09-35cc-4fe4-9794-da6f5bcd9e7b succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 0239ff25-7d96-4d0d-b450-243be9b34ffc succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 02b89a67-fa34-47b2-b9af-bd95d260d078 succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 06c00663-c32a-409b-8f4f-06de44c1351a succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 077e6c6b-ca39-49fd-afce-49f8d615ce17 succeeded with 2 postings
+    e.g. provider_books_differ: settlement 01d60c09-35cc-4fe4-9794-da6f5bcd9e7b has 2 ledger postings
+    e.g. provider_books_differ: settlement 0239ff25-7d96-4d0d-b450-243be9b34ffc has 2 ledger postings
+    e.g. provider_books_differ: settlement 02b89a67-fa34-47b2-b9af-bd95d260d078 has 2 ledger postings
+    e.g. provider_books_differ: settlement 06c00663-c32a-409b-8f4f-06de44c1351a has 2 ledger postings
+    e.g. provider_books_differ: settlement 077e6c6b-ca39-49fd-afce-49f8d615ce17 has 2 ledger postings
+run seed 2: matches expectation (65 s)
+    checked: 15810 expenses (7283 finalized, 4699 voided), 1657 settlements (1707 with a posting), 18930 logical creates, 13689 ledger transactions; settlements unresolved 0, succeeded 1568
+    invariants violated: settlement_posting_wrong=139 provider_books_differ=139
+    clients saw: 5xx 0, settle accepted 2957 / refused for capacity 2041 / replayed 1878, finalize ok 9895, void ok 6482, claims refused after finalize 2568, requests abandoned 6592, races: 2929 rounds, 10 with a finalize landing mid-burst
+    retries answered from the stored response: create 6483 finalize 6834 void 4287 settle 1878; concurrent duplicates that waited and replayed: create 2568 finalize 2797 void 1617 settle 240
+    database lock waits seen by a 20 ms sampler: 2969 of 3005 samples had a backend waiting (at most 22)
+    provider saw: 1737 create calls (80 replays), 1657 payments (1568 charges, 89 declined); timeouts before/after 0/86, 5xx before/after 0/79; webhooks: 3314 events, 0 dropped, 2652 duplicated, 465 reordered payments, 5966 deliveries
+    api logged: 8480 from clients going away; no other error
+    workers logged: 0 from clients going away; other errors:
+        WARN check:settlements_check2 = 1
+    e.g. settlement_posting_wrong: settlement 062c2ccc-23e0-43c7-898f-53686575a068 succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 0adab7b4-f6b8-47dc-b44a-df660d98e2c9 succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 0b53a812-3f1d-4254-b8a6-e52622af4994 succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 0c4f85a7-d8b0-454a-ab3c-20c0ef87e7b0 succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 0c5133d6-85ca-4e59-ae8e-f0a65ff9299c succeeded with 2 postings
+    e.g. provider_books_differ: settlement 062c2ccc-23e0-43c7-898f-53686575a068 has 2 ledger postings
+    e.g. provider_books_differ: settlement 0adab7b4-f6b8-47dc-b44a-df660d98e2c9 has 2 ledger postings
+    e.g. provider_books_differ: settlement 0b53a812-3f1d-4254-b8a6-e52622af4994 has 2 ledger postings
+    e.g. provider_books_differ: settlement 0c4f85a7-d8b0-454a-ab3c-20c0ef87e7b0 has 2 ledger postings
+    e.g. provider_books_differ: settlement 0c5133d6-85ca-4e59-ae8e-f0a65ff9299c has 2 ledger postings
+run seed 3: matches expectation (64 s)
+    checked: 15771 expenses (7768 finalized, 4998 voided), 1728 settlements (1764 with a posting), 18951 logical creates, 14530 ledger transactions; settlements unresolved 0, succeeded 1651
+    invariants violated: settlement_posting_wrong=113 provider_books_differ=113
+    clients saw: 5xx 0, settle accepted 3067 / refused for capacity 1970 / replayed 1857, finalize ok 10658, void ok 6677, claims refused after finalize 3012, requests abandoned 6972, races: 3014 rounds, 10 with a finalize landing mid-burst
+    retries answered from the stored response: create 6047 finalize 7215 void 4221 settle 1857; concurrent duplicates that waited and replayed: create 2538 finalize 2858 void 1762 settle 252
+    database lock waits seen by a 20 ms sampler: 2951 of 3009 samples had a backend waiting (at most 25)
+    provider saw: 1809 create calls (81 replays), 1728 payments (1651 charges, 77 declined); timeouts before/after 0/90, 5xx before/after 0/103; webhooks: 3456 events, 0 dropped, 2805 duplicated, 508 reordered payments, 6261 deliveries
+    api logged: 8778 from clients going away; no other error
+    workers logged: 0 from clients going away; other errors:
+        WARN check:settlements_check2 = 2
+    e.g. settlement_posting_wrong: settlement 003659c1-3470-47a5-94e0-b9fa96cbd02b succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 013767c5-436e-4d34-8bcf-b1cbdce3c4cd succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 02c34553-a552-4010-b88c-248cddbee0e8 succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 08a5249e-7930-42e2-ba6f-54baa44718ad succeeded with 2 postings
+    e.g. settlement_posting_wrong: settlement 09779426-8a23-4286-b154-9c416c0c68d1 succeeded with 2 postings
+    e.g. provider_books_differ: settlement 003659c1-3470-47a5-94e0-b9fa96cbd02b has 2 ledger postings
+    e.g. provider_books_differ: settlement 013767c5-436e-4d34-8bcf-b1cbdce3c4cd has 2 ledger postings
+    e.g. provider_books_differ: settlement 02c34553-a552-4010-b88c-248cddbee0e8 has 2 ledger postings
+    e.g. provider_books_differ: settlement 08a5249e-7930-42e2-ba6f-54baa44718ad has 2 ledger postings
+    e.g. provider_books_differ: settlement 09779426-8a23-4286-b154-9c416c0c68d1 has 2 ledger postings
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[138 139 113] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[138 139 113]
+

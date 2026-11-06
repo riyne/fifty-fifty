@@ -1,0 +1,41 @@
+Ledger stress benchmark, production build (simulated settlement: mock payment provider with simulated latency of 100ms median, log-normal sigma 0.4)
+started 2026-11-06T22:09:56Z, commit 2766d9f09bc417d5e8294b32867f8331249558c8 (working tree dirty: false)
+machine: Apple M3 Pro, 11 CPUs, 19327352832 bytes RAM, Darwin 25.6.0 arm64; PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+docker: /fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit); engine cpus=11 memory_bytes=8214716416 server=29.9.1
+load average at start: 15:09  up 79 days, 11:13, 1 user, load averages: 3.02 5.37 6.20
+per run: 24 users in 4 expense groups acting for 1m0s (each user a loop of create/claim/unclaim/finalize/void/balances; 2 barrier-race loops per group); 3 goroutines running settle rounds (a fresh group of 6 per round, 300ms apart); then settlements drain.
+api pool 30 connections; 3 worker processes x 4 jobs in flight, lease 5s, poll 1s; provider timeout faults held 3s; a scratch database per run; seeds 1..3 (the seed fixes each goroutine's sequence of operations, not the interleaving)
+mock provider flags: --latency-median 100ms --rate-decline 0.05 --rate-timeout-before 0.03 --rate-5xx-before 0.03 --rate-timeout-after 0.03 --rate-5xx-after 0.03 --rate-read-error 0.1 --webhook-drop 0.2 --webhook-duplicate 0.3 --webhook-delay-max 200ms --webhook-out-of-order 0.3
+  (resolve-race cases use: --latency-median 100ms --rate-decline 0.05 --rate-timeout-after 0.05 --rate-5xx-after 0.05 --rate-read-error 0.1 --webhook-duplicate 0.8 --webhook-delay-max 120ms --webhook-out-of-order 0.3)
+
+== production (nothing disabled)
+protections disabled: none
+run seed 1: matches expectation (101 s)
+    checked: 13047 expenses (6592 finalized, 4256 voided), 1520 settlements (1462 with a posting), 15807 logical creates, 12310 ledger transactions; settlements unresolved 0, succeeded 1462
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 2786 / refused for capacity 1723 / replayed 1749, finalize ok 8599, void ok 5846, claims refused after finalize 2028, requests abandoned 5929, races: 2548 rounds, 7 with a finalize landing mid-burst
+    retries answered from the stored response: create 4858 finalize 5646 void 3838 settle 1749; concurrent duplicates that waited and replayed: create 1952 finalize 2453 void 1549 settle 261
+    database lock waits seen by a 20 ms sampler: 2948 of 3004 samples had a backend waiting (at most 25)
+    provider saw: 1681 create calls (48 replays), 1520 payments (1462 charges, 58 declined); timeouts before/after 64/54, 5xx before/after 49/66; webhooks: 2452 events, 588 dropped, 710 duplicated, 472 reordered payments, 3162 deliveries
+    api logged: 7583 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+run seed 2: matches expectation (71 s)
+    checked: 15160 expenses (7045 finalized, 4492 voided), 1649 settlements (1572 with a posting), 18160 logical creates, 13109 ledger transactions; settlements unresolved 0, succeeded 1572
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 2968 / refused for capacity 1838 / replayed 1806, finalize ok 9566, void ok 6205, claims refused after finalize 2416, requests abandoned 6346, races: 2804 rounds, 8 with a finalize landing mid-burst
+    retries answered from the stored response: create 6204 finalize 6526 void 4060 settle 1806; concurrent duplicates that waited and replayed: create 2464 finalize 2635 void 1547 settle 234
+    database lock waits seen by a 20 ms sampler: 2950 of 3002 samples had a backend waiting (at most 26)
+    provider saw: 1815 create calls (47 replays), 1649 payments (1572 charges, 77 declined); timeouts before/after 65/56, 5xx before/after 54/55; webhooks: 2662 events, 636 dropped, 777 duplicated, 491 reordered payments, 3439 deliveries
+    api logged: 8182 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+run seed 3: matches expectation (104 s)
+    checked: 15161 expenses (7517 finalized, 4727 voided), 1676 settlements (1576 with a posting), 18221 logical creates, 13820 ledger transactions; settlements unresolved 0, succeeded 1576
+    invariants violated: none
+    clients saw: 5xx 0, settle accepted 3008 / refused for capacity 1843 / replayed 1791, finalize ok 10249, void ok 6212, claims refused after finalize 3018, requests abandoned 6609, races: 2906 rounds, 10 with a finalize landing mid-burst
+    retries answered from the stored response: create 5777 finalize 6922 void 3896 settle 1791; concurrent duplicates that waited and replayed: create 2432 finalize 2720 void 1588 settle 246
+    database lock waits seen by a 20 ms sampler: 2955 of 3003 samples had a backend waiting (at most 23)
+    provider saw: 1845 create calls (50 replays), 1676 payments (1576 charges, 100 declined); timeouts before/after 52/55, 5xx before/after 67/43; webhooks: 2641 events, 711 dropped, 781 duplicated, 508 reordered payments, 3422 deliveries
+    api logged: 8317 from clients going away; no other error
+    workers logged: 0 from clients going away; no other error
+violations per run, in order of seeds: ledger_transaction_not_zero=[0 0 0] group_not_zero=[0 0 0] ledger_not_zero=[0 0 0] ledger_differs_from_claims=[0 0 0] expense_state_inconsistent=[0 0 0] edit_applied_to_stale_version=[0 0 0] settlement_posting_wrong=[0 0 0] duplicate_per_idempotency_key=[0 0 0] key_outcome_mismatch=[0 0 0] settlement_over_capacity=[0 0 0] provider_books_differ=[0 0 0]
+

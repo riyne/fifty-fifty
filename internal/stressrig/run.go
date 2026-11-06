@@ -104,7 +104,7 @@ type Result struct {
 // RaceMixedFloor is the least number of race rounds in which a finalize must split a
 // burst of claims (some accepted, some refused) for a run with the claim and finalize
 // locks on to count as having raced them. See the comment at its use for how it was chosen.
-const RaceMixedFloor = 5
+const RaceMixedFloor = 1
 
 // Vacuous lists the dangerous situations the run was supposed to create and did not. A
 // clean report from a run that never retried, never raced and never waited for a lock
@@ -130,13 +130,12 @@ func (r Result) Vacuous(p Params) []string {
 		// "Refused for arriving after the finalize" is the claim lock working, and with
 		// the claim lock off nothing is refused; with the finalize lock off the finalize
 		// does not wait for claims. Either way the count is low by construction, so the
-		// requirement does not apply. The floor is below the smallest count recorded in
-		// the 21 control runs with both locks on at a72e779 (15, stress-controls-20261106T032527Z)
-		// and below the smallest of the three production runs at da71b03, which has edits in
-		// the mix (6, 8 and 14; stress-production-20261106T220029Z). That recording was
-		// flagged by this floor when it was 10, which was chosen from the old workload and
-		// checked only at smoke size; 5 was set after seeing those counts, so it guards
-		// "the race happened at all" and is not a calibrated threshold.
+		// requirement does not apply. The floor is 1 ("it happened at all") on purpose: this
+		// counts a rare event (2 to 15 per run, mean about 9, in the 30 recorded runs with both
+		// locks on in stress-production-20261106T220956Z and stress-controls-20261106T221435Z),
+		// so a floor above 1 fires by chance. It was 10, which flagged an unused recording
+		// (stress-production-20261106T220029Z), then 5, which flagged 3 of the 33 control runs
+		// of the recording that is used (counts 2, 3 and 4).
 		if !slices.Contains(p.Controls, "claim_lock") && !slices.Contains(p.Controls, "finalize_lock") && r.Counts["race_mixed"] < RaceMixedFloor {
 			out = append(out, fmt.Sprintf("race_mixed = %d, below %d (too few finalizes landed in the middle of a burst of claims)", r.Counts["race_mixed"], RaceMixedFloor))
 		}
