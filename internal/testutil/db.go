@@ -17,7 +17,9 @@ func UniqueSubject(prefix string) string { return prefix + "-" + uuid.NewString(
 // which must already be migrated: make up && make migrate-up.
 //
 // With TEST_DATABASE_URL unset the test is skipped, so plain `go test` works on
-// a machine without Postgres. CI must set it (and should fail on skips).
+// a machine without Postgres. CI sets REQUIRE_DATABASE=1, which turns that skip
+// into a failure: a CI run in which the database tests silently did not run would
+// be green and prove nothing.
 //
 // Tests share one database and must not assume it is empty: create their own
 // rows under unique identities (see UniqueSubject) rather than truncating tables.
@@ -25,7 +27,7 @@ func Pool(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set; skipping integration test")
+		skipOrFail(t, "TEST_DATABASE_URL not set")
 	}
 	pool, err := pgxpool.New(context.Background(), url)
 	if err != nil {
@@ -46,7 +48,7 @@ func OwnerPool(t testing.TB) *pgxpool.Pool {
 	t.Helper()
 	url := os.Getenv("TEST_OWNER_DATABASE_URL")
 	if url == "" {
-		t.Skip("TEST_OWNER_DATABASE_URL not set; skipping owner-level integration test")
+		skipOrFail(t, "TEST_OWNER_DATABASE_URL not set")
 	}
 	pool, err := pgxpool.New(context.Background(), url)
 	if err != nil {
@@ -57,4 +59,13 @@ func OwnerPool(t testing.TB) *pgxpool.Pool {
 		t.Fatalf("ping owner test database: %v", err)
 	}
 	return pool
+}
+
+// skipOrFail skips the test, or fails it when REQUIRE_DATABASE=1 (set by CI).
+func skipOrFail(t testing.TB, why string) {
+	t.Helper()
+	if os.Getenv("REQUIRE_DATABASE") == "1" {
+		t.Fatalf("%s, and REQUIRE_DATABASE=1: the database tests must run, not skip", why)
+	}
+	t.Skipf("%s; skipping integration test", why)
 }

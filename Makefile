@@ -1,3 +1,6 @@
+# bash, not whatever /bin/sh is: the CI targets use pipefail.
+SHELL := /bin/bash
+
 COMPOSE := docker compose -f deploy/docker-compose.yml
 GOOSE   := go tool -modfile=tools/go.mod goose -dir migrations postgres
 
@@ -6,7 +9,7 @@ GOOSE   := go tool -modfile=tools/go.mod goose -dir migrations postgres
 export MIGRATE_DATABASE_URL ?= postgres://fifty:fifty@localhost:5433/fifty?sslmode=disable
 export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress
+.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress ci ci-format ci-vet ci-generate ci-test ci-vuln
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -88,3 +91,39 @@ bench-settlement:
 bench-stress:
 	go run ./bench/stress
 	go run -tags unsafe_controls ./bench/stress
+
+# CI. .github/workflows/ci.yml starts Postgres, migrates, then runs `make ci`, so every
+# gate can be run on this machine first (needs `make up && make migrate-up`).
+# Not in CI: the end-to-end and stress tests, make test-controls and the benchmarks (real
+# processes, minutes, timing); lint and secret scanning (not built).
+ci: ci-format ci-vet ci-generate ci-test ci-vuln
+
+ci-format:
+	@bad="$$(gofmt -l .)"; if [ -n "$$bad" ]; then echo "not gofmt-formatted:"; echo "$$bad"; exit 1; fi
+
+# Both builds: the production one and the one with the negative-control seams.
+ci-vet:
+	go vet ./...
+	go vet -tags unsafe_controls ./...
+
+# Generated sqlc code must be what the migrations and queries produce.
+ci-generate:
+	go tool -modfile=tools/go.mod sqlc generate
+	@git diff --exit-code -- internal/db || (echo "make generate changes internal/db: commit the regenerated code"; exit 1)
+	@new="$$(git ls-files --others --exclude-standard -- internal/db)"; if [ -n "$$new" ]; then echo "make generate creates untracked files:"; echo "$$new"; exit 1; fi
+
+# One package at a time: the global reaper and cleanup jobs make tests in different
+# packages do each other's work when they run in parallel, and the lease tests are timing
+# sensitive. REQUIRE_DATABASE=1 makes a missing database a failure, not a skip. The log
+# (git-ignored) is kept for reading, and the skipped tests are listed so that a skip that
+# should not be there is visible. Then the whole suite once more with the unsafe_controls
+# tag and nothing disabled.
+ci-test: export REQUIRE_DATABASE = 1
+ci-test:
+	@set -o pipefail; go test -count=1 -p 1 -v ./... 2>&1 | tee ci-test.log | grep -E "^(--- FAIL|FAIL|ok|panic)"
+	@echo "skipped tests:"; grep -E "^\s*--- SKIP" ci-test.log | sed 's/ (.*//' | sort | uniq -c
+	go test -count=1 -p 1 -tags unsafe_controls ./...
+
+# Known vulnerabilities in the dependencies and in the standard library that the code reaches.
+ci-vuln:
+	go tool -modfile=tools/go.mod govulncheck ./...

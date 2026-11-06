@@ -1,0 +1,49 @@
+name: ci
+
+# Runs `make ci`: gofmt, go vet (production build and the unsafe_controls build), a check that
+# `make generate` leaves no diff, the tests against a real Postgres with skips for a missing
+# database turned into failures, the whole suite again with the unsafe_controls tag and nothing
+# disabled, and govulncheck. Not here: the end-to-end and stress tests, the negative controls
+# and the benchmarks (real processes, minutes, timing), lint and secret scanning (not built).
+# The same gates run on a developer machine with `make up && make migrate-up && make ci`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: fifty
+          POSTGRES_PASSWORD: fifty
+          POSTGRES_DB: fifty
+        # 5433 on the runner, as on a developer machine, so the Makefile's URLs work unchanged.
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U fifty -d fifty"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Apply migrations
+        run: make migrate-up
+      - name: Run the gates
+        run: make ci

@@ -33,4 +33,7 @@ android/build/
 /data/
 /tmp/
 
+# CI scratch (make ci keeps the test log here)
+ci-test.log
+
 # NOTE: bench/results/ is intentionally NOT ignored. Raw benchmark output is committed.
