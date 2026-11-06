@@ -265,6 +265,42 @@ func (q *Queries) CreateVoidTransaction(ctx context.Context, arg CreateVoidTrans
 	return id, err
 }
 
+const deleteClaimsForItems = `-- name: DeleteClaimsForItems :execrows
+DELETE FROM claims WHERE expense_id = $1 AND item_id = ANY($2::uuid[])
+`
+
+type DeleteClaimsForItemsParams struct {
+	ExpenseID uuid.UUID
+	ItemIds   []uuid.UUID
+}
+
+// DeleteClaimsForItems removes every claim on the given items: a claim was made at
+// the old price (or on an item that no longer exists).
+func (q *Queries) DeleteClaimsForItems(ctx context.Context, arg DeleteClaimsForItemsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteClaimsForItems, arg.ExpenseID, arg.ItemIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteExpenseItems = `-- name: DeleteExpenseItems :execrows
+DELETE FROM expense_items WHERE expense_id = $1 AND id = ANY($2::uuid[])
+`
+
+type DeleteExpenseItemsParams struct {
+	ExpenseID uuid.UUID
+	ItemIds   []uuid.UUID
+}
+
+func (q *Queries) DeleteExpenseItems(ctx context.Context, arg DeleteExpenseItemsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpenseItems, arg.ExpenseID, arg.ItemIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getExpenseForMember = `-- name: GetExpenseForMember :one
 SELECT e.id, e.group_id, e.payer_id, e.description, e.status, e.version,
        e.tax_minor, e.tip_minor, e.created_at, e.finalized_at, e.voided_at,
@@ -520,6 +556,49 @@ func (q *Queries) LockExpenseForClaim(ctx context.Context, arg LockExpenseForCla
 	return status, err
 }
 
+const lockExpenseForEdit = `-- name: LockExpenseForEdit :one
+SELECT e.status, e.version, e.tax_minor, e.tip_minor
+FROM expenses e
+WHERE e.id = $1 AND e.group_id = $2 AND e.payer_id = $3
+FOR NO KEY UPDATE OF e
+`
+
+type LockExpenseForEditParams struct {
+	ExpenseID uuid.UUID
+	GroupID   uuid.UUID
+	UserID    uuid.UUID
+}
+
+type LockExpenseForEditRow struct {
+	Status   string
+	Version  int32
+	TaxMinor int64
+	TipMinor int64
+}
+
+// LockExpenseForEdit is the first statement of an item edit and of confirm: it takes
+// FOR NO KEY UPDATE on the expense row and authorizes in the same statement (the
+// caller must be the expense's payer, in the path's group; the foreign key on
+// expenses (group_id, payer_id) makes a payer a member, so no membership join).
+//
+// FOR NO KEY UPDATE conflicts with FOR SHARE (so it waits for in-flight claims and
+// blocks new ones), with FOR UPDATE (finalize, void) and with itself (two edits), and
+// is the strength the version bump takes anyway (a plain UPDATE of non-key columns),
+// so there is no lock upgrade between this statement and that one. It does not
+// conflict with FOR KEY SHARE, which foreign-key checks take.
+// The handler checks the payer earlier, without a lock; this is the backstop.
+func (q *Queries) LockExpenseForEdit(ctx context.Context, arg LockExpenseForEditParams) (LockExpenseForEditRow, error) {
+	row := q.db.QueryRow(ctx, lockExpenseForEdit, arg.ExpenseID, arg.GroupID, arg.UserID)
+	var i LockExpenseForEditRow
+	err := row.Scan(
+		&i.Status,
+		&i.Version,
+		&i.TaxMinor,
+		&i.TipMinor,
+	)
+	return i, err
+}
+
 const lockExpenseForFinalize = `-- name: LockExpenseForFinalize :one
 SELECT e.status, e.tax_minor, e.tip_minor
 FROM expenses e
@@ -578,6 +657,55 @@ func (q *Queries) LockExpenseForVoid(ctx context.Context, arg LockExpenseForVoid
 	var status string
 	err := row.Scan(&status)
 	return status, err
+}
+
+const markExpenseConfirmed = `-- name: MarkExpenseConfirmed :execrows
+UPDATE expenses SET status = 'claiming', version = version + 1
+WHERE id = $1 AND version = $2 AND status = 'needs_review'
+`
+
+type MarkExpenseConfirmedParams struct {
+	ID      uuid.UUID
+	Version int32
+}
+
+// MarkExpenseConfirmed moves a reviewed expense to claiming. Conditional like
+// MarkExpenseEdited.
+func (q *Queries) MarkExpenseConfirmed(ctx context.Context, arg MarkExpenseConfirmedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markExpenseConfirmed, arg.ID, arg.Version)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markExpenseEdited = `-- name: MarkExpenseEdited :execrows
+UPDATE expenses SET version = version + 1, tax_minor = $2, tip_minor = $3
+WHERE id = $1 AND version = $4 AND status IN ('needs_review', 'claiming')
+`
+
+type MarkExpenseEditedParams struct {
+	ID       uuid.UUID
+	TaxMinor int64
+	TipMinor int64
+	Version  int32
+}
+
+// MarkExpenseEdited bumps the version and writes tax and tip. It is the LAST write of
+// an edit and is conditional on the version the edit read under the lock and on an
+// editable status, so if the lock were somehow missing an edit that lost a race
+// moves no row and the whole transaction rolls back.
+func (q *Queries) MarkExpenseEdited(ctx context.Context, arg MarkExpenseEditedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markExpenseEdited,
+		arg.ID,
+		arg.TaxMinor,
+		arg.TipMinor,
+		arg.Version,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const markExpenseFinalized = `-- name: MarkExpenseFinalized :execrows
@@ -646,6 +774,33 @@ type ReverseLedgerEntriesParams struct {
 // construction. Nothing is ever updated or deleted: a void is new rows.
 func (q *Queries) ReverseLedgerEntries(ctx context.Context, arg ReverseLedgerEntriesParams) (int64, error) {
 	result, err := q.db.Exec(ctx, reverseLedgerEntries, arg.VoidTransactionID, arg.OriginalTransactionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateExpenseItem = `-- name: UpdateExpenseItem :execrows
+UPDATE expense_items SET description = $3, price_minor = $4
+WHERE id = $1 AND expense_id = $2
+`
+
+type UpdateExpenseItemParams struct {
+	ID          uuid.UUID
+	ExpenseID   uuid.UUID
+	Description string
+	PriceMinor  int64
+}
+
+// UpdateExpenseItem writes the final description and price of one item. Item ids
+// are scoped to the expense, so an id from another expense matches nothing.
+func (q *Queries) UpdateExpenseItem(ctx context.Context, arg UpdateExpenseItemParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateExpenseItem,
+		arg.ID,
+		arg.ExpenseID,
+		arg.Description,
+		arg.PriceMinor,
+	)
 	if err != nil {
 		return 0, err
 	}

@@ -308,10 +308,10 @@ func TestClaim_WaitsForFinalizerThenIsRejected(t *testing.T) {
 	}
 }
 
-// Item edits (M2.8) are a plain UPDATE of the expense row, which takes FOR NO KEY
-// UPDATE. FOR SHARE conflicts with that, FOR KEY SHARE would not, so this pins
-// the lock strength DESIGN.md specifies: a claim must not land while an edit to
-// the expense is in flight.
+// Item edits (M6.1) take FOR NO KEY UPDATE on the expense row, which is also what
+// a plain UPDATE of it takes. FOR SHARE conflicts with that, FOR KEY SHARE would
+// not, so this pins the lock strength DESIGN.md specifies: a claim must not land
+// while an edit to the expense is in flight.
 func TestClaim_WaitsForAnEditInFlight(t *testing.T) {
 	w := newWorld(t)
 	exp, items := w.newExpense(t, w.member, goodBody)

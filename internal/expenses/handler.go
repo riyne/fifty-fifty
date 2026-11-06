@@ -1,7 +1,6 @@
 // Package expenses implements creating and reading expenses within a group.
 //
-// Claiming, finalizing, voiding and item edits are added in later M2 steps.
-// Every method assumes auth.Middleware has already run.
+// Create, read, claim, finalize, void, item edits (edit.go) and confirm. Every method assumes auth.Middleware has already run.
 package expenses
 
 import (
@@ -47,6 +46,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/groups/{id}/expenses", h.create)
 	mux.HandleFunc("GET /v1/groups/{id}/expenses", h.list)
 	mux.HandleFunc("GET /v1/groups/{id}/expenses/{expenseId}", h.get)
+	mux.HandleFunc("PATCH /v1/groups/{id}/expenses/{expenseId}", h.edit)
+	mux.HandleFunc("POST /v1/groups/{id}/expenses/{expenseId}/confirm", h.confirm)
 	mux.HandleFunc("POST /v1/groups/{id}/expenses/{expenseId}/finalize", h.finalize)
 	mux.HandleFunc("POST /v1/groups/{id}/expenses/{expenseId}/void", h.void)
 	mux.HandleFunc("PUT /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", h.claim)

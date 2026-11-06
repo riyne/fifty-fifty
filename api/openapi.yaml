@@ -273,6 +273,135 @@ paths:
               schema: { $ref: "#/components/schemas/Expense" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      summary: Edit an expense's items, tax and tip (payer only). Requires Idempotency-Key.
+      description: >
+        For an expense in `needs_review` (a receipt that was read but needs checking) or `claiming`.
+        `version` is required and must be the version the client last read: if the expense has changed
+        since, the answer is 409 `version_conflict` and nothing is applied, so two edits made from the
+        same version cannot overwrite each other. Claims do not change the version. Any combination of
+        `update` (change the description and/or price of existing items), `remove` (delete items),
+        `add` (new items, placed after the existing ones) and `tax_minor` / `tip_minor` may be sent;
+        everything applies in one transaction and the version goes up by one. **A claim is a promise
+        to pay your share at a price, so the claims on an item are deleted when its price changes and
+        when it is removed**; a description-only change keeps them, and tax and tip carry no claims.
+        The edit waits for claims in flight. A `claiming` expense must stay finalizable (at least
+        one item; tax and tip 0 if every item is free, as at creation); a `needs_review` one is a
+        draft and may be emptied (confirm checks). At most 100 items. Only a `needs_review` or
+        `claiming` expense can be edited; anything else is 409 `invalid_state`. Item ids not in this
+        expense are 404 `item_not_found`. Responses below 500 are stored under the key for 24 hours
+        and replayed (header Idempotent-Replayed: true), including 409s, so after a
+        `version_conflict` read the expense again and retry with a NEW key. A caller who is not in
+        the group gets 404; a member who is not the payer gets 403 (the group owner has no special
+        rights here); both before the key or body are read.
+      parameters:
+        - { $ref: "#/components/parameters/GroupId" }
+        - { name: expenseId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version]
+              properties:
+                version: { type: integer, format: int32, minimum: 1, description: The version of the expense being edited. }
+                update:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [item_id]
+                    properties:
+                      item_id: { type: string, format: uuid }
+                      description: { type: string, minLength: 1, maxLength: 200, description: Trimmed before validation. }
+                      price_minor: { type: integer, format: int64, minimum: 0, maximum: 100000000 }
+                remove:
+                  type: array
+                  maxItems: 100
+                  items: { type: string, format: uuid }
+                add:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [description, price_minor]
+                    properties:
+                      description: { type: string, minLength: 1, maxLength: 200 }
+                      price_minor: { type: integer, format: int64, minimum: 0, maximum: 100000000 }
+                tax_minor: { type: integer, format: int64, minimum: 0, maximum: 100000000 }
+                tip_minor: { type: integer, format: int64, minimum: 0, maximum: 100000000 }
+      responses:
+        "200":
+          description: Edited; the expense as it is now.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Expense" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: The caller is in the group but is not this expense's payer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: >
+            `version_conflict` (the expense is no longer at the given version) or `invalid_state`
+            (the expense is not `needs_review` or `claiming`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/KeyReuse" }
+  /v1/groups/{id}/expenses/{expenseId}/confirm:
+    post:
+      summary: End a review and open the expense for claiming (payer only). Requires Idempotency-Key.
+      description: >
+        For an expense in `needs_review`: the payer says the items match the receipt, and the expense
+        becomes `claiming`. `version` is required and must be the version the payer reviewed (an edit
+        from another tab makes it stale: 409 `version_conflict`). The expense must have at least one
+        item, and tax and tip must be 0 if every item is free (400 otherwise). Any other status is
+        409 `invalid_state`. The version goes up by one and an audit event is written. Stored and
+        replayed under the key like the other mutations. A caller who is not in the group gets 404; a
+        member who is not the payer gets 403.
+      parameters:
+        - { $ref: "#/components/parameters/GroupId" }
+        - { name: expenseId, in: path, required: true, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version]
+              properties:
+                version: { type: integer, format: int32, minimum: 1 }
+      responses:
+        "200":
+          description: Confirmed; the expense, now `claiming`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Expense" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: The caller is in the group but is not this expense's payer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: "`version_conflict`, or `invalid_state` (the expense is not `needs_review`)."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/KeyReuse" }
   /v1/groups/{id}/expenses/{expenseId}/finalize:
     post:
       summary: Finalize an expense into ledger entries (payer only). Requires Idempotency-Key.
@@ -654,7 +783,7 @@ components:
         payer_id: { type: string, format: uuid }
         description: { type: string }
         status: { type: string, enum: [parsing, needs_review, claiming, finalized, void] }
-        version: { type: integer, description: Optimistic-lock counter for item edits. }
+        version: { type: integer, description: "Optimistic-lock counter. Goes up by one on every item edit and on confirm; claims do not change it. Send it back in PATCH and confirm." }
         currency: { type: string, enum: [CAD, USD], description: The group's currency. }
         tax_minor: { type: integer, format: int64 }
         tip_minor: { type: integer, format: int64 }

@@ -179,3 +179,48 @@ WHERE le.transaction_id = sqlc.arg(original_transaction_id);
 -- name: MarkExpenseVoid :execrows
 UPDATE expenses SET status = 'void', voided_at = now()
 WHERE id = $1 AND status = 'finalized';
+
+-- LockExpenseForEdit is the first statement of an item edit and of confirm: it takes
+-- FOR NO KEY UPDATE on the expense row and authorizes in the same statement (the
+-- caller must be the expense's payer, in the path's group; the foreign key on
+-- expenses (group_id, payer_id) makes a payer a member, so no membership join).
+--
+-- FOR NO KEY UPDATE conflicts with FOR SHARE (so it waits for in-flight claims and
+-- blocks new ones), with FOR UPDATE (finalize, void) and with itself (two edits), and
+-- is the strength the version bump takes anyway (a plain UPDATE of non-key columns),
+-- so there is no lock upgrade between this statement and that one. It does not
+-- conflict with FOR KEY SHARE, which foreign-key checks take.
+-- The handler checks the payer earlier, without a lock; this is the backstop.
+-- name: LockExpenseForEdit :one
+SELECT e.status, e.version, e.tax_minor, e.tip_minor
+FROM expenses e
+WHERE e.id = sqlc.arg(expense_id) AND e.group_id = sqlc.arg(group_id) AND e.payer_id = sqlc.arg(user_id)
+FOR NO KEY UPDATE OF e;
+
+-- UpdateExpenseItem writes the final description and price of one item. Item ids
+-- are scoped to the expense, so an id from another expense matches nothing.
+-- name: UpdateExpenseItem :execrows
+UPDATE expense_items SET description = $3, price_minor = $4
+WHERE id = $1 AND expense_id = $2;
+
+-- DeleteClaimsForItems removes every claim on the given items: a claim was made at
+-- the old price (or on an item that no longer exists).
+-- name: DeleteClaimsForItems :execrows
+DELETE FROM claims WHERE expense_id = sqlc.arg(expense_id) AND item_id = ANY(sqlc.arg(item_ids)::uuid[]);
+
+-- name: DeleteExpenseItems :execrows
+DELETE FROM expense_items WHERE expense_id = sqlc.arg(expense_id) AND id = ANY(sqlc.arg(item_ids)::uuid[]);
+
+-- MarkExpenseEdited bumps the version and writes tax and tip. It is the LAST write of
+-- an edit and is conditional on the version the edit read under the lock and on an
+-- editable status, so if the lock were somehow missing an edit that lost a race
+-- moves no row and the whole transaction rolls back.
+-- name: MarkExpenseEdited :execrows
+UPDATE expenses SET version = version + 1, tax_minor = $2, tip_minor = $3
+WHERE id = $1 AND version = $4 AND status IN ('needs_review', 'claiming');
+
+-- MarkExpenseConfirmed moves a reviewed expense to claiming. Conditional like
+-- MarkExpenseEdited.
+-- name: MarkExpenseConfirmed :execrows
+UPDATE expenses SET status = 'claiming', version = version + 1
+WHERE id = $1 AND version = $2 AND status = 'needs_review';

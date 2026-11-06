@@ -207,7 +207,7 @@ func (f *fixture) firstItem(t *testing.T, a actor, group, expense string) string
 func (f *fixture) state(t *testing.T) string {
 	t.Helper()
 	q := func(sql string) int { return f.s.QueryInt(t, sql, f.groupA, f.groupB) }
-	return fmt.Sprintf("codes=%d revoked=%d uses=%d members=%d audit=%d expenses=%d items=%d claims=%d finalized=%d ledger_tx=%d ledger_entries=%d settlements=%d settlement_jobs=%d",
+	return fmt.Sprintf("codes=%d revoked=%d uses=%d members=%d audit=%d expenses=%d items=%d claims=%d finalized=%d ledger_tx=%d ledger_entries=%d settlements=%d settlement_jobs=%d versions=%d item_cents=%d tax_tip=%d",
 		q(`SELECT count(*) FROM join_codes WHERE group_id IN ($1, $2)`),
 		q(`SELECT count(revoked_at) FROM join_codes WHERE group_id IN ($1, $2)`),
 		q(`SELECT coalesce(sum(uses), 0) FROM join_codes WHERE group_id IN ($1, $2)`),
@@ -221,6 +221,9 @@ func (f *fixture) state(t *testing.T) string {
 		q(`SELECT count(*) FROM ledger_entries WHERE group_id IN ($1, $2)`),
 		q(`SELECT count(*) FROM settlements WHERE group_id IN ($1, $2)`),
 		q(`SELECT count(*) FROM jobs j JOIN settlements s ON s.id::text = j.payload->>'settlement_id' WHERE j.kind = 'settlement.execute' AND s.group_id IN ($1, $2)`),
+		q(`SELECT coalesce(sum(version), 0) FROM expenses WHERE group_id IN ($1, $2)`),
+		q(`SELECT coalesce(sum(price_minor), 0) FROM expense_items i JOIN expenses e ON e.id = i.expense_id WHERE e.group_id IN ($1, $2)`),
+		q(`SELECT coalesce(sum(tax_minor + tip_minor), 0) FROM expenses WHERE group_id IN ($1, $2)`),
 	)
 }
 
@@ -397,6 +400,65 @@ func scenarios() []scenario {
 			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
 		},
 		{
+			// Only the payer may edit; being the group owner confers nothing. Each actor gets a
+			// fresh expense so every request is at version 1.
+			name: "edit as payer", opID: "PATCH /v1/groups/{id}/expenses/{expenseId}", method: "PATCH", idempotent: true,
+			prepare: func(t *testing.T, f *fixture) string {
+				return expensePath(f.groupA, f.s.CreateExpense(t, f.tokens[owner], f.groupA, expenseBody))
+			},
+			body: editBody,
+			want: map[actor]int{anon: 401, outsider: 404, member: 403, owner: 200},
+		},
+		{
+			name: "edit as non-payer owner", opID: "PATCH /v1/groups/{id}/expenses/{expenseId}", method: "PATCH", idempotent: true,
+			prepare: func(t *testing.T, f *fixture) string {
+				return expensePath(f.groupA, f.s.CreateExpense(t, f.tokens[member], f.groupA, expenseBody))
+			},
+			body: editBody,
+			want: map[actor]int{anon: 401, outsider: 404, member: 200, owner: 403},
+		},
+		{
+			name: "edit B's expense through A's path", opID: "PATCH /v1/groups/{id}/expenses/{expenseId}", method: "PATCH", idempotent: true,
+			path: func(f *fixture) string { return expensePath(f.groupA, f.expB) },
+			body: editBody,
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
+			name: "edit A's expense through B's path", opID: "PATCH /v1/groups/{id}/expenses/{expenseId}", method: "PATCH", idempotent: true,
+			path: func(f *fixture) string { return expensePath(f.groupB, f.expA) },
+			body: editBody,
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
+			// Confirm needs a needs_review expense, so each actor gets a fresh one.
+			name: "confirm as payer", opID: "POST /v1/groups/{id}/expenses/{expenseId}/confirm", method: "POST", idempotent: true,
+			prepare: func(t *testing.T, f *fixture) string {
+				return confirmPath(f.groupA, f.needsReviewBy(t, owner))
+			},
+			body: `{"version":1}`,
+			want: map[actor]int{anon: 401, outsider: 404, member: 403, owner: 200},
+		},
+		{
+			name: "confirm as non-payer owner", opID: "POST /v1/groups/{id}/expenses/{expenseId}/confirm", method: "POST", idempotent: true,
+			prepare: func(t *testing.T, f *fixture) string {
+				return confirmPath(f.groupA, f.needsReviewBy(t, member))
+			},
+			body: `{"version":1}`,
+			want: map[actor]int{anon: 401, outsider: 404, member: 200, owner: 403},
+		},
+		{
+			name: "confirm B's expense through A's path", opID: "POST /v1/groups/{id}/expenses/{expenseId}/confirm", method: "POST", idempotent: true,
+			path: func(f *fixture) string { return confirmPath(f.groupA, f.expB) },
+			body: `{"version":1}`,
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
+			name: "confirm A's expense through B's path", opID: "POST /v1/groups/{id}/expenses/{expenseId}/confirm", method: "POST", idempotent: true,
+			path: func(f *fixture) string { return confirmPath(f.groupB, f.expA) },
+			body: `{"version":1}`,
+			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
+		},
+		{
 			name: "finalize B's expense through A's path", opID: "POST /v1/groups/{id}/expenses/{expenseId}/finalize", method: "POST", idempotent: true,
 			path: func(f *fixture) string { return finalizePath(f.groupA, f.expB) },
 			body: `{}`,
@@ -457,6 +519,25 @@ func scenarios() []scenario {
 			want: map[actor]int{anon: 401, outsider: 404, member: 404, owner: 404},
 		},
 	}
+}
+
+const editBody = `{"version":1,"tip_minor":1}`
+
+func expensePath(group, expense string) string {
+	return "/v1/groups/" + group + "/expenses/" + expense
+}
+
+func confirmPath(group, expense string) string {
+	return "/v1/groups/" + group + "/expenses/" + expense + "/confirm"
+}
+
+// needsReviewBy has `payer` create an expense in group A and puts it in needs_review
+// (the receipt pipeline that does this arrives later in M6).
+func (f *fixture) needsReviewBy(t *testing.T, payer actor) string {
+	t.Helper()
+	id := f.s.CreateExpense(t, f.tokens[payer], f.groupA, expenseBody)
+	f.s.Exec(t, `UPDATE expenses SET status = 'needs_review' WHERE id = $1`, id)
+	return id
 }
 
 func voidPath(group, expense string) string {
