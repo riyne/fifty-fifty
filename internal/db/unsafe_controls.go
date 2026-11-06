@@ -28,6 +28,7 @@ var (
 	unsafeLockExpenseForClaim    = without(lockExpenseForClaim, "FOR SHARE OF e")
 	unsafeLockExpenseForFinalize = without(lockExpenseForFinalize, "FOR UPDATE OF e")
 	unsafeLockExpenseForVoid     = without(lockExpenseForVoid, "FOR UPDATE OF e")
+	unsafeLockExpenseForEdit     = without(lockExpenseForEdit, "FOR NO KEY UPDATE OF e")
 	unsafeLockGroupForSettlement = without(lockGroupForSettlement, "FOR NO KEY UPDATE")
 	unsafeLockSettlement         = without(lockSettlement, "FOR UPDATE")
 
@@ -55,6 +56,13 @@ func (q *Queries) UnsafeLockExpenseForVoid(ctx context.Context, arg LockExpenseF
 	var status string
 	err := q.db.QueryRow(ctx, unsafeLockExpenseForVoid, arg.UserID, arg.ExpenseID, arg.GroupID).Scan(&status)
 	return status, err
+}
+
+// UnsafeLockExpenseForEdit is LockExpenseForEdit without FOR NO KEY UPDATE.
+func (q *Queries) UnsafeLockExpenseForEdit(ctx context.Context, arg LockExpenseForEditParams) (LockExpenseForEditRow, error) {
+	var i LockExpenseForEditRow
+	err := q.db.QueryRow(ctx, unsafeLockExpenseForEdit, arg.ExpenseID, arg.GroupID, arg.UserID).Scan(&i.Status, &i.Version, &i.TaxMinor, &i.TipMinor)
+	return i, err
 }
 
 // UnsafeLockGroupForSettlement is LockGroupForSettlement without FOR NO KEY UPDATE.

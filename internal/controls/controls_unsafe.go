@@ -121,6 +121,18 @@ func LockExpenseForVoid(ctx context.Context, q *db.Queries, arg db.LockExpenseFo
 	return q.LockExpenseForVoid(ctx, arg)
 }
 
+func LockExpenseForEdit(ctx context.Context, q *db.Queries, arg db.LockExpenseForEditParams) (db.LockExpenseForEditRow, error) {
+	if Disabled(EditLock) {
+		return q.UnsafeLockExpenseForEdit(ctx, arg)
+	}
+	return q.LockExpenseForEdit(ctx, arg)
+}
+
+// VersionMatches is true whatever the versions are when EditVersionCheck is off.
+func VersionMatches(current, sent int32) bool {
+	return Disabled(EditVersionCheck) || current == sent
+}
+
 func LockGroupForSettlement(ctx context.Context, q *db.Queries, id uuid.UUID) (uuid.UUID, error) {
 	if Disabled(GroupLock) {
 		return q.UnsafeLockGroupForSettlement(ctx, id)

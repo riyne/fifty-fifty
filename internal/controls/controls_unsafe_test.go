@@ -189,6 +189,99 @@ func TestGroupLock(t *testing.T) {
 	}
 }
 
+func TestEditLock(t *testing.T) {
+	f := newFixture(t)
+	f.hold(t, `SELECT id FROM expenses WHERE id = $1 FOR SHARE`, f.expense) // a claim in flight
+	edit := func(user uuid.UUID) func(context.Context) error {
+		return func(ctx context.Context) error {
+			q, done := f.tx(t, ctx)
+			defer done()
+			got, err := controls.LockExpenseForEdit(ctx, q, db.LockExpenseForEditParams{UserID: user, ExpenseID: f.expense, GroupID: f.group})
+			if err == nil && (got.Status != "claiming" || got.Version != 1) {
+				t.Errorf("row = %+v", got)
+			}
+			return err
+		}
+	}
+	if !waits(t, edit(f.payer)) {
+		t.Fatal("with the control on, an edit must wait for an in-flight claim")
+	}
+	controls.Disable(controls.EditLock)
+	if waits(t, edit(f.payer)) {
+		t.Fatal("with the control off, the edit must not wait")
+	}
+	if err := edit(f.member)(context.Background()); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("non-payer = %v, want no rows", err)
+	}
+}
+
+func TestEditVersionCheck(t *testing.T) {
+	if !controls.VersionMatches(2, 2) || controls.VersionMatches(2, 1) || controls.VersionMatches(1, 2) {
+		t.Fatal("with the check on, only equal versions match")
+	}
+	controls.Disable(controls.EditVersionCheck)
+	if !controls.VersionMatches(2, 1) || !controls.VersionMatches(2, 2) {
+		t.Fatal("with the check off, any version matches")
+	}
+	controls.Enable(controls.EditVersionCheck)
+	if controls.VersionMatches(2, 1) {
+		t.Fatal("with the check back on, a stale version must not match")
+	}
+}
+
+// Through the real handler: a second edit from the same (now stale) version is refused,
+// and with the check off it is applied on top of the first, which the audit event shows
+// (the version it was made from is not the one before the new version). Only the
+// comparison is gone: the version still goes up by one and the stored version is what
+// the final update is conditional on.
+func TestEditVersionCheckThroughTheHandler(t *testing.T) {
+	t.Cleanup(controls.Reset)
+	s := teststack.New(t)
+	tok := s.Token(t, "editor")
+	group := s.CreateGroup(t, tok, "edits")
+	exp := s.CreateExpense(t, tok, group, body)
+	path := "/v1/groups/" + group + "/expenses/" + exp
+	edit := func(price int) teststack.Response {
+		return s.Do(t, tok, "PATCH", path, `{"version":1,"tip_minor":`+string(rune('0'+price))+`}`, "Idempotency-Key", uuid.NewString())
+	}
+	if r := edit(1); r.Status != 200 {
+		t.Fatalf("first edit = %d: %s", r.Status, r.Body)
+	}
+	if r := edit(2); r.Status != 409 {
+		t.Fatalf("stale edit with the check on = %d: %s, want 409", r.Status, r.Body)
+	}
+	controls.Disable(controls.EditVersionCheck)
+	if r := edit(3); r.Status != 200 {
+		t.Fatalf("stale edit with the check off = %d: %s, want 200", r.Status, r.Body)
+	}
+	if n := s.QueryInt(t, `SELECT version FROM expenses WHERE id = $1`, exp); n != 3 {
+		t.Errorf("version = %d, want 3", n)
+	}
+	if n := s.QueryInt(t, `SELECT count(*) FROM audit_events WHERE kind = 'expense.items_edited' AND data->>'expense_id' = $1 AND (data->>'version')::int - 1 <> (data->>'base_version')::int`, exp); n != 1 {
+		t.Errorf("audit events made from a stale version = %d, want 1", n)
+	}
+}
+
+// Confirm compares versions through the same seam as the edit.
+func TestEditVersionCheckThroughConfirm(t *testing.T) {
+	t.Cleanup(controls.Reset)
+	s := teststack.New(t)
+	tok := s.Token(t, "confirmer")
+	group := s.CreateGroup(t, tok, "confirms")
+	exp := s.CreateExpense(t, tok, group, body)
+	s.Exec(t, `UPDATE expenses SET status = 'needs_review' WHERE id = $1`, exp)
+	confirm := func(version string) teststack.Response {
+		return s.Do(t, tok, "POST", "/v1/groups/"+group+"/expenses/"+exp+"/confirm", `{"version":`+version+`}`, "Idempotency-Key", uuid.NewString())
+	}
+	if r := confirm("7"); r.Status != 409 {
+		t.Fatalf("confirm at a stale version with the check on = %d: %s, want 409", r.Status, r.Body)
+	}
+	controls.Disable(controls.EditVersionCheck)
+	if r := confirm("7"); r.Status != 200 {
+		t.Fatalf("confirm at a stale version with the check off = %d: %s, want 200", r.Status, r.Body)
+	}
+}
+
 func (f fixture) settlement(t *testing.T) db.Settlement {
 	t.Helper()
 	s, err := f.q.CreateSettlement(context.Background(), db.CreateSettlementParams{GroupID: f.group, FromMember: f.member, ToMember: f.payer, AmountMinor: 100})

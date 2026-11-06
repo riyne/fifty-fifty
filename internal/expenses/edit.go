@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/riyne/fifty-fifty/internal/auth"
+	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
@@ -246,7 +247,7 @@ func (h *Handler) writeIdempotent(w http.ResponseWriter, out idempotency.Outcome
 func (h *Handler) doEdit(ctx context.Context, tx pgx.Tx, payerID, groupID, expenseID uuid.UUID, n normEdit) (idempotency.Result, error) {
 	q := h.q.WithTx(tx)
 
-	locked, err := q.LockExpenseForEdit(ctx, db.LockExpenseForEditParams{UserID: payerID, ExpenseID: expenseID, GroupID: groupID})
+	locked, err := controls.LockExpenseForEdit(ctx, q, db.LockExpenseForEditParams{UserID: payerID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return jsonResult(http.StatusNotFound, errBody("not_found", "expense not found")), nil
 	}
@@ -257,7 +258,7 @@ func (h *Handler) doEdit(ctx context.Context, tx pgx.Tx, payerID, groupID, expen
 		return jsonResult(http.StatusConflict, errBody(codeInvalidState,
 			"expense is "+locked.Status+"; only a needs_review or claiming expense can be edited")), nil
 	}
-	if locked.Version != n.Version {
+	if !controls.VersionMatches(locked.Version, n.Version) {
 		return jsonResult(http.StatusConflict, errBody(codeVersionConflict,
 			fmt.Sprintf("expense is at version %d, not %d; read it again and redo the edit", locked.Version, n.Version))), nil
 	}
@@ -382,7 +383,7 @@ func (h *Handler) doEdit(ctx context.Context, tx pgx.Tx, payerID, groupID, expen
 	}
 
 	if err := h.audit(ctx, q, payerID, groupID, "expense.items_edited", map[string]any{
-		"expense_id": expenseID, "version": locked.Version + 1,
+		"expense_id": expenseID, "base_version": n.Version, "version": locked.Version + 1,
 		"added": len(n.Add), "updated": len(changes), "removed": len(n.Remove), "claims_removed": claimsRemoved,
 	}); err != nil {
 		return idempotency.Result{}, fmt.Errorf("audit: %w", err)
@@ -453,7 +454,7 @@ func (h *Handler) confirm(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) doConfirm(ctx context.Context, tx pgx.Tx, payerID, groupID, expenseID uuid.UUID, version int32) (idempotency.Result, error) {
 	q := h.q.WithTx(tx)
-	locked, err := q.LockExpenseForEdit(ctx, db.LockExpenseForEditParams{UserID: payerID, ExpenseID: expenseID, GroupID: groupID})
+	locked, err := controls.LockExpenseForEdit(ctx, q, db.LockExpenseForEditParams{UserID: payerID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return jsonResult(http.StatusNotFound, errBody("not_found", "expense not found")), nil
 	}
@@ -464,7 +465,7 @@ func (h *Handler) doConfirm(ctx context.Context, tx pgx.Tx, payerID, groupID, ex
 		return jsonResult(http.StatusConflict, errBody(codeInvalidState,
 			"expense is "+locked.Status+"; only a needs_review expense can be confirmed")), nil
 	}
-	if locked.Version != version {
+	if !controls.VersionMatches(locked.Version, version) {
 		return jsonResult(http.StatusConflict, errBody(codeVersionConflict,
 			fmt.Sprintf("expense is at version %d, not %d; read it again and review it", locked.Version, version))), nil
 	}
@@ -483,7 +484,7 @@ func (h *Handler) doConfirm(ctx context.Context, tx pgx.Tx, payerID, groupID, ex
 		return idempotency.Result{}, fmt.Errorf("mark confirmed: rows=%d err=%v", got, err)
 	}
 	if err := h.audit(ctx, q, payerID, groupID, "expense.confirmed", map[string]any{
-		"expense_id": expenseID, "version": locked.Version + 1, "items": len(rows),
+		"expense_id": expenseID, "base_version": version, "version": locked.Version + 1, "items": len(rows),
 	}); err != nil {
 		return idempotency.Result{}, fmt.Errorf("audit: %w", err)
 	}

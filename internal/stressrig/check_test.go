@@ -101,6 +101,10 @@ func newWorld(t *testing.T) *world {
 
 	w.e3, items = mk(w.d3, [2]any{"tea", 500})
 	claim(w.bTok, w.e3.String(), items[0])
+	// One edit, so there is an audit event for the checker to read.
+	if r := s.Do(t, w.payerTok, "PATCH", "/v1/groups/"+group+"/expenses/"+w.e3.String(), `{"version":1,"tip_minor":250}`, "Idempotency-Key", uuid.NewString()); r.Status != 200 {
+		t.Fatalf("edit = %d: %s", r.Status, r.Body)
+	}
 
 	ctx := context.Background()
 	q := db.New(w.pool)
@@ -198,7 +202,7 @@ func TestCheck_HealthyWorldIsClean(t *testing.T) {
 		t.Fatalf("a healthy world reported anomalies:\n%s", rep)
 	}
 	// A clean report is only worth something if the checker looked at something.
-	want := stressrig.Checked{Groups: 1, Expenses: 3, Finalized: 2, Voided: 1, LedgerTransactions: 4, Settlements: 2, SettlementPostings: 1, Creates: 6}
+	want := stressrig.Checked{Groups: 1, Expenses: 3, Finalized: 2, Voided: 1, Edits: 1, LedgerTransactions: 4, Settlements: 2, SettlementPostings: 1, Creates: 6}
 	if rep.Checked != want {
 		t.Fatalf("checked %+v, want %+v", rep.Checked, want)
 	}
@@ -279,6 +283,27 @@ func TestCheck_VoidThatIsNotTheNegation(t *testing.T) {
 			VALUES ('00000000-0000-0000-0000-0000000000bb', $1, $2, 1), ('00000000-0000-0000-0000-0000000000bb', $1, $3, -1)`, w.group, w.a, w.b)
 		mustExec(t, tx, `UPDATE expenses SET status = 'void', voided_at = now() WHERE id = $1`, w.e1)
 		requireOnly(t, check(t, tx, w.expect()), stressrig.SharesMatchClaims)
+	})
+}
+
+func TestCheck_EditMadeFromAStaleVersion(t *testing.T) {
+	w := newWorld(t)
+	w.inTx(t, func(tx pgx.Tx) {
+		// A second edit, made from version 1 although the expense is at version 2, applied
+		// on top of it (what a missing version check does): version 3 from base 1.
+		mustExec(t, tx, `UPDATE expenses SET version = 3 WHERE id = $1`, w.e3)
+		mustExec(t, tx, `INSERT INTO audit_events (actor_user_id, group_id, kind, data) VALUES ($1, $2, 'expense.items_edited', $3::jsonb)`,
+			w.payer, w.group, fmt.Sprintf(`{"expense_id":%q,"base_version":1,"version":3}`, w.e3))
+		rep := check(t, tx, w.expect())
+		requireOnly(t, rep, stressrig.EditStaleVersion)
+		if rep.Counts[stressrig.EditStaleVersion] != 1 || rep.Checked.Edits != 2 {
+			t.Fatalf("want 1 stale edit among 2, got %d among %d\n%s", rep.Counts[stressrig.EditStaleVersion], rep.Checked.Edits, rep)
+		}
+	})
+	w.inTx(t, func(tx pgx.Tx) { // an edit event that does not say what it was made from is also refused
+		mustExec(t, tx, `INSERT INTO audit_events (actor_user_id, group_id, kind, data) VALUES ($1, $2, 'expense.confirmed', $3::jsonb)`,
+			w.payer, w.group, fmt.Sprintf(`{"expense_id":%q,"version":2}`, w.e3))
+		requireOnly(t, check(t, tx, w.expect()), stressrig.EditStaleVersion)
 	})
 }
 

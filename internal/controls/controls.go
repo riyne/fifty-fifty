@@ -35,6 +35,14 @@ func LockExpenseForVoid(ctx context.Context, q *db.Queries, arg db.LockExpenseFo
 	return q.LockExpenseForVoid(ctx, arg)
 }
 
+func LockExpenseForEdit(ctx context.Context, q *db.Queries, arg db.LockExpenseForEditParams) (db.LockExpenseForEditRow, error) {
+	return q.LockExpenseForEdit(ctx, arg)
+}
+
+// VersionMatches reports whether the version the client sent is the expense's current
+// version. It is the optimistic lock of item edits and confirm.
+func VersionMatches(current, sent int32) bool { return current == sent }
+
 func LockGroupForSettlement(ctx context.Context, q *db.Queries, id uuid.UUID) (uuid.UUID, error) {
 	return q.LockGroupForSettlement(ctx, id)
 }

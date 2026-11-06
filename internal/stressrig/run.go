@@ -101,6 +101,11 @@ type Result struct {
 	Elapsed    float64           `json:"elapsed_seconds"`
 }
 
+// RaceMixedFloor is the least number of race rounds in which a finalize must split a
+// burst of claims (some accepted, some refused) for a run with the claim and finalize
+// locks on to count as having raced them.
+const RaceMixedFloor = 10
+
 // Vacuous lists the dangerous situations the run was supposed to create and did not. A
 // clean report from a run that never retried, never raced and never waited for a lock
 // proves nothing, so a run with any entry here must not be reported as passing.
@@ -121,9 +126,26 @@ func (r Result) Vacuous(p Params) []string {
 	need("void/200", "no void succeeded")
 	if p.RaceLoops > 0 {
 		need("race_rounds", "no race round ran")
-		need("race_mixed", "no finalize landed in the middle of a burst of claims")
 		need("race_double_finalize_refused", "two simultaneous finalizes never met")
+		// "Refused for arriving after the finalize" is the claim lock working, and with
+		// the claim lock off nothing is refused; with the finalize lock off the finalize
+		// does not wait for claims. Either way the count is low by construction, so the
+		// requirement does not apply. The floor is below the smallest count recorded in
+		// the 21 control runs with both locks on (15, stress-controls-20261106T032527Z).
+		if !slices.Contains(p.Controls, "claim_lock") && !slices.Contains(p.Controls, "finalize_lock") && r.Counts["race_mixed"] < RaceMixedFloor {
+			out = append(out, fmt.Sprintf("race_mixed = %d, below %d (too few finalizes landed in the middle of a burst of claims)", r.Counts["race_mixed"], RaceMixedFloor))
+		}
+		// Two edits from one version meet and one is refused: only the version check and
+		// the edit lock make that happen, so it is not required when either is off.
+		editChecks := !slices.Contains(p.Controls, "edit_version_check") && !slices.Contains(p.Controls, "edit_lock")
+		if editChecks {
+			need("race_edit_conflict", "two edits made from one version never met, one applied and one refused")
+		}
+		if r.Counts["race_edit_rounds"] == 0 {
+			out = append(out, "race_edit_rounds never happened (no edit race round ran)")
+		}
 	}
+	need("edit/200", "no edit was accepted")
 	if r.Locks.SamplesWaiting == 0 {
 		out = append(out, "no sample ever saw a backend waiting for a lock")
 	}

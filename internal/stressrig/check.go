@@ -53,6 +53,11 @@ const (
 	// OverCapacity: in a group whose balances were frozen before settling, the
 	// settlements that are not failed add up to more than a member owed or was owed.
 	OverCapacity Invariant = "settlement_over_capacity"
+	// EditStaleVersion: an item edit or confirm was applied to an expense that had moved
+	// on since the version the client sent. Every such audit event records the version
+	// it was made from (base_version) and the version it produced; with the optimistic
+	// lock working, the second is always the first plus one.
+	EditStaleVersion Invariant = "edit_applied_to_stale_version"
 	// ProviderBooks: the ledger disagrees with the payment provider's record
 	// (settlerig.Verify): succeeded != postings != charges, a double create or charge,
 	// or a charge recorded as failed.
@@ -61,7 +66,7 @@ const (
 
 // Invariants lists every invariant in report order.
 var Invariants = []Invariant{
-	ZeroSumTransaction, ZeroSumGroup, ZeroSumLedger, SharesMatchClaims, ExpenseState,
+	ZeroSumTransaction, ZeroSumGroup, ZeroSumLedger, SharesMatchClaims, ExpenseState, EditStaleVersion,
 	SettlementPosting, DuplicateKey, KeyOutcome, OverCapacity, ProviderBooks,
 }
 
@@ -126,7 +131,7 @@ type Querier interface {
 // Checked says how much the checker looked at, so a clean report is not mistaken for
 // an empty one.
 type Checked struct {
-	Groups, Expenses, Finalized, Voided, LedgerTransactions, Settlements, SettlementPostings, Creates int
+	Groups, Expenses, Finalized, Voided, Edits, LedgerTransactions, Settlements, SettlementPostings, Creates int
 }
 
 // Anomaly is one example of a violation.
@@ -218,6 +223,7 @@ func Check(ctx context.Context, q Querier, exp Expect) (Report, error) {
 	for _, step := range []func(context.Context, Querier, []uuid.UUID, *Report) error{
 		checkZeroSums,
 		checkExpenses,
+		checkEdits,
 		checkSettlements,
 	} {
 		if err := step(ctx, q, groups, &rep); err != nil {
@@ -236,6 +242,47 @@ func Check(ctx context.Context, q Querier, exp Expect) (Report, error) {
 		}
 	}
 	return rep, nil
+}
+
+// checkEdits reads the audit events of item edits and confirms (written in the same
+// transaction as the change) and requires each to have been made from the version just
+// before the one it produced. A lost update shows up here: two edits made from one
+// version are both applied, the second one on top of a version it never saw.
+func checkEdits(ctx context.Context, q Querier, groups []uuid.UUID, rep *Report) error {
+	rows, err := q.Query(ctx, `
+		SELECT data->>'expense_id', data->>'base_version', data->>'version', kind
+		FROM audit_events
+		WHERE kind IN ('expense.items_edited', 'expense.confirmed') AND group_id = ANY($1)`, groups)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var expense, kind string
+		var base, version *string
+		if err := rows.Scan(&expense, &base, &version, &kind); err != nil {
+			return err
+		}
+		rep.Checked.Edits++
+		want := ""
+		if version != nil {
+			var v int
+			if _, err := fmt.Sscanf(*version, "%d", &v); err == nil {
+				want = fmt.Sprint(v - 1)
+			}
+		}
+		if base == nil || version == nil || *base != want {
+			rep.add(EditStaleVersion, "%s of expense %s made from version %s produced version %s", kind, expense, deref(base), deref(version))
+		}
+	}
+	return rows.Err()
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return "<none>"
+	}
+	return *s
 }
 
 func allGroups(ctx context.Context, q Querier) ([]uuid.UUID, error) {

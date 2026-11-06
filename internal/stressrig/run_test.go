@@ -47,6 +47,7 @@ func TestVacuousAndClean(t *testing.T) {
 	v := empty.Vacuous(p)
 	for _, want := range []string{"replayed/create", "duplicate_waited_and_replayed/create", "abandoned/create", "claim/409_not_claimable",
 		"finalize/200", "void/200", "race_rounds", "race_mixed", "race_double_finalize_refused", "backend waiting for a lock",
+		"edit/200", "race_edit_conflict", "race_edit_rounds",
 		"settle/202", "refused/settle", "replayed/settle", "reached succeeded"} {
 		if !strings.Contains(strings.Join(v, "\n"), want) {
 			t.Errorf("an empty run must be vacuous about %q; got %v", want, v)
@@ -58,10 +59,12 @@ func TestVacuousAndClean(t *testing.T) {
 
 	full := Result{Locks: LockWaits{SamplesWaiting: 1}, Counts: map[string]int64{}}
 	for _, k := range []string{"replayed/create", "duplicate_waited_and_replayed/create", "abandoned/create", "claim/409_not_claimable",
-		"finalize/200", "void/200", "race_rounds", "race_mixed", "race_double_finalize_refused",
+		"finalize/200", "void/200", "race_rounds", "race_double_finalize_refused",
+		"edit/200", "race_edit_conflict", "race_edit_rounds",
 		"settle/202", "refused/settle", "replayed/settle", "settlements_succeeded"} {
 		full.Counts[k] = 1
 	}
+	full.Counts["race_mixed"] = RaceMixedFloor
 	if v := full.Vacuous(p); len(v) != 0 {
 		t.Fatalf("a run with everything must not be vacuous: %v", v)
 	}
@@ -105,6 +108,58 @@ func TestVacuousAndClean(t *testing.T) {
 	bad.Report.Counts = map[Invariant]int{DuplicateKey: 1}
 	if bad.Clean(p) {
 		t.Error("a violated invariant must make a run unclean")
+	}
+}
+
+// The race_mixed floor and the edit race are required only where the protection they
+// exercise is on: with the claim lock off nothing is refused around a finalize, with the
+// finalize lock off the finalize does not wait for claims, and with the edit lock or the
+// version check off two edits from one version are not refused. A floor that applied to
+// those runs flagged two recorded claim_lock runs as vacuous (DESIGN section 13).
+func TestVacuous_RaceFloorsFollowTheControls(t *testing.T) {
+	base := func() Result {
+		r := Result{Locks: LockWaits{SamplesWaiting: 1}, Counts: map[string]int64{}}
+		for _, k := range []string{"replayed/create", "duplicate_waited_and_replayed/create", "abandoned/create", "claim/409_not_claimable",
+			"finalize/200", "void/200", "race_rounds", "race_double_finalize_refused", "edit/200", "race_edit_rounds",
+			"race_edit_conflict", "race_mixed"} {
+			r.Counts[k] = 1000
+		}
+		r.Counts["race_mixed"] = RaceMixedFloor - 1
+		return r
+	}
+	p := Params{RaceLoops: 1}
+	if v := base().Vacuous(p); len(v) != 1 || !strings.Contains(v[0], "race_mixed") {
+		t.Fatalf("a race_mixed below the floor with both locks on must be flagged: %v", v)
+	}
+	r := base()
+	r.Counts["race_mixed"] = RaceMixedFloor
+	if v := r.Vacuous(p); len(v) != 0 {
+		t.Fatalf("at the floor is enough: %v", v)
+	}
+	for _, off := range []string{"claim_lock", "finalize_lock"} {
+		q := p
+		q.Controls = []string{off}
+		r := base()
+		r.Counts["race_mixed"] = 0
+		if v := r.Vacuous(q); len(v) != 0 {
+			t.Errorf("with %s off a low race_mixed is by construction and must not be flagged: %v", off, v)
+		}
+	}
+	for _, off := range []string{"edit_lock", "edit_version_check"} {
+		q := p
+		q.Controls = []string{off}
+		r := base()
+		r.Counts["race_mixed"] = RaceMixedFloor
+		r.Counts["race_edit_conflict"] = 0
+		if v := r.Vacuous(q); len(v) != 0 {
+			t.Errorf("with %s off a missing edit conflict must not be flagged: %v", off, v)
+		}
+	}
+	r = base()
+	r.Counts["race_mixed"] = RaceMixedFloor
+	r.Counts["race_edit_conflict"] = 0
+	if v := r.Vacuous(p); len(v) != 1 || !strings.Contains(v[0], "race_edit_conflict") {
+		t.Errorf("with the edit protections on, no edit conflict must be flagged: %v", v)
 	}
 }
 

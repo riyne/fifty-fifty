@@ -14,7 +14,7 @@ import (
 // was not. Tests and the controls and db packages themselves may call them.
 func TestCallSitesGoThroughControls(t *testing.T) {
 	wrapped := []string{
-		"LockExpenseForClaim(", "LockExpenseForFinalize(", "LockExpenseForVoid(",
+		"LockExpenseForClaim(", "LockExpenseForFinalize(", "LockExpenseForVoid(", "LockExpenseForEdit(",
 		"LockGroupForSettlement(", "LockSettlement(",
 		"MarkSettlementSucceeded(", "MarkSettlementFailed(", "MarkSettlementUnknown(",
 	}

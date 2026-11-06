@@ -11,6 +11,10 @@ const (
 	LayerExpensePost  = "unique:ledger_transactions_one_expense_posting"
 	LayerOneVoid      = "unique:ledger_transactions_one_void"
 	LayerMarkGuard    = "mark succeeded: settlement was not in a state"
+	// LayerEditGuard is the conditional update that ends an edit (on the version read under
+	// the lock and on an editable status): with the edit lock off it is what stops an edit
+	// that lost a race, by moving no row.
+	LayerEditGuard = "edit expense: mark edited: rows=0"
 )
 
 // ControlCase is one negative control: which protections are off and what the harness
@@ -42,6 +46,8 @@ var ControlCases = []ControlCase{
 	{Name: "claim_lock", Off: []string{"claim_lock"}, Violated: []Invariant{SharesMatchClaims}},
 	{Name: "finalize_lock", Off: []string{"finalize_lock"}, Violated: []Invariant{SharesMatchClaims}, Layers: []string{LayerExpensePost}},
 	{Name: "void_lock", Off: []string{"void_lock"}, Layers: []string{LayerOneVoid}},
+	{Name: "edit_version_check", Off: []string{"edit_version_check"}, Violated: []Invariant{EditStaleVersion}},
+	{Name: "edit_lock", Off: []string{"edit_lock"}, Layers: []string{LayerEditGuard}},
 	{Name: "idempotency_check", Off: []string{"idempotency_check"}, Violated: []Invariant{DuplicateKey}},
 	{Name: "group_lock", Off: []string{"group_lock"}, Violated: []Invariant{OverCapacity}},
 	{Name: "resolve_guards (lock still on)", Off: []string{"resolve_guards"}, ResolveRace: true, Silent: true},

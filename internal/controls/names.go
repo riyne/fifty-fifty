@@ -23,7 +23,13 @@ const (
 	// ResolveGuards: the status conditions on the three MarkSettlement* updates
 	// (the layer behind ResolveLock; the unique posting index sits behind both).
 	ResolveGuards Control = "resolve_guards"
+	// EditLock: the FOR NO KEY UPDATE lock an item edit (and confirm) takes on the expense
+	// row. Behind it sit the status and version conditions on the final update.
+	EditLock Control = "edit_lock"
+	// EditVersionCheck: comparing the version the client sent with the stored version, so
+	// that an edit made from a stale read is refused instead of overwriting a newer edit.
+	EditVersionCheck Control = "edit_version_check"
 )
 
 // All lists every control. The order fixes each control's bit in the unsafe build.
-var All = []Control{ClaimLock, FinalizeLock, VoidLock, IdempotencyCheck, GroupLock, ResolveLock, ResolveGuards}
+var All = []Control{ClaimLock, FinalizeLock, VoidLock, IdempotencyCheck, GroupLock, ResolveLock, ResolveGuards, EditLock, EditVersionCheck}

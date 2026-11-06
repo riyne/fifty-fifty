@@ -155,6 +155,21 @@ type exp struct {
 	payer int
 	items []string
 	state atomic.Int32
+	// version is the workload's belief about the expense's version: 1 at creation, raised
+	// by every accepted edit it hears about. A hint, like state: a request abandoned by
+	// the client can still be applied later, which makes it stale and an edit then gets
+	// the documented 409.
+	version atomic.Int32
+}
+
+// seenVersion raises the version hint to v if v is higher.
+func (x *exp) seenVersion(v int32) {
+	for {
+		cur := x.version.Load()
+		if v <= cur || x.version.CompareAndSwap(cur, v) {
+			return
+		}
+	}
 }
 
 const (
@@ -238,6 +253,7 @@ func (e *Env) createExpense(ctx context.Context, rng *rand.Rand, g *group, payer
 				continue
 			}
 			made = &exp{id: out.ID, payer: payer}
+			made.version.Store(1)
 			for _, it := range out.Items {
 				made.items = append(made.items, it.ID)
 			}
@@ -329,6 +345,66 @@ func (e *Env) learn(x *exp, op string, resps []Resp) {
 	}
 }
 
+type editUpdate struct {
+	ItemID     string `json:"item_id"`
+	PriceMinor int64  `json:"price_minor"`
+}
+
+type editBody struct {
+	Version int32        `json:"version"`
+	Update  []editUpdate `json:"update"`
+}
+
+// edit sends one logical edit as the payer: change the price of one item, made from the
+// given version. Item ids never change in this workload (edits only reprice), so the
+// workload's list of items stays valid.
+func (e *Env) edit(ctx context.Context, rng *rand.Rand, g *group, x *exp, version int32, item string) []Resp {
+	body := editBody{Version: version, Update: []editUpdate{{ItemID: item, PriceMinor: int64(100 + rng.IntN(4900))}}}
+	key := uuid.NewString()
+	u := g.users[x.payer]
+	path := fmt.Sprintf("/v1/groups/%s/expenses/%s", g.id, x.id)
+	resps := e.send(ctx, rng, "edit", func(c context.Context) Resp { return e.Client.Do(c, u.Token, "PATCH", path, body, key) })
+	e.learnEdit(x, resps)
+	return resps
+}
+
+// learnEdit raises the version hint from accepted edits, and checks every response is
+// one the api documents for an edit: 200, or 409 version_conflict / invalid_state.
+func (e *Env) learnEdit(x *exp, resps []Resp) {
+	for _, r := range resps {
+		switch {
+		case r.Err != nil || r.Status >= 500:
+		case r.Status == http.StatusOK:
+			var out struct {
+				Version int32 `json:"version"`
+			}
+			if json.Unmarshal(r.Body, &out) != nil || out.Version < 2 {
+				e.Stats.Unexpected("edit: unreadable success body %s", r.Body)
+				continue
+			}
+			x.seenVersion(out.Version)
+		case r.Status == http.StatusConflict && (r.Code() == "version_conflict" || r.Code() == "invalid_state"):
+			e.Stats.Inc("edit/409_" + r.Code())
+			if r.Code() == "invalid_state" && x.state.Load() == stClaiming {
+				x.state.Store(stFinalized) // somebody finalized or voided it
+			}
+		default:
+			e.Stats.Unexpected("edit: status %d code %q body %s", r.Status, r.Code(), r.Body)
+		}
+	}
+}
+
+// refreshVersion reads the expense and takes its version, as a client does after a conflict.
+func (e *Env) refreshVersion(ctx context.Context, g *group, x *exp, who int) {
+	r := e.Client.Do(ctx, g.users[who].Token, "GET", fmt.Sprintf("/v1/groups/%s/expenses/%s", g.id, x.id), nil, "")
+	var out struct {
+		Version int32 `json:"version"`
+	}
+	if r.OK() && json.Unmarshal(r.Body, &out) == nil {
+		x.seenVersion(out.Version)
+	}
+}
+
 // userLoop is one user acting in an expense group until ctx ends.
 func (e *Env) userLoop(ctx context.Context, g *group, me int, stream uint64) {
 	rng := newRNG(e.Seed, stream)
@@ -337,7 +413,7 @@ func (e *Env) userLoop(ctx context.Context, g *group, me int, stream uint64) {
 		switch p := rng.Float64(); {
 		case p < 0.18:
 			e.createExpense(parent, rng, g, me, 2+rng.IntN(4), randPrice(rng), rng.IntN(2) == 0)
-		case p < 0.65:
+		case p < 0.59:
 			x := g.pick(rng, func(x *exp) bool { return x.state.Load() == stClaiming })
 			if rng.IntN(5) == 0 { // sometimes any expense, so claims on finalized ones are tried too
 				x = g.pick(rng, func(*exp) bool { return true })
@@ -347,6 +423,18 @@ func (e *Env) userLoop(ctx context.Context, g *group, me int, stream uint64) {
 				continue
 			}
 			e.claim(parent, g, x, me, x.items[rng.IntN(len(x.items))], rng.IntN(10) < 3)
+		case p < 0.65:
+			x := g.pick(rng, func(x *exp) bool { return x.payer == me && x.state.Load() == stClaiming })
+			if x == nil || len(x.items) == 0 {
+				continue
+			}
+			resps := e.edit(parent, rng, g, x, x.version.Load(), x.items[rng.IntN(len(x.items))])
+			for _, r := range resps {
+				if r.Status == http.StatusConflict && r.Code() == "version_conflict" {
+					e.refreshVersion(parent, g, x, me)
+					break
+				}
+			}
 		case p < 0.82:
 			x := g.pick(rng, func(x *exp) bool { return x.payer == me && x.state.Load() == stClaiming })
 			if x == nil {
@@ -413,6 +501,8 @@ func (e *Env) raceLoop(ctx context.Context, g *group, stream uint64) {
 				unclaimed = true
 			}
 		}
+		e.editRace(parent, rng, g, x)
+
 		var split []uuid.UUID
 		if unclaimed {
 			for _, u := range g.users {
@@ -422,7 +512,8 @@ func (e *Env) raceLoop(ctx context.Context, g *group, stream uint64) {
 
 		// Each goroutine of the burst gets its own generator: a rand.Rand is not safe for
 		// concurrent use.
-		s1, s2, s3, s4 := rng.Uint64(), rng.Uint64(), rng.Uint64(), rng.Uint64()
+		s1, s2, s3, s4, s5 := rng.Uint64(), rng.Uint64(), rng.Uint64(), rng.Uint64(), rng.Uint64()
+		editItem, editVersion := x.items[rng.IntN(len(x.items))], x.version.Load()
 		var mu sync.Mutex
 		var claimOK, claimRefused, finOK, finInvalid, voidOK int
 		fns := []func(){
@@ -459,6 +550,9 @@ func (e *Env) raceLoop(ctx context.Context, g *group, stream uint64) {
 				}
 			},
 		}
+		fns = append(fns, func() { // an edit racing the finalizes, the voids and the claims
+			e.edit(parent, newRNG(s5, 5), g, x, editVersion, editItem)
+		})
 		for i := 0; i < 4; i++ {
 			who, item, un := rng.IntN(len(g.users)), x.items[rng.IntN(len(x.items))], rng.IntN(10) < 3
 			fns = append(fns, func() {
@@ -485,6 +579,52 @@ func (e *Env) raceLoop(ctx context.Context, g *group, stream uint64) {
 		if voidOK > 0 {
 			e.Stats.Inc("race_void_after_finalize")
 		}
+	}
+}
+
+// editRace is the situation the version check exists for: the payer's two edits, made
+// from the same version with different keys (two tabs, or a retry that is not a retry),
+// released together with a couple of claims. With the check exactly one is applied and
+// the other gets 409 version_conflict; without it both are applied, the second on top of
+// a version it never saw.
+func (e *Env) editRace(ctx context.Context, rng *rand.Rand, g *group, x *exp) {
+	version := x.version.Load()
+	s1, s2 := rng.Uint64(), rng.Uint64()
+	i1 := rng.IntN(len(x.items))
+	i2 := (i1 + 1 + rng.IntN(len(x.items)-1)) % len(x.items)
+	var r1, r2 []Resp
+	fns := []func(){
+		func() { r1 = e.edit(ctx, newRNG(s1, 1), g, x, version, x.items[i1]) },
+		func() { r2 = e.edit(ctx, newRNG(s2, 2), g, x, version, x.items[i2]) },
+	}
+	for i := 0; i < 2; i++ {
+		who, item := rng.IntN(len(g.users)), x.items[rng.IntN(len(x.items))]
+		fns = append(fns, func() { e.claim(ctx, g, x, who, item, false) })
+	}
+	fire(fns...)
+
+	applied := func(rs []Resp) bool {
+		for _, r := range rs {
+			if r.Status == http.StatusOK {
+				return true
+			}
+		}
+		return false
+	}
+	refused := func(rs []Resp) bool {
+		for _, r := range rs {
+			if r.Status == http.StatusConflict && r.Code() == "version_conflict" {
+				return true
+			}
+		}
+		return false
+	}
+	e.Stats.Inc("race_edit_rounds")
+	switch {
+	case applied(r1) && applied(r2):
+		e.Stats.Inc("race_edit_both_applied")
+	case applied(r1) && refused(r2), applied(r2) && refused(r1):
+		e.Stats.Inc("race_edit_conflict") // one applied, the other refused
 	}
 }
 

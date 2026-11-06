@@ -35,6 +35,6 @@ Needs Go 1.27+ and Docker. Everything below is dev-only with throwaway credentia
 - The queue is Postgres-only by design; it will not scale to very high job rates.
 - Settlement is simulated: the payment provider is a mock, no money moves. Reconciliation timings come from placeholder constants (first check 5 s, doubling to 5 minutes, 12 checks), not from a tuned design.
 - The settlement benchmark inserts settlements directly and does not measure the API's create path (auth, group lock, capacity check); the stress run does exercise that path, but with no throughput claim.
-- The stress run never races a finalize or void against a settlement in the same group (settle groups are frozen and separate), and does not include item edits or a negative control for the edit lock and the version check yet (M6.2-6.3).
+- The stress run never races a finalize or void against a settlement in the same group (settle groups are frozen and separate), and the recorded runs predate item edits: the workload and the negative controls for the edit lock and the version check exist since M6.2, but are not recorded until M6.3.
 - The `unsafe_controls` build can remove a lock or a check. It exists only for the negative-control runs and must never be deployed; the production binaries contain none of that code (tested).
 - The payment webhook endpoint exists only when `PAYMENTS_WEBHOOK_SECRET` is set; it has no rate limit and no IP allow-list.
