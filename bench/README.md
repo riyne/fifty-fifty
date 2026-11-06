@@ -102,3 +102,5 @@ Then it waits for every settlement to be final, lets late webhooks arrive, reads
 - The controls file's "load average at start" (12.13 over one minute) is the production run that had just ended, not another program; the production file's was 2.70.
 - The mock's seed is the run index (1-3), so a re-recording repeats the operation sequences, not the interleavings.
 
+**First attempt of the re-record (M6.3, 2026-11-06 UTC, commit da71b03): NOT USED.** `bench/results/stress-production-20261106T220029Z.{json,txt}`: the production build, 3 runs, every invariant held in all of them (no violations, no 5xx, nothing unresolved), but seeds 1 and 2 are flagged vacuous because `race_mixed` was 8 and 6 against a floor of 10 that I had chosen from the old workload, so the program exited non-zero before the controls build. Kept as recorded; the reason and the lowered floor (5, set after seeing these counts) are in DESIGN "Stress re-record (M6.3)".
+
