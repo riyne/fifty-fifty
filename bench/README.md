@@ -96,3 +96,9 @@ Then it waits for every settlement to be final, lets late webhooks arrive, reads
 - Settlement is simulated; synthetic data only; one machine with Postgres in Docker Desktop; the api and the harness share a process and a machine with the workers and Postgres, so absolute rates mean little and no throughput claim is made.
 - The finalize of an expense racing a settlement in the same group is never exercised (settle groups are frozen and separate); this is the accepted gap in DESIGN's M4 decision 3.
 
+**Recorded runs (M5.6, 2026-11-05/06 local, commit a72e779, clean tree, `caffeinate -ims make bench-stress`, 39 minutes).**
+- `bench/results/stress-production-20261106T032136Z.{json,txt}`: the production build, 3 runs, all clean. CLAIMS row 1.
+- `bench/results/stress-controls-20261106T032527Z.{json,txt}`: the negative-control build, 9 configurations x 3 runs. CLAIMS rows 2 and 21. The program exited non-zero because 2 of the 27 runs are marked DOES NOT MATCH: `claim_lock` seeds 2 and 3, on the vacuity floor `race_mixed >= 1` (0 rounds in which the finalize landed in the middle of the claims). That counter measures claims being refused around a finalize, which is what the claim lock does; with the lock off it is near zero by construction (1 round in seed 1), while the control's own result, the ledger differing from the claims, was seen in all three runs (78, 82, 83). Both files are kept as written and nothing was re-run to turn them green; the check is wrong for that control, which is recorded as an open item in DESIGN section 13.
+- The controls file's "load average at start" (12.13 over one minute) is the production run that had just ended, not another program; the production file's was 2.70.
+- The mock's seed is the run index (1-3), so a re-recording repeats the operation sequences, not the interleavings.
+
