@@ -28,6 +28,19 @@ import (
 // chainRig is the whole path on a scratch database: the api writes the upload and its
 // job in one transaction, a real worker claims the job, the handler runs, the queue
 // completes it. A scratch database because the worker claims every job of its kinds.
+// scratchURLs remembers the app-role URL of each chain rig's scratch database, for tests
+// that start other processes against it.
+var scratchURLs sync.Map
+
+func scratchAppURL(t *testing.T, r *rig) string {
+	t.Helper()
+	v, ok := scratchURLs.Load(r)
+	if !ok {
+		t.Fatal("not a chain rig")
+	}
+	return v.(string)
+}
+
 func chainRig(t *testing.T) *rig {
 	t.Helper()
 	ownerURL, appURL := os.Getenv("TEST_OWNER_DATABASE_URL"), os.Getenv("TEST_DATABASE_URL")
@@ -43,22 +56,33 @@ func chainRig(t *testing.T) *rig {
 			t.Errorf("drop %s: %v", sc.Name, err)
 		}
 	})
-	return newRigOn(t, teststack.NewOn(t, sc.Pool, teststack.WithReceiptConfig(receiptapi.Config{DailyQuota: 1000})))
+	r := newRigOn(t, teststack.NewOn(t, sc.Pool, teststack.WithReceiptConfig(receiptapi.Config{DailyQuota: 1000})))
+	scratchURLs.Store(r, sc.AppURL)
+	t.Cleanup(func() { scratchURLs.Delete(r) })
+	return r
 }
 
 // startWorker runs a fast worker with the given handlers and returns a stop function.
 func (r *rig) startWorker(t *testing.T, handlers map[string]worker.Handler) (stop func()) {
 	t.Helper()
+	return r.startWorkerCfg(t, handlers, nil)
+}
+
+// startWorkerCfg is startWorker with a chance to change the config.
+func (r *rig) startWorkerCfg(t *testing.T, handlers map[string]worker.Handler, mod func(*worker.Config)) (stop func()) {
+	t.Helper()
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
-	go func() {
-		done <- worker.Run(runCtx, worker.Config{
-			Pool: r.s.Pool, Handlers: handlers, Concurrency: 4,
-			PollInterval: 10 * time.Millisecond, Lease: 5 * time.Second, ReapInterval: 100 * time.Millisecond,
-			ShutdownGrace: 2 * time.Second, Backoff: queue.Backoff{Base: time.Millisecond, Max: 5 * time.Millisecond},
-			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		})
-	}()
+	cfg := worker.Config{
+		Pool: r.s.Pool, Handlers: handlers, Concurrency: 4,
+		PollInterval: 10 * time.Millisecond, Lease: 5 * time.Second, ReapInterval: 100 * time.Millisecond,
+		ShutdownGrace: 2 * time.Second, Backoff: queue.Backoff{Base: time.Millisecond, Max: 5 * time.Millisecond},
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	if mod != nil {
+		mod(&cfg)
+	}
+	go func() { done <- worker.Run(runCtx, cfg) }()
 	var once sync.Once
 	stop = func() {
 		once.Do(func() {

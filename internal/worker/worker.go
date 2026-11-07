@@ -51,6 +51,16 @@ type Commit func(ctx context.Context, tx pgx.Tx) error
 // on the last one); a panic is treated the same way.
 type Handler func(ctx context.Context, job queue.Claimed) (Commit, error)
 
+// RetryAfterer is implemented by an error that knows how long the caller should wait
+// before trying again, such as a rate-limit response with a retry-after header. When a
+// handler's error (anywhere in its chain, errors.As) implements it, the job's retry is
+// delayed by the larger of that and the backoff, up to Config.MaxRetryAfter. The worker
+// never retries sooner than its own backoff says, and never trusts a service for more
+// than the cap.
+type RetryAfterer interface {
+	RetryAfter() time.Duration
+}
+
 // Config configures Run. Zero values take the defaults noted.
 type Config struct {
 	Pool     *pgxpool.Pool
@@ -65,6 +75,10 @@ type Config struct {
 	ShutdownGrace    time.Duration // how long in-flight jobs may finish after shutdown begins; default 20s
 
 	Metrics *Metrics // optional; counts job outcomes for the metrics endpoint
+
+	// MaxRetryAfter caps the delay a RetryAfterer error may ask for; default 5 minutes
+	// (the backoff's own cap). A service that asks for an hour does not park a job for one.
+	MaxRetryAfter time.Duration
 
 	Backoff queue.Backoff // retry delay policy; default queue.DefaultBackoff
 	Rand    queue.Rand    // default queue.SystemRand
@@ -85,6 +99,7 @@ func (c *Config) setDefaults() {
 	def(&c.ReapInterval, 10*time.Second)
 	def(&c.PeriodicInterval, time.Minute)
 	def(&c.ShutdownGrace, 20*time.Second)
+	def(&c.MaxRetryAfter, 5*time.Minute)
 	if c.Backoff == (queue.Backoff{}) {
 		c.Backoff = queue.DefaultBackoff
 	}
@@ -104,7 +119,7 @@ func (c *Config) validate() error {
 		return errors.New("worker: at least one handler is required")
 	case c.Concurrency < 1 || c.Concurrency > queue.MaxClaimBatch:
 		return fmt.Errorf("worker: concurrency must be 1-%d", queue.MaxClaimBatch)
-	case c.PollInterval < 0 || c.ReapInterval < 0 || c.PeriodicInterval < 0 || c.ShutdownGrace < 0:
+	case c.PollInterval < 0 || c.ReapInterval < 0 || c.PeriodicInterval < 0 || c.ShutdownGrace < 0 || c.MaxRetryAfter < 0:
 		return errors.New("worker: durations must not be negative")
 	case c.Lease < MinLease:
 		return fmt.Errorf("worker: lease must be at least %v (heartbeats run every third of it)", MinLease)
@@ -347,6 +362,12 @@ func (w *worker) heartbeat(ctx context.Context, cancel context.CancelCauseFunc, 
 // to wait out a backoff for something that was not the job's fault.
 func (w *worker) fail(c queue.Claimed, cause error, log *slog.Logger) {
 	p := queue.FailParams{Error: cause.Error(), RetryIn: w.cfg.Backoff.Delay(c.Attempt, w.cfg.Rand)}
+	var ra RetryAfterer
+	if errors.As(cause, &ra) {
+		if d := min(ra.RetryAfter(), w.cfg.MaxRetryAfter); d > p.RetryIn {
+			p.RetryIn = d
+		}
+	}
 	if w.jobsCtx.Err() != nil {
 		p = queue.FailParams{Error: "worker shut down mid-job: " + cause.Error()}
 	}

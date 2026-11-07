@@ -3,6 +3,7 @@ package worker_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -664,5 +665,96 @@ func TestWorker_ClaimsABacklogIntoAllFreeSlotsAtOnce(t *testing.T) {
 	}
 	if !allRan.Load() {
 		t.Error("the jobs did not run together")
+	}
+}
+
+// ---- retry-after ----
+
+type askToWait struct{ d time.Duration }
+
+func (e askToWait) Error() string             { return "429 rate limited" }
+func (e askToWait) RetryAfter() time.Duration { return e.d }
+
+type zeroRand struct{}
+
+func (zeroRand) Int64N(int64) int64 { return 0 }
+
+// retryIn runs one failing attempt whose error is err and returns how far away the retry
+// was scheduled, measured on the database clock.
+func retryIn(t *testing.T, mutate func(*worker.Config), err error) time.Duration {
+	t.Helper()
+	pool := testutil.Pool(t)
+	kind := newKind("retryafter")
+	cfg := fastConfig(pool, kind, func(context.Context, queue.Claimed) (worker.Commit, error) { return nil, err })
+	cfg.Rand = zeroRand{} // the backoff delay is 0, so the retry-after alone decides
+	mutate(&cfg)
+	start(t, cfg)
+	id := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 3})
+	waitFor(t, "the first attempt to fail", 10*time.Second, func() bool { return getJob(t, pool, id).LastError != "" })
+	time.Sleep(100 * time.Millisecond)
+	var in time.Duration
+	if e := pool.QueryRow(ctx, `SELECT run_at - now() FROM jobs WHERE id = $1`, id).Scan(&in); e != nil {
+		t.Fatal(e)
+	}
+	if row := getJob(t, pool, id); row.State != queue.StateQueued || row.Attempts != 1 {
+		t.Fatalf("row %+v", row)
+	}
+	return in
+}
+
+// An error that says how long to wait delays the retry by at least that long (here the
+// backoff would have retried at once), even when wrapped by the handler.
+func TestWorker_RetryAfterDelaysTheRetry(t *testing.T) {
+	for name, err := range map[string]error{
+		"direct":  askToWait{time.Hour},
+		"wrapped": fmt.Errorf("extract: %w", fmt.Errorf("call: %w", askToWait{time.Hour})),
+	} {
+		cfgMax := func(c *worker.Config) { c.MaxRetryAfter = 2 * time.Hour }
+		if in := retryIn(t, cfgMax, err); in < 59*time.Minute || in > time.Hour {
+			t.Errorf("%s: retry in %v, want about 1h", name, in)
+		}
+	}
+	// Nothing to honor, or a retry-after of zero: the backoff alone decides (an hour here).
+	hourBackoff := func(c *worker.Config) {
+		c.Backoff = queue.Backoff{Base: time.Hour, Max: time.Hour}
+		c.Rand = maxRand{}
+	}
+	for name, err := range map[string]error{"plain error": errors.New("503"), "zero retry-after": askToWait{0}} {
+		if in := retryIn(t, hourBackoff, err); in < 59*time.Minute || in > time.Hour {
+			t.Errorf("%s: retry in %v, want the 1h backoff", name, in)
+		}
+	}
+}
+
+// A service cannot park a job for longer than the worker's cap.
+func TestWorker_RetryAfterIsCapped(t *testing.T) {
+	in := retryIn(t, func(c *worker.Config) { c.MaxRetryAfter = 30 * time.Minute }, askToWait{24 * time.Hour})
+	if in < 29*time.Minute || in > 30*time.Minute {
+		t.Errorf("retry in %v, want about the 30 minute cap", in)
+	}
+	// The default cap is 5 minutes.
+	in = retryIn(t, func(*worker.Config) {}, askToWait{24 * time.Hour})
+	if in < 4*time.Minute || in > 5*time.Minute {
+		t.Errorf("retry in %v, want about the 5 minute default cap", in)
+	}
+}
+
+// The backoff is a floor: a short retry-after never makes the retry sooner than the
+// backoff would have.
+func TestWorker_RetryAfterNeverShortensTheBackoff(t *testing.T) {
+	in := retryIn(t, func(c *worker.Config) {
+		c.Backoff = queue.Backoff{Base: time.Hour, Max: time.Hour}
+		c.Rand = maxRand{}
+	}, askToWait{time.Minute})
+	if in < 59*time.Minute || in > time.Hour {
+		t.Errorf("retry in %v, want the 1h backoff, not the 1 minute retry-after", in)
+	}
+}
+
+func TestWorker_NegativeMaxRetryAfterIsRefused(t *testing.T) {
+	cfg := fastConfig(testutil.Pool(t), newKind("neg"), func(context.Context, queue.Claimed) (worker.Commit, error) { return nil, nil })
+	cfg.MaxRetryAfter = -time.Second
+	if err := worker.Run(ctx, cfg); err == nil {
+		t.Error("a negative MaxRetryAfter was accepted")
 	}
 }

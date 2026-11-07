@@ -34,7 +34,7 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 - Throughput is `(succeeded - 1) / (time from the first success to the last)`. It leaves out the ramp-up before the first job finishes and includes the tail where slots go idle.
 - All times are the database clock (`created_at`, `finished_at`, `clock_timestamp()` in the bookkeeping rows).
 - The throughput scenarios run the handler in lean mode (no bookkeeping writes beyond the effect row) so the measured work is the queue's plus one insert. The latency scenarios need the bookkeeping rows for queue wait, so they run instrumented; each run's raw result records how many bookkeeping rows were written.
-- The retry scenario ignores the 429 `retry-after` header: the worker backs off on its own jittered schedule (base 2 s, cap 5 minutes). Honoring the header is not built.
+- The retry scenario ignores the 429 `retry-after` header: the worker backs off on its own jittered schedule (base 2 s, cap 5 minutes). Honoring the header was built later (M6.8, CLAIMS row 27); these recordings were made before it and were not repeated.
 - One machine; Postgres in Docker Desktop with the default `max_connections` (the harness stays well under it); a mock LLM. The dev database also holds old rows from other tests (the count is recorded). Numbers from another machine, a real LLM or a bigger table would differ.
 - The harness deletes each run's rows afterwards.
 
