@@ -264,7 +264,9 @@ func (h *Handler) join(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) redeem(ctx context.Context, tx pgx.Tx, user db.User, hash []byte) (idempotency.Result, error) {
 	q := db.New(tx)
 
-	jc, err := q.LockRedeemableJoinCode(ctx, hash)
+	// One database function does the lock, the membership insert and the use count (see
+	// migration 00016). Not found, revoked, expired and exhausted are all "no row".
+	jc, err := q.RedeemJoinCode(ctx, hash)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return jsonResult(http.StatusNotFound, errBody("invalid_join_code", "join code is invalid, expired, revoked, or fully used")), nil
 	}
@@ -274,16 +276,9 @@ func (h *Handler) redeem(ctx context.Context, tx pgx.Tx, user db.User, hash []by
 
 	// Already a member: succeed without spending a use.
 	status := http.StatusOK
-	added, err := q.AddMembershipIfAbsent(ctx, db.AddMembershipIfAbsentParams{GroupID: jc.GroupID, UserID: user.ID, Role: "member"})
-	if err != nil {
-		return idempotency.Result{}, err
-	}
-	if added == 1 {
+	if jc.Added {
 		status = http.StatusCreated
-		if err := q.IncrementJoinCodeUses(ctx, jc.ID); err != nil {
-			return idempotency.Result{}, err
-		}
-		if err := h.audit(ctx, q, user.ID, jc.GroupID, "member.joined", map[string]any{"join_code_id": jc.ID}); err != nil {
+		if err := h.audit(ctx, q, user.ID, jc.GroupID, "member.joined", map[string]any{"join_code_id": jc.JoinCodeID}); err != nil {
 			return idempotency.Result{}, err
 		}
 	}

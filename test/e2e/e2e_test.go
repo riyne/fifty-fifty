@@ -84,7 +84,7 @@ type result struct {
 func (r *result) count(t *testing.T, sql string, args ...any) int {
 	t.Helper()
 	var n int
-	if err := r.db.Pool.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
+	if err := r.db.Owner.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -176,14 +176,14 @@ func run(t *testing.T, sc scenario) {
 			startWorker(fmt.Sprintf("worker-%d", i))
 		}
 		var running, claimedTotal int
-		_ = db.Pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state = 'running'), count(*) FILTER (WHERE attempts > 0) FROM jobs WHERE kind = 'settlement.execute'`).Scan(&running, &claimedTotal)
+		_ = db.Owner.QueryRow(ctx, `SELECT count(*) FILTER (WHERE state = 'running'), count(*) FILTER (WHERE attempts > 0) FROM jobs WHERE kind = 'settlement.execute'`).Scan(&running, &claimedTotal)
 		t.Logf("killing %s: provider stats %+v; jobs running %d, ever claimed %d", first.Name, providerStats(t, mockURL), running, claimedTotal)
 		if err := first.Kill(); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	left, err := settlerig.WaitResolved(ctx, db.Pool, ids, sc.timeout)
+	left, err := settlerig.WaitResolved(ctx, db.Owner, ids, sc.timeout)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func run(t *testing.T, sc scenario) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rep, err := settlerig.Verify(ctx, db.Pool, provider, ids)
+	rep, err := settlerig.Verify(ctx, db.Owner, provider, ids)
 	if err != nil {
 		t.Fatal(err)
 	}

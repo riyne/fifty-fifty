@@ -12,27 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const addMembershipIfAbsent = `-- name: AddMembershipIfAbsent :execrows
-INSERT INTO memberships (group_id, user_id, role)
-VALUES ($1, $2, $3)
-ON CONFLICT (group_id, user_id) DO NOTHING
-`
-
-type AddMembershipIfAbsentParams struct {
-	GroupID uuid.UUID
-	UserID  uuid.UUID
-	Role    string
-}
-
-// Returns rows affected: 1 if the user was added, 0 if already a member.
-func (q *Queries) AddMembershipIfAbsent(ctx context.Context, arg AddMembershipIfAbsentParams) (int64, error) {
-	result, err := q.db.Exec(ctx, addMembershipIfAbsent, arg.GroupID, arg.UserID, arg.Role)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const createJoinCode = `-- name: CreateJoinCode :one
 INSERT INTO join_codes (group_id, code_hash, created_by, max_uses, expires_at)
 VALUES (
@@ -78,15 +57,6 @@ func (q *Queries) CreateJoinCode(ctx context.Context, arg CreateJoinCodeParams) 
 		&i.CreatedAt,
 	)
 	return i, err
-}
-
-const incrementJoinCodeUses = `-- name: IncrementJoinCodeUses :exec
-UPDATE join_codes SET uses = uses + 1 WHERE id = $1
-`
-
-func (q *Queries) IncrementJoinCodeUses(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, incrementJoinCodeUses, id)
-	return err
 }
 
 const insertAuditEvent = `-- name: InsertAuditEvent :exec
@@ -178,32 +148,6 @@ func (q *Queries) ListJoinCodes(ctx context.Context, groupID uuid.UUID) ([]ListJ
 		return nil, err
 	}
 	return items, nil
-}
-
-const lockRedeemableJoinCode = `-- name: LockRedeemableJoinCode :one
-SELECT id, group_id FROM join_codes
-WHERE code_hash = $1
-  AND revoked_at IS NULL
-  AND expires_at > now()
-  AND uses < max_uses
-FOR UPDATE
-`
-
-type LockRedeemableJoinCodeRow struct {
-	ID      uuid.UUID
-	GroupID uuid.UUID
-}
-
-// LockRedeemableJoinCode finds a usable code and row-locks it, which serializes
-// concurrent redeemers of the same code. Under READ COMMITTED, a waiter
-// re-evaluates the WHERE clause after the lock is released, so when two users
-// race for the last use the loser sees uses = max_uses and gets no row.
-// Not found, revoked, expired and exhausted are deliberately indistinguishable.
-func (q *Queries) LockRedeemableJoinCode(ctx context.Context, codeHash []byte) (LockRedeemableJoinCodeRow, error) {
-	row := q.db.QueryRow(ctx, lockRedeemableJoinCode, codeHash)
-	var i LockRedeemableJoinCodeRow
-	err := row.Scan(&i.ID, &i.GroupID)
-	return i, err
 }
 
 const revokeJoinCode = `-- name: RevokeJoinCode :execrows

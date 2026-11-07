@@ -125,7 +125,7 @@ func TestReceiptParse_RealProcessesAndARealKill(t *testing.T) {
 	// Wait until the first worker has OCR'd and is waiting on the model, then kill it.
 	waitFor(t, 60*time.Second, "the worker to be waiting on the model", func() bool { return llmRequests(t, mockURL) >= 1 })
 	var running int
-	_ = db.Pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE kind = 'receipt.parse' AND state = 'running'`).Scan(&running)
+	_ = db.Owner.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE kind = 'receipt.parse' AND state = 'running'`).Scan(&running)
 	t.Logf("killing %s: %d receipt.parse jobs running, %d model requests so far", first.Name, running, llmRequests(t, mockURL))
 	if err := first.Kill(); err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestReceiptParse_RealProcessesAndARealKill(t *testing.T) {
 		var status string
 		var version, items int
 		var sum, tax, tip int64
-		if err := db.Pool.QueryRow(ctx, `SELECT e.status, e.version, e.tax_minor, e.tip_minor,
+		if err := db.Owner.QueryRow(ctx, `SELECT e.status, e.version, e.tax_minor, e.tip_minor,
 			(SELECT count(*) FROM expense_items i WHERE i.expense_id = e.id),
 			(SELECT coalesce(sum(price_minor), 0) FROM expense_items i WHERE i.expense_id = e.id)
 			FROM expenses e WHERE e.id = $1`, u.Expense).Scan(&status, &version, &tax, &tip, &items, &sum); err != nil {
@@ -154,7 +154,7 @@ func TestReceiptParse_RealProcessesAndARealKill(t *testing.T) {
 		}
 		var ocrChars *int
 		var outcome string
-		_ = db.Pool.QueryRow(ctx, `SELECT ocr_chars, parse_outcome FROM receipts WHERE id = $1`, u.Receipt).Scan(&ocrChars, &outcome)
+		_ = db.Owner.QueryRow(ctx, `SELECT ocr_chars, parse_outcome FROM receipts WHERE id = $1`, u.Receipt).Scan(&ocrChars, &outcome)
 		audits := countWhere(t, db, `SELECT count(*) FROM audit_events WHERE kind = 'receipt.parsed' AND data->>'expense_id' = $1`, u.Expense.String())
 		if status != "claiming" || version != 2 || items != units || sum+tax+tip != truth.TotalMinor || audits != 1 || ocrChars == nil || *ocrChars < 100 {
 			t.Errorf("ref %d: status %s version %d, %d items (want %d) totalling %d (want %d), %d audit events, ocr_chars %v, outcome %s",
@@ -198,7 +198,7 @@ func llmRequests(t *testing.T, base string) int {
 func countWhere(t *testing.T, db *settlerig.Scratch, sql string, args ...any) int {
 	t.Helper()
 	var n int
-	if err := db.Pool.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
+	if err := db.Owner.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n

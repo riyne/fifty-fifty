@@ -31,28 +31,6 @@ WHERE id = $1 AND group_id = $2 AND revoked_at IS NULL;
 -- name: JoinCodeExistsInGroup :one
 SELECT EXISTS (SELECT 1 FROM join_codes WHERE id = $1 AND group_id = $2);
 
--- LockRedeemableJoinCode finds a usable code and row-locks it, which serializes
--- concurrent redeemers of the same code. Under READ COMMITTED, a waiter
--- re-evaluates the WHERE clause after the lock is released, so when two users
--- race for the last use the loser sees uses = max_uses and gets no row.
--- Not found, revoked, expired and exhausted are deliberately indistinguishable.
--- name: LockRedeemableJoinCode :one
-SELECT id, group_id FROM join_codes
-WHERE code_hash = $1
-  AND revoked_at IS NULL
-  AND expires_at > now()
-  AND uses < max_uses
-FOR UPDATE;
-
--- name: IncrementJoinCodeUses :exec
-UPDATE join_codes SET uses = uses + 1 WHERE id = $1;
-
--- Returns rows affected: 1 if the user was added, 0 if already a member.
--- name: AddMembershipIfAbsent :execrows
-INSERT INTO memberships (group_id, user_id, role)
-VALUES ($1, $2, $3)
-ON CONFLICT (group_id, user_id) DO NOTHING;
-
 -- name: InsertAuditEvent :exec
 INSERT INTO audit_events (actor_user_id, group_id, kind, data)
 VALUES ($1, $2, $3, $4);
