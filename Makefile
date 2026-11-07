@@ -4,8 +4,10 @@ SHELL := /bin/bash
 COMPOSE := docker compose -f deploy/docker-compose.yml
 GOOSE   := go tool -modfile=tools/go.mod goose -dir migrations postgres
 
-# Two roles (migration 00004). Migrations run as the owner `fifty`; the api and the
-# tests run as the unprivileged `fifty_app`, which cannot UPDATE or DELETE the ledger.
+# Four roles (migrations 00004, 00015). Migrations run as the owner `fifty` (a superuser).
+# The api's user path and the tests run as the unprivileged `fifty_app`, which cannot UPDATE
+# or DELETE the ledger and is limited by row-level security to its caller's groups (00016).
+# The api's second pool is `fifty_system`, the worker is `fifty_worker`.
 export MIGRATE_DATABASE_URL ?= postgres://fifty:fifty@localhost:5433/fifty?sslmode=disable
 export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?sslmode=disable
 # The api's second pool (user provisioning, payment webhook) and the worker use their own roles.
