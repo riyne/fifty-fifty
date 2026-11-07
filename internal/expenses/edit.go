@@ -158,7 +158,7 @@ func (h *Handler) payerPrefix(w http.ResponseWriter, r *http.Request, action str
 		expenseNotFound(w)
 		return user, groupID, expenseID, false
 	}
-	e, err := h.q.GetExpenseForMember(r.Context(), db.GetExpenseForMemberParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
+	e, err := h.scope.Reader(user.ID).GetExpenseForMember(r.Context(), db.GetExpenseForMemberParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		expenseNotFound(w)
 		return user, groupID, expenseID, false
@@ -218,7 +218,7 @@ func (h *Handler) edit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fp := idempotency.Fingerprint("PATCH", "/v1/groups/{id}/expenses/{expenseId}", groupID.String(), expenseID.String(), string(canon))
-	out, err := idempotency.Do(r.Context(), h.pool, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	out, err := idempotency.Do(r.Context(), h.scope, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		return h.doEdit(ctx, tx, user.ID, groupID, expenseID, n)
 	})
 	h.writeIdempotent(w, out, err, "edit expense")
@@ -245,7 +245,7 @@ func (h *Handler) writeIdempotent(w http.ResponseWriter, out idempotency.Outcome
 // result happens before anything is written, because that result is committed and
 // replayed for the key.
 func (h *Handler) doEdit(ctx context.Context, tx pgx.Tx, payerID, groupID, expenseID uuid.UUID, n normEdit) (idempotency.Result, error) {
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 
 	locked, err := controls.LockExpenseForEdit(ctx, q, db.LockExpenseForEditParams{UserID: payerID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -446,14 +446,14 @@ func (h *Handler) confirm(w http.ResponseWriter, r *http.Request) {
 	}
 	version := *req.Version
 	fp := idempotency.Fingerprint("POST", "/v1/groups/{id}/expenses/{expenseId}/confirm", groupID.String(), expenseID.String(), fmt.Sprint(version))
-	out, err := idempotency.Do(r.Context(), h.pool, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	out, err := idempotency.Do(r.Context(), h.scope, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		return h.doConfirm(ctx, tx, user.ID, groupID, expenseID, version)
 	})
 	h.writeIdempotent(w, out, err, "confirm expense")
 }
 
 func (h *Handler) doConfirm(ctx context.Context, tx pgx.Tx, payerID, groupID, expenseID uuid.UUID, version int32) (idempotency.Result, error) {
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 	locked, err := controls.LockExpenseForEdit(ctx, q, db.LockExpenseForEditParams{UserID: payerID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return jsonResult(http.StatusNotFound, errBody("not_found", "expense not found")), nil

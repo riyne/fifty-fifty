@@ -48,13 +48,13 @@ func (h *Handler) setClaim(w http.ResponseWriter, r *http.Request, claim bool) {
 		itemID = uuid.Nil
 	}
 
-	tx, err := h.pool.Begin(r.Context())
+	tx, err := h.scope.Begin(r.Context(), user.ID)
 	if err != nil {
 		h.internalError(w, "begin tx", err)
 		return
 	}
 	defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after Commit
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 
 	status, err := controls.LockExpenseForClaim(r.Context(), q, db.LockExpenseForClaimParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {

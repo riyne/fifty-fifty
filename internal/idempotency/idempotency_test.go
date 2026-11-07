@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbscope"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
 	"github.com/riyne/fifty-fifty/internal/testutil"
 )
@@ -50,11 +51,11 @@ func TestDo_RunsOnceThenReplays(t *testing.T) {
 		return idempotency.Result{Status: 201, Body: []byte(`{"n":1}`)}, nil
 	}
 
-	first, err := idempotency.Do(context.Background(), pool, user, key, fp, fn)
+	first, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, fp, fn)
 	if err != nil || first.Replayed || first.Status != 201 {
 		t.Fatalf("first: %+v, %v", first, err)
 	}
-	second, err := idempotency.Do(context.Background(), pool, user, key, fp, fn)
+	second, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, fp, fn)
 	if err != nil || !second.Replayed || second.Status != 201 || string(second.Body) != `{"n":1}` {
 		t.Fatalf("second: %+v, %v", second, err)
 	}
@@ -72,7 +73,7 @@ func TestDo_StoresClientErrorOutcomes(t *testing.T) {
 		return idempotency.Result{Status: 404, Body: []byte(`{"code":"nope"}`)}, nil
 	}
 	for range 3 {
-		if _, err := idempotency.Do(context.Background(), pool, user, key, fp, fn); err != nil {
+		if _, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, fp, fn); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -93,7 +94,7 @@ func TestDo_ServerErrorsAndFailuresAreNotStored(t *testing.T) {
 			return idempotency.Result{Status: 503, Body: []byte(`{}`)}, nil
 		}
 		for range 2 {
-			if _, err := idempotency.Do(context.Background(), pool, user, key, fp, fn); err != nil {
+			if _, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, fp, fn); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -105,7 +106,7 @@ func TestDo_ServerErrorsAndFailuresAreNotStored(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		key := uuid.NewString()
 		boom := errors.New("boom")
-		_, err := idempotency.Do(context.Background(), pool, user, key, fp, func(context.Context, pgx.Tx) (idempotency.Result, error) {
+		_, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, fp, func(context.Context, pgx.Tx) (idempotency.Result, error) {
 			return idempotency.Result{}, boom
 		})
 		if !errors.Is(err, boom) {
@@ -114,7 +115,7 @@ func TestDo_ServerErrorsAndFailuresAreNotStored(t *testing.T) {
 		if keyRows(t, pool, user, key) != 0 {
 			t.Fatal("a failed attempt left a key row behind")
 		}
-		out, err := idempotency.Do(context.Background(), pool, user, key, fp, func(context.Context, pgx.Tx) (idempotency.Result, error) {
+		out, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, fp, func(context.Context, pgx.Tx) (idempotency.Result, error) {
 			return idempotency.Result{Status: 200, Body: []byte(`{}`)}, nil
 		})
 		if err != nil || out.Replayed {
@@ -143,7 +144,7 @@ func TestDo_EffectsCommitOrRollBackWithTheKey(t *testing.T) {
 		return db.New(tx).InsertAuditEvent(ctx, db.InsertAuditEventParams{ActorUserID: user, GroupID: g.ID, Kind: "t", Data: []byte(`{}`)})
 	}
 
-	_, err = idempotency.Do(context.Background(), pool, user, uuid.NewString(), fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	_, err = idempotency.Do(context.Background(), dbscope.New(pool), user, uuid.NewString(), fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		if err := write(ctx, tx); err != nil {
 			return idempotency.Result{}, err
 		}
@@ -153,7 +154,7 @@ func TestDo_EffectsCommitOrRollBackWithTheKey(t *testing.T) {
 		t.Fatalf("effects survived a failed attempt: err=%v rows=%d", err, count())
 	}
 
-	_, err = idempotency.Do(context.Background(), pool, user, uuid.NewString(), fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	_, err = idempotency.Do(context.Background(), dbscope.New(pool), user, uuid.NewString(), fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		return idempotency.Result{Status: 200, Body: []byte(`{}`)}, write(ctx, tx)
 	})
 	if err != nil || count() != 1 {
@@ -167,10 +168,10 @@ func TestDo_FingerprintMismatch(t *testing.T) {
 	ok := func(context.Context, pgx.Tx) (idempotency.Result, error) {
 		return idempotency.Result{Status: 200, Body: []byte(`{}`)}, nil
 	}
-	if _, err := idempotency.Do(context.Background(), pool, user, key, fp, ok); err != nil {
+	if _, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, fp, ok); err != nil {
 		t.Fatal(err)
 	}
-	_, err := idempotency.Do(context.Background(), pool, user, key, idempotency.Fingerprint("POST", "/x", "other"), ok)
+	_, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, idempotency.Fingerprint("POST", "/x", "other"), ok)
 	if !errors.Is(err, idempotency.ErrKeyReuse) {
 		t.Fatalf("err = %v, want ErrKeyReuse", err)
 	}

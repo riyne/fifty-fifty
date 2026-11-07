@@ -17,6 +17,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/auth"
 	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbscope"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
 	"github.com/riyne/fifty-fifty/internal/queue"
@@ -38,12 +39,11 @@ const codeExceedsAvailable = "exceeds_available"
 
 // Handler serves the settlement endpoints. It assumes auth.Middleware has run.
 type Handler struct {
-	pool *pgxpool.Pool
-	q    *db.Queries
+	scope *dbscope.DB
 }
 
 func NewHandler(pool *pgxpool.Pool) *Handler {
-	return &Handler{pool: pool, q: db.New(pool)}
+	return &Handler{scope: dbscope.New(pool)}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -110,7 +110,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		groupNotFound(w)
 		return
 	}
-	g, err := h.q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID})
+	g, err := h.scope.Reader(user.ID).GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		groupNotFound(w)
 		return
@@ -148,7 +148,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	to, amount := *req.ToMemberID, *req.AmountMinor
 	// The caller is a member, so they can already list the members: naming a
 	// non-member reveals nothing. The foreign key on settlements is the backstop.
-	isMember, err := h.q.IsGroupMember(r.Context(), db.IsGroupMemberParams{GroupID: groupID, UserID: to})
+	isMember, err := h.scope.Reader(user.ID).IsGroupMember(r.Context(), db.IsGroupMemberParams{GroupID: groupID, UserID: to})
 	if err != nil {
 		internalError(w, "check payee membership", err)
 		return
@@ -159,7 +159,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fp := idempotency.Fingerprint("POST", "/v1/groups/{id}/settlements", groupID.String(), to.String(), strconv.FormatInt(amount, 10))
-	out, err := idempotency.Do(r.Context(), h.pool, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	out, err := idempotency.Do(r.Context(), h.scope, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		return h.insert(ctx, tx, user.ID, to, groupID, g.Currency, amount)
 	})
 	if errors.Is(err, idempotency.ErrKeyReuse) {
@@ -188,7 +188,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 // reservation. Without the lock both would read the same balances, both pass, and
 // together reserve more than the sender owes.
 func (h *Handler) insert(ctx context.Context, tx pgx.Tx, from, to, groupID uuid.UUID, currency string, amount int64) (idempotency.Result, error) {
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 
 	if _, err := controls.LockGroupForSettlement(ctx, q, groupID); errors.Is(err, pgx.ErrNoRows) {
 		return jsonResult(http.StatusNotFound, errBody("not_found", "group not found")), nil
@@ -231,14 +231,14 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// An empty list for a member and a 404 for a non-member must be distinguishable.
-	if _, err := h.q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID}); errors.Is(err, pgx.ErrNoRows) {
+	if _, err := h.scope.Reader(user.ID).GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID}); errors.Is(err, pgx.ErrNoRows) {
 		groupNotFound(w)
 		return
 	} else if err != nil {
 		internalError(w, "get group", err)
 		return
 	}
-	rows, err := h.q.ListSettlementsForMember(r.Context(), db.ListSettlementsForMemberParams{UserID: user.ID, GroupID: groupID})
+	rows, err := h.scope.Reader(user.ID).ListSettlementsForMember(r.Context(), db.ListSettlementsForMemberParams{UserID: user.ID, GroupID: groupID})
 	if err != nil {
 		internalError(w, "list settlements", err)
 		return
@@ -265,7 +265,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		settlementNotFound(w)
 		return
 	}
-	s, err := h.q.GetSettlementForMember(r.Context(), db.GetSettlementForMemberParams{UserID: user.ID, SettlementID: settlementID, GroupID: groupID})
+	s, err := h.scope.Reader(user.ID).GetSettlementForMember(r.Context(), db.GetSettlementForMemberParams{UserID: user.ID, SettlementID: settlementID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		settlementNotFound(w)
 		return

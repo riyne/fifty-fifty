@@ -13,15 +13,16 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/auth"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbscope"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/ledger"
 )
 
 type Handler struct {
-	q *db.Queries
+	scope *dbscope.DB
 }
 
-func NewHandler(pool *pgxpool.Pool) *Handler { return &Handler{q: db.New(pool)} }
+func NewHandler(pool *pgxpool.Pool) *Handler { return &Handler{scope: dbscope.New(pool)} }
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/groups/{id}/balances", h.get)
@@ -55,7 +56,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		groupNotFound(w)
 		return
 	}
-	g, err := h.q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID})
+	g, err := h.scope.Reader(user.ID).GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		groupNotFound(w)
 		return
@@ -65,7 +66,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.q.GetGroupBalances(r.Context(), db.GetGroupBalancesParams{CallerID: user.ID, GroupID: groupID})
+	rows, err := h.scope.Reader(user.ID).GetGroupBalances(r.Context(), db.GetGroupBalancesParams{CallerID: user.ID, GroupID: groupID})
 	if err != nil {
 		internalError(w, "get balances", err)
 		return

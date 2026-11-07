@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbscope"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
 	"github.com/riyne/fifty-fifty/internal/queue"
 	"github.com/riyne/fifty-fifty/internal/testutil"
@@ -210,7 +211,7 @@ func TestEnqueue_InsideIdempotentRequestEnqueuesOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			out, err := idempotency.Do(ctx, pool, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+			out, err := idempotency.Do(ctx, dbscope.New(pool), user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 				if _, err := queue.Enqueue(ctx, tx, queue.NewJob{Kind: "test.idem", Payload: map[string]any{"marker": m}}); err != nil {
 					return idempotency.Result{}, err
 				}

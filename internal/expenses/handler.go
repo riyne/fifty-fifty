@@ -20,6 +20,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/auth"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbscope"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
 )
@@ -34,12 +35,11 @@ const (
 )
 
 type Handler struct {
-	pool *pgxpool.Pool
-	q    *db.Queries
+	scope *dbscope.DB
 }
 
 func NewHandler(pool *pgxpool.Pool) *Handler {
-	return &Handler{pool: pool, q: db.New(pool)}
+	return &Handler{scope: dbscope.New(pool)}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -191,7 +191,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		groupNotFound(w)
 		return
 	}
-	g, err := h.q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID})
+	g, err := h.scope.Reader(user.ID).GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		groupNotFound(w)
 		return
@@ -223,7 +223,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fp := idempotency.Fingerprint("POST", "/v1/groups/{id}/expenses", groupID.String(), string(canon))
-	out, err := idempotency.Do(r.Context(), h.pool, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	out, err := idempotency.Do(r.Context(), h.scope, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		return h.insert(ctx, tx, user.ID, g.ID, g.Currency, n)
 	})
 	if errors.Is(err, idempotency.ErrKeyReuse) {
@@ -247,7 +247,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 // decisions); the foreign key on (group_id, payer_id) makes a non-member payer
 // impossible even if the caller's membership check were removed.
 func (h *Handler) insert(ctx context.Context, tx pgx.Tx, userID, groupID uuid.UUID, currency string, n normalized) (idempotency.Result, error) {
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 	e, err := q.CreateExpense(ctx, db.CreateExpenseParams{
 		GroupID: groupID, PayerID: userID, Description: n.Description, TaxMinor: n.TaxMinor, TipMinor: n.TipMinor,
 	})
@@ -290,14 +290,14 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	// An empty list for a member and a 404 for a non-member must be
 	// distinguishable, so check membership explicitly.
-	if _, err := h.q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID}); errors.Is(err, pgx.ErrNoRows) {
+	if _, err := h.scope.Reader(user.ID).GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID}); errors.Is(err, pgx.ErrNoRows) {
 		groupNotFound(w)
 		return
 	} else if err != nil {
 		h.internalError(w, "get group", err)
 		return
 	}
-	rows, err := h.q.ListExpensesForMember(r.Context(), db.ListExpensesForMemberParams{UserID: user.ID, GroupID: groupID})
+	rows, err := h.scope.Reader(user.ID).ListExpensesForMember(r.Context(), db.ListExpensesForMemberParams{UserID: user.ID, GroupID: groupID})
 	if err != nil {
 		h.internalError(w, "list expenses", err)
 		return
@@ -327,13 +327,13 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 
 	// One read-only snapshot, so the expense and its items are consistent with
 	// each other even if a claim or edit commits between the two queries.
-	tx, err := h.pool.BeginTx(r.Context(), pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	tx, err := h.scope.BeginTx(r.Context(), user.ID, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		h.internalError(w, "begin read tx", err)
 		return
 	}
 	defer tx.Rollback(r.Context()) //nolint:errcheck // read-only; nothing to commit
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 
 	e, err := q.GetExpenseForMember(r.Context(), db.GetExpenseForMemberParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {

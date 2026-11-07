@@ -66,7 +66,7 @@ func (h *Handler) finalize(w http.ResponseWriter, r *http.Request) {
 		expenseNotFound(w)
 		return
 	}
-	e, err := h.q.GetExpenseForMember(r.Context(), db.GetExpenseForMemberParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
+	e, err := h.scope.Reader(user.ID).GetExpenseForMember(r.Context(), db.GetExpenseForMemberParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		expenseNotFound(w)
 		return
@@ -98,7 +98,7 @@ func (h *Handler) finalize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(split) > 0 {
-		n, err := h.q.CountGroupMembers(r.Context(), db.CountGroupMembersParams{GroupID: groupID, MemberIds: split})
+		n, err := h.scope.Reader(user.ID).CountGroupMembers(r.Context(), db.CountGroupMembersParams{GroupID: groupID, MemberIds: split})
 		if err != nil {
 			h.internalError(w, "count split members", err)
 			return
@@ -114,7 +114,7 @@ func (h *Handler) finalize(w http.ResponseWriter, r *http.Request) {
 		parts[i] = id.String()
 	}
 	fp := idempotency.Fingerprint("POST", "/v1/groups/{id}/expenses/{expenseId}/finalize", groupID.String(), expenseID.String(), strings.Join(parts, ","))
-	out, err := idempotency.Do(r.Context(), h.pool, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	out, err := idempotency.Do(r.Context(), h.scope, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		return h.doFinalize(ctx, tx, user.ID, groupID, expenseID, split)
 	})
 	if errors.Is(err, idempotency.ErrKeyReuse) {
@@ -137,7 +137,7 @@ func (h *Handler) finalize(w http.ResponseWriter, r *http.Request) {
 // non-2xx result happens before anything is written, because that result is
 // committed and replayed for the key.
 func (h *Handler) doFinalize(ctx context.Context, tx pgx.Tx, payerID, groupID, expenseID uuid.UUID, split []uuid.UUID) (idempotency.Result, error) {
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 
 	locked, err := controls.LockExpenseForFinalize(ctx, q, db.LockExpenseForFinalizeParams{UserID: payerID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {

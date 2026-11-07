@@ -90,16 +90,22 @@ type Outcome struct {
 	Replayed bool // true if this is a stored response from an earlier request
 }
 
+// Beginner starts a transaction that runs as a user (dbscope.DB does this and
+// sets the identity row-level security reads).
+type Beginner interface {
+	Begin(ctx context.Context, userID uuid.UUID) (pgx.Tx, error)
+}
+
 // Do runs fn at most once per (userID, key). See the package comment.
 func Do(
 	ctx context.Context,
-	pool *pgxpool.Pool,
+	b Beginner,
 	userID uuid.UUID,
 	key string,
 	fingerprint []byte,
 	fn func(ctx context.Context, tx pgx.Tx) (Result, error),
 ) (Outcome, error) {
-	tx, err := pool.Begin(ctx)
+	tx, err := b.Begin(ctx, userID)
 	if err != nil {
 		return Outcome{}, fmt.Errorf("begin: %w", err)
 	}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbscope"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
 	"github.com/riyne/fifty-fifty/internal/teststack"
 )
@@ -360,7 +361,7 @@ func TestIdempotencyCheck(t *testing.T) {
 	ctx := context.Background()
 	runs := 0
 	do := func(key string) idempotency.Outcome {
-		out, err := idempotency.Do(ctx, f.pool, f.payer, key, []byte("fp"), func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+		out, err := idempotency.Do(ctx, dbscope.New(f.pool), f.payer, key, []byte("fp"), func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 			runs++
 			return idempotency.Result{Status: 200, Body: []byte(`{}`)}, nil
 		})

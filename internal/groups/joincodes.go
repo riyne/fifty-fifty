@@ -55,7 +55,7 @@ func (h *Handler) requireOwner(w http.ResponseWriter, r *http.Request) (user db.
 		notFound(w)
 		return user, uuid.Nil, false
 	}
-	g, err := h.q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID})
+	g, err := h.scope.Reader(user.ID).GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		notFound(w)
 		return user, uuid.Nil, false
@@ -104,13 +104,13 @@ func (h *Handler) createJoinCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	code := joincode.Generate()
-	tx, err := h.pool.Begin(r.Context())
+	tx, err := h.scope.Begin(r.Context(), user.ID)
 	if err != nil {
 		h.internalError(w, "begin tx", err)
 		return
 	}
 	defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after Commit
-	qtx := h.q.WithTx(tx)
+	qtx := db.New(tx)
 
 	jc, err := qtx.CreateJoinCode(r.Context(), db.CreateJoinCodeParams{
 		GroupID: groupID, CodeHash: joincode.Hash(code), CreatedBy: user.ID,
@@ -134,11 +134,11 @@ func (h *Handler) createJoinCode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listJoinCodes(w http.ResponseWriter, r *http.Request) {
-	_, groupID, ok := h.requireOwner(w, r)
+	user, groupID, ok := h.requireOwner(w, r)
 	if !ok {
 		return
 	}
-	rows, err := h.q.ListJoinCodes(r.Context(), groupID)
+	rows, err := h.scope.Reader(user.ID).ListJoinCodes(r.Context(), groupID)
 	if err != nil {
 		h.internalError(w, "list join codes", err)
 		return
@@ -164,13 +164,13 @@ func (h *Handler) revokeJoinCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx, err := h.pool.Begin(r.Context())
+	tx, err := h.scope.Begin(r.Context(), user.ID)
 	if err != nil {
 		h.internalError(w, "begin tx", err)
 		return
 	}
 	defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after Commit
-	qtx := h.q.WithTx(tx)
+	qtx := db.New(tx)
 
 	// The UPDATE is scoped to (code id AND the group already authorized above),
 	// so a code id belonging to another group matches nothing.
@@ -240,7 +240,7 @@ func (h *Handler) join(w http.ResponseWriter, r *http.Request) {
 	// and "ABCDEFGHJKMN" count as the same request, and no plaintext code is
 	// derivable from the stored fingerprint beyond what code_hash already allows.
 	fp := idempotency.Fingerprint("POST", "/v1/join", string(hash))
-	out, err := idempotency.Do(r.Context(), h.pool, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	out, err := idempotency.Do(r.Context(), h.scope, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		return h.redeem(ctx, tx, user, hash)
 	})
 	if errors.Is(err, idempotency.ErrKeyReuse) {
@@ -262,7 +262,7 @@ func (h *Handler) join(w http.ResponseWriter, r *http.Request) {
 // redeem runs inside the idempotency transaction. It writes nothing unless the
 // join succeeds, so its 404 result is safe to store.
 func (h *Handler) redeem(ctx context.Context, tx pgx.Tx, user db.User, hash []byte) (idempotency.Result, error) {
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 
 	jc, err := q.LockRedeemableJoinCode(ctx, hash)
 	if errors.Is(err, pgx.ErrNoRows) {

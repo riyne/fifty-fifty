@@ -52,6 +52,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/auth"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbscope"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
 	"github.com/riyne/fifty-fifty/internal/objstore"
@@ -85,8 +86,7 @@ type Config struct {
 
 // Handler serves the upload route.
 type Handler struct {
-	pool    *pgxpool.Pool
-	q       *db.Queries
+	scope   *dbscope.DB
 	store   objstore.Store
 	limiter *ratelimit.Limiter
 	cfg     Config
@@ -104,7 +104,7 @@ func NewHandler(pool *pgxpool.Pool, store objstore.Store, limiter *ratelimit.Lim
 	if cfg.Limits == (receipts.ImageLimits{}) {
 		cfg.Limits = receipts.DefaultImageLimits
 	}
-	return &Handler{pool: pool, q: db.New(pool), store: store, limiter: limiter, cfg: cfg, sem: make(chan struct{}, cfg.MaxHardenings)}
+	return &Handler{scope: dbscope.New(pool), store: store, limiter: limiter, cfg: cfg, sem: make(chan struct{}, cfg.MaxHardenings)}
 }
 
 // Register mounts the route on mux (inside the authenticated API).
@@ -135,7 +135,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		groupNotFound(w)
 		return
 	}
-	if _, err := h.q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID}); errors.Is(err, pgx.ErrNoRows) {
+	if _, err := h.scope.Reader(user.ID).GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: groupID, UserID: user.ID}); errors.Is(err, pgx.ErrNoRows) {
 		groupNotFound(w)
 		return
 	} else if err != nil {
@@ -187,7 +187,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 	// so it is a function of the pixels as stored, plus what else defines the request.
 	objKey := objstore.Key(img.Data)
 	fp := idempotency.Fingerprint("POST", "/v1/groups/{id}/receipts", groupID.String(), description, objKey)
-	out, err := idempotency.Do(r.Context(), h.pool, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	out, err := idempotency.Do(r.Context(), h.scope, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		return h.insert(ctx, tx, user.ID, groupID, description, img)
 	})
 	switch {
@@ -214,7 +214,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 // insert runs inside the idempotency transaction: quota, expense, receipt and audit
 // event commit together or not at all.
 func (h *Handler) insert(ctx context.Context, tx pgx.Tx, userID, groupID uuid.UUID, description string, img receipts.Image) (idempotency.Result, error) {
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 	if _, err := q.ConsumeReceiptQuota(ctx, db.ConsumeReceiptQuotaParams{UserID: userID, DailyLimit: int32(h.cfg.DailyQuota)}); errors.Is(err, pgx.ErrNoRows) {
 		return idempotency.Result{}, errQuota
 	} else if err != nil {

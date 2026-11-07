@@ -47,7 +47,7 @@ func (h *Handler) void(w http.ResponseWriter, r *http.Request) {
 		expenseNotFound(w)
 		return
 	}
-	e, err := h.q.GetExpenseForMember(r.Context(), db.GetExpenseForMemberParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
+	e, err := h.scope.Reader(user.ID).GetExpenseForMember(r.Context(), db.GetExpenseForMemberParams{UserID: user.ID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		expenseNotFound(w)
 		return
@@ -73,7 +73,7 @@ func (h *Handler) void(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fp := idempotency.Fingerprint("POST", "/v1/groups/{id}/expenses/{expenseId}/void", groupID.String(), expenseID.String())
-	out, err := idempotency.Do(r.Context(), h.pool, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+	out, err := idempotency.Do(r.Context(), h.scope, user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 		return h.doVoid(ctx, tx, user.ID, e.CallerRole, groupID, expenseID)
 	})
 	if errors.Is(err, idempotency.ErrKeyReuse) {
@@ -96,7 +96,7 @@ func (h *Handler) void(w http.ResponseWriter, r *http.Request) {
 // returned before anything is written, because that result is committed and
 // replayed for the key.
 func (h *Handler) doVoid(ctx context.Context, tx pgx.Tx, callerID uuid.UUID, callerRole string, groupID, expenseID uuid.UUID) (idempotency.Result, error) {
-	q := h.q.WithTx(tx)
+	q := db.New(tx)
 
 	status, err := controls.LockExpenseForVoid(ctx, q, db.LockExpenseForVoidParams{UserID: callerID, ExpenseID: expenseID, GroupID: groupID})
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/auth"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbscope"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
 )
@@ -22,15 +23,14 @@ import (
 // Handler serves the /v1/groups endpoints. Every method assumes auth.Middleware
 // has already run.
 type Handler struct {
-	pool        *pgxpool.Pool
-	q           *db.Queries
+	scope       *dbscope.DB
 	joinLimiter *ratelimit.Limiter
 }
 
 // NewHandler builds the groups handler. joinLimiter throttles POST /v1/join per
 // user, which is what makes guessing join codes impractical.
 func NewHandler(pool *pgxpool.Pool, joinLimiter *ratelimit.Limiter) *Handler {
-	return &Handler{pool: pool, q: db.New(pool), joinLimiter: joinLimiter}
+	return &Handler{scope: dbscope.New(pool), joinLimiter: joinLimiter}
 }
 
 // Register adds the group routes to mux.
@@ -90,13 +90,13 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 	// The group and its owner membership commit together: a group with no
 	// members would be unreachable.
-	tx, err := h.pool.Begin(r.Context())
+	tx, err := h.scope.Begin(r.Context(), user.ID)
 	if err != nil {
 		h.internalError(w, "begin tx", err)
 		return
 	}
 	defer tx.Rollback(r.Context()) //nolint:errcheck // no-op after Commit
-	qtx := h.q.WithTx(tx)
+	qtx := db.New(tx)
 
 	g, err := qtx.CreateGroup(r.Context(), db.CreateGroupParams{Name: req.Name, Currency: req.Currency, CreatedBy: user.ID})
 	if err != nil {
@@ -118,7 +118,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFrom(r.Context())
-	rows, err := h.q.ListGroupsForUser(r.Context(), user.ID)
+	rows, err := h.scope.Reader(user.ID).ListGroupsForUser(r.Context(), user.ID)
 	if err != nil {
 		h.internalError(w, "list groups", err)
 		return
@@ -140,7 +140,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
-	g, err := h.q.GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: id, UserID: user.ID})
+	g, err := h.scope.Reader(user.ID).GetGroupForMember(r.Context(), db.GetGroupForMemberParams{ID: id, UserID: user.ID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		notFound(w)
 		return
@@ -149,7 +149,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "get group", err)
 		return
 	}
-	members, err := h.q.ListMembers(r.Context(), id)
+	members, err := h.scope.Reader(user.ID).ListMembers(r.Context(), id)
 	if err != nil {
 		h.internalError(w, "list members", err)
 		return
