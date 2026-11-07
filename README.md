@@ -2,7 +2,7 @@
 
 Group expense splitting: photograph a receipt, an LLM itemizes it, friends claim their items, and balances are tracked and settled through a **simulated** payment provider.
 
-> **Status: in development. Milestones M0-M6 of 9 are done; mobile (M8), the real-model accuracy evaluation and the full README (M9) are not, and RLS (M7) is optional and not started.** The full README (architecture, demo) is M9; this page is a working summary.
+> **Status: in development. Milestones M0-M6 of 9 are done; mobile (M8), the real-model accuracy evaluation and the full README (M9) are not, and RLS (M7) is in progress (the scoped-access seam is built; no policies yet).** The full README (architecture, demo) is M9; this page is a working summary.
 >
 > Built and tested (the evidence for each is in [docs/CLAIMS.md](docs/CLAIMS.md), the reasons in [docs/DESIGN.md](docs/DESIGN.md)):
 > - **Ledger:** Go API, OIDC auth (Dex), groups and join codes, expenses with claims, payer-only item edits with an optimistic version lock, finalize and void into an append-only double-entry ledger, group balances and suggested transfers, idempotency keys, an authorization (BOLA) suite.
@@ -11,9 +11,9 @@ Group expense splitting: photograph a receipt, an LLM itemizes it, friends claim
 > - **Settlement, simulated:** idempotent payments through a mock provider with reconciliation, a watchdog, signed webhooks, fault-injection tests with real processes and a recorded fault-injection benchmark.
 > - **Receipts:** upload with image hardening, a content-addressed object store and a daily quota; a `receipt.parse` job (real Tesseract OCR, redaction of card numbers, phone numbers and email addresses, an LLM extractor behind an interface, strict validation, review hand-off, a sweep for dead jobs); synthetic receipt generator. Tested end to end with real processes (including a SIGKILLed worker) **against a mock LLM**.
 > - **Redaction recall**, measured on synthetic receipts: 100% on perfect text, 96.1% on Tesseract's reading of clean renders, 72.7% on the most distorted; emails are the weak spot (CLAIMS row 9). Synthetic data, so no statement about real receipts.
-> - **CI:** a workflow (formatting, vet, generated-code check, tests against Postgres and Tesseract, vulnerability scan) is written and `make ci` passes locally, but it has **not yet run on GitHub**.
+> - **CI:** a workflow (formatting, vet, generated-code check, tests against Postgres and Tesseract, vulnerability scan) passes on GitHub Actions (green run confirmed 2026-11-07) and locally with `make ci`. The end-to-end tests, negative controls and benchmarks are not run in CI.
 >
-> Not built: a live call to the real model (none has ever been made), mobile app, RLS, lint and secret scanning.
+> Not built: a live call to the real model (none has ever been made), mobile app, RLS policies, lint and secret scanning.
 
 - Synthetic data only. No real money moves anywhere; the payment provider is a mock.
 - Every number or capability claimed about this project must appear in [docs/CLAIMS.md](docs/CLAIMS.md) with its evidence. Benchmark method and raw results: [bench/README.md](bench/README.md).
