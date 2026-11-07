@@ -9,7 +9,7 @@ GOOSE   := go tool -modfile=tools/go.mod goose -dir migrations postgres
 export MIGRATE_DATABASE_URL ?= postgres://fifty:fifty@localhost:5433/fifty?sslmode=disable
 export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress ci ci-format ci-vet ci-generate ci-test ci-vuln
+.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-redaction ci ci-format ci-vet ci-generate ci-test ci-vuln
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -97,6 +97,12 @@ bench-settlement:
 bench-stress:
 	go run ./bench/stress
 	go run -tags unsafe_controls ./bench/stress
+
+# Redaction recall on synthetic receipts, on ground-truth text and on Tesseract's reading of
+# rendered images (bench/README.md). Needs tesseract and a clean working tree; touches no
+# database. Writes bench/results/redaction-*.{json,txt}.
+bench-redaction:
+	go run ./bench/redaction
 
 # CI. .github/workflows/ci.yml starts Postgres, migrates, then runs `make ci`, so every
 # gate can be run on this machine first (needs `make up && make migrate-up`).
