@@ -1,0 +1,1290 @@
+{
+  "started_at": "2026-11-07T23:11:25.741974Z",
+  "parameters": {
+    "expenses_per_group": 200,
+    "groups": 200,
+    "measure_per_variant": "15s",
+    "members_per_group": 6,
+    "mix_percent": "list_groups 10, list_expenses 25, get_expense 30, balances 20, claim_unclaim 15 (each claim_unclaim is two transactions: add the claim, remove it)",
+    "repetitions": 6,
+    "seed": 1,
+    "warmup": "3s",
+    "workers": 8
+  },
+  "environment": {
+    "machine": "Apple M3 Pro",
+    "cpus": 11,
+    "memory_bytes": "19327352832",
+    "os": "Darwin 25.6.0 arm64",
+    "go_version": "go1.27.3",
+    "postgres_version": "PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+    "docker_postgres_container": "/fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit)",
+    "docker_engine": "cpus=11 memory_bytes=8214716416 server=29.9.1",
+    "load_average_at_start": "16:11  up 80 days, 12:15, 1 user, load averages: 2.99 4.19 5.02",
+    "jobs_table_rows_at_start": 107797,
+    "commit": "8b9b6d9d06962ed91e73a5198d7d8ef3b0251750",
+    "working_tree_dirty": false
+  },
+  "repetitions": [
+    {
+      "rep": 1,
+      "order": [
+        "baseline",
+        "identity_only",
+        "policies_on"
+      ],
+      "seeded_rows": {
+        "claims": 100000,
+        "expense_items": 200000,
+        "expenses": 40000,
+        "groups": 200,
+        "ledger_entries": 40000,
+        "ledger_transactions": 20000,
+        "memberships": 1440,
+        "users": 1200
+      },
+      "variants": {
+        "baseline": {
+          "variant": "baseline",
+          "total": {
+            "n": 62269,
+            "p50_ms": 1.204,
+            "p99_ms": 7.617,
+            "mean_ms": 1.926,
+            "ops_per_s": 4151.266666666666,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 12479,
+              "p50_ms": 0.635,
+              "p99_ms": 1.394,
+              "mean_ms": 0.676,
+              "ops_per_s": 831.9333333333333,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 9364,
+              "p50_ms": 5.711,
+              "p99_ms": 9.867,
+              "mean_ms": 5.996,
+              "ops_per_s": 624.2666666666667,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 18628,
+              "p50_ms": 1.099,
+              "p99_ms": 2.252,
+              "mean_ms": 1.156,
+              "ops_per_s": 1241.8666666666666,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 15568,
+              "p50_ms": 1.807,
+              "p99_ms": 3.85,
+              "mean_ms": 1.952,
+              "ops_per_s": 1037.8666666666666,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 6230,
+              "p50_ms": 0.518,
+              "p99_ms": 1.26,
+              "mean_ms": 0.552,
+              "ops_per_s": 415.3333333333333,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "identity_only": {
+          "variant": "identity_only",
+          "total": {
+            "n": 31476,
+            "p50_ms": 3.844,
+            "p99_ms": 7.531,
+            "mean_ms": 3.811,
+            "ops_per_s": 2098.4,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 6339,
+              "p50_ms": 1.934,
+              "p99_ms": 3.361,
+              "mean_ms": 1.992,
+              "ops_per_s": 422.6,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 4793,
+              "p50_ms": 6.133,
+              "p99_ms": 8.665,
+              "mean_ms": 6.283,
+              "ops_per_s": 319.53333333333336,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 9347,
+              "p50_ms": 3.719,
+              "p99_ms": 5.678,
+              "mean_ms": 3.811,
+              "ops_per_s": 623.1333333333333,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 7888,
+              "p50_ms": 4.416,
+              "p99_ms": 6.585,
+              "mean_ms": 4.534,
+              "ops_per_s": 525.8666666666667,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 3109,
+              "p50_ms": 1.831,
+              "p99_ms": 3.059,
+              "mean_ms": 1.876,
+              "ops_per_s": 207.26666666666668,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "policies_on": {
+          "variant": "policies_on",
+          "total": {
+            "n": 25862,
+            "p50_ms": 4.225,
+            "p99_ms": 8.857,
+            "mean_ms": 4.639,
+            "ops_per_s": 1724.1333333333334,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 5179,
+              "p50_ms": 2.527,
+              "p99_ms": 4.526,
+              "mean_ms": 2.634,
+              "ops_per_s": 345.26666666666665,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 3937,
+              "p50_ms": 6.755,
+              "p99_ms": 9.742,
+              "mean_ms": 6.991,
+              "ops_per_s": 262.46666666666664,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 7710,
+              "p50_ms": 4.022,
+              "p99_ms": 6.335,
+              "mean_ms": 4.157,
+              "ops_per_s": 514,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 6475,
+              "p50_ms": 6.133,
+              "p99_ms": 9.643,
+              "mean_ms": 6.401,
+              "ops_per_s": 431.6666666666667,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 2561,
+              "p50_ms": 2.004,
+              "p99_ms": 3.729,
+              "mean_ms": 2.074,
+              "ops_per_s": 170.73333333333332,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 14,
+          "unguarded_expense_count_as_a_user": 200,
+          "measure_ms": 15000
+        }
+      },
+      "expenses_in_the_table": 40000,
+      "plans": {
+        "all_expenses_unfiltered": "Aggregate (actual rows=1 loops=1)\n  -\u003e  Seq Scan on expenses (actual rows=200 loops=1)\n        Filter: (ANY (group_id = (hashed SubPlan 1).col1))\n        Rows Removed by Filter: 39800\n        SubPlan 1\n          -\u003e  ProjectSet (actual rows=1 loops=1)\n                -\u003e  Result (actual rows=1 loops=1)\n",
+        "all_ledger_entries_unfiltered": "Aggregate (actual rows=1 loops=1)\n  -\u003e  Seq Scan on ledger_entries (actual rows=200 loops=1)\n        Filter: (ANY (group_id = (hashed SubPlan 1).col1))\n        Rows Removed by Filter: 39800\n        SubPlan 1\n          -\u003e  ProjectSet (actual rows=1 loops=1)\n                -\u003e  Result (actual rows=1 loops=1)\n",
+        "items_of_one_expense": "Index Scan using expense_items_expense_id_position_key on expense_items (actual rows=5 loops=1)\n  Index Cond: (expense_id = '04b6daaf-65a5-40cf-bb6f-73b033e4cc75'::uuid)\n  Filter: EXISTS(SubPlan 2)\n  SubPlan 2\n    -\u003e  Index Scan using expenses_pkey on expenses e (actual rows=1 loops=5)\n          Index Cond: (id = expense_items.expense_id)\n          Filter: (ANY (group_id = (hashed SubPlan 1).col1))\n          SubPlan 1\n            -\u003e  ProjectSet (actual rows=1 loops=1)\n                  -\u003e  Result (actual rows=1 loops=1)\n"
+      },
+      "answers_compared_across_variants": 300
+    },
+    {
+      "rep": 2,
+      "order": [
+        "identity_only",
+        "policies_on",
+        "baseline"
+      ],
+      "seeded_rows": {
+        "claims": 100000,
+        "expense_items": 200000,
+        "expenses": 40000,
+        "groups": 200,
+        "ledger_entries": 40000,
+        "ledger_transactions": 20000,
+        "memberships": 1440,
+        "users": 1200
+      },
+      "variants": {
+        "baseline": {
+          "variant": "baseline",
+          "total": {
+            "n": 64120,
+            "p50_ms": 1.161,
+            "p99_ms": 6.917,
+            "mean_ms": 1.871,
+            "ops_per_s": 4274.666666666667,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 12789,
+              "p50_ms": 0.621,
+              "p99_ms": 1.244,
+              "mean_ms": 0.651,
+              "ops_per_s": 852.6,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 9905,
+              "p50_ms": 5.593,
+              "p99_ms": 8.147,
+              "mean_ms": 5.72,
+              "ops_per_s": 660.3333333333334,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 19166,
+              "p50_ms": 1.069,
+              "p99_ms": 2.026,
+              "mean_ms": 1.107,
+              "ops_per_s": 1277.7333333333333,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 15970,
+              "p50_ms": 1.815,
+              "p99_ms": 3.294,
+              "mean_ms": 1.905,
+              "ops_per_s": 1064.6666666666667,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 6290,
+              "p50_ms": 0.507,
+              "p99_ms": 1.094,
+              "mean_ms": 0.528,
+              "ops_per_s": 419.3333333333333,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "identity_only": {
+          "variant": "identity_only",
+          "total": {
+            "n": 31891,
+            "p50_ms": 3.801,
+            "p99_ms": 7.337,
+            "mean_ms": 3.762,
+            "ops_per_s": 2126.0666666666666,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 6353,
+              "p50_ms": 1.916,
+              "p99_ms": 3.132,
+              "mean_ms": 1.96,
+              "ops_per_s": 423.53333333333336,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 4884,
+              "p50_ms": 6.064,
+              "p99_ms": 8.588,
+              "mean_ms": 6.187,
+              "ops_per_s": 325.6,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 9592,
+              "p50_ms": 3.668,
+              "p99_ms": 5.644,
+              "mean_ms": 3.746,
+              "ops_per_s": 639.4666666666667,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 7952,
+              "p50_ms": 4.362,
+              "p99_ms": 6.552,
+              "mean_ms": 4.477,
+              "ops_per_s": 530.1333333333333,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 3110,
+              "p50_ms": 1.808,
+              "p99_ms": 3.134,
+              "mean_ms": 1.857,
+              "ops_per_s": 207.33333333333334,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "policies_on": {
+          "variant": "policies_on",
+          "total": {
+            "n": 25679,
+            "p50_ms": 4.231,
+            "p99_ms": 9.086,
+            "mean_ms": 4.672,
+            "ops_per_s": 1711.9333333333334,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 5110,
+              "p50_ms": 2.551,
+              "p99_ms": 4.557,
+              "mean_ms": 2.676,
+              "ops_per_s": 340.6666666666667,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 3917,
+              "p50_ms": 6.734,
+              "p99_ms": 9.643,
+              "mean_ms": 6.951,
+              "ops_per_s": 261.1333333333333,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 7704,
+              "p50_ms": 4.024,
+              "p99_ms": 6.371,
+              "mean_ms": 4.167,
+              "ops_per_s": 513.6,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 6443,
+              "p50_ms": 6.192,
+              "p99_ms": 10.04,
+              "mean_ms": 6.477,
+              "ops_per_s": 429.53333333333336,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 2505,
+              "p50_ms": 2.003,
+              "p99_ms": 3.825,
+              "mean_ms": 2.09,
+              "ops_per_s": 167,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 14,
+          "unguarded_expense_count_as_a_user": 200,
+          "measure_ms": 15000
+        }
+      },
+      "expenses_in_the_table": 40000,
+      "answers_compared_across_variants": 300
+    },
+    {
+      "rep": 3,
+      "order": [
+        "policies_on",
+        "baseline",
+        "identity_only"
+      ],
+      "seeded_rows": {
+        "claims": 100000,
+        "expense_items": 200000,
+        "expenses": 40000,
+        "groups": 200,
+        "ledger_entries": 40000,
+        "ledger_transactions": 20000,
+        "memberships": 1440,
+        "users": 1200
+      },
+      "variants": {
+        "baseline": {
+          "variant": "baseline",
+          "total": {
+            "n": 65262,
+            "p50_ms": 1.159,
+            "p99_ms": 6.88,
+            "mean_ms": 1.838,
+            "ops_per_s": 4350.8,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 12897,
+              "p50_ms": 0.604,
+              "p99_ms": 1.247,
+              "mean_ms": 0.637,
+              "ops_per_s": 859.8,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 9876,
+              "p50_ms": 5.556,
+              "p99_ms": 8.127,
+              "mean_ms": 5.704,
+              "ops_per_s": 658.4,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 19460,
+              "p50_ms": 1.064,
+              "p99_ms": 2.057,
+              "mean_ms": 1.103,
+              "ops_per_s": 1297.3333333333333,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 16501,
+              "p50_ms": 1.753,
+              "p99_ms": 3.385,
+              "mean_ms": 1.848,
+              "ops_per_s": 1100.0666666666666,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 6528,
+              "p50_ms": 0.5,
+              "p99_ms": 1.058,
+              "mean_ms": 0.523,
+              "ops_per_s": 435.2,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "identity_only": {
+          "variant": "identity_only",
+          "total": {
+            "n": 32015,
+            "p50_ms": 3.793,
+            "p99_ms": 7.195,
+            "mean_ms": 3.747,
+            "ops_per_s": 2134.3333333333335,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 6291,
+              "p50_ms": 1.903,
+              "p99_ms": 3.203,
+              "mean_ms": 1.95,
+              "ops_per_s": 419.4,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 4805,
+              "p50_ms": 6.055,
+              "p99_ms": 8.457,
+              "mean_ms": 6.172,
+              "ops_per_s": 320.3333333333333,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 9578,
+              "p50_ms": 3.667,
+              "p99_ms": 5.589,
+              "mean_ms": 3.735,
+              "ops_per_s": 638.5333333333333,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 8142,
+              "p50_ms": 4.358,
+              "p99_ms": 6.439,
+              "mean_ms": 4.468,
+              "ops_per_s": 542.8,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 3199,
+              "p50_ms": 1.804,
+              "p99_ms": 3.01,
+              "mean_ms": 1.841,
+              "ops_per_s": 213.26666666666668,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "policies_on": {
+          "variant": "policies_on",
+          "total": {
+            "n": 26110,
+            "p50_ms": 4.22,
+            "p99_ms": 8.739,
+            "mean_ms": 4.595,
+            "ops_per_s": 1740.6666666666667,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 5142,
+              "p50_ms": 2.551,
+              "p99_ms": 4.359,
+              "mean_ms": 2.653,
+              "ops_per_s": 342.8,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 3914,
+              "p50_ms": 6.76,
+              "p99_ms": 9.436,
+              "mean_ms": 6.938,
+              "ops_per_s": 260.93333333333334,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 7817,
+              "p50_ms": 4.029,
+              "p99_ms": 6.242,
+              "mean_ms": 4.154,
+              "ops_per_s": 521.1333333333333,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 6609,
+              "p50_ms": 6.009,
+              "p99_ms": 9.087,
+              "mean_ms": 6.243,
+              "ops_per_s": 440.6,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 2628,
+              "p50_ms": 1.998,
+              "p99_ms": 3.738,
+              "mean_ms": 2.073,
+              "ops_per_s": 175.2,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 14,
+          "unguarded_expense_count_as_a_user": 200,
+          "measure_ms": 15000
+        }
+      },
+      "expenses_in_the_table": 40000,
+      "answers_compared_across_variants": 300
+    },
+    {
+      "rep": 4,
+      "order": [
+        "policies_on",
+        "identity_only",
+        "baseline"
+      ],
+      "seeded_rows": {
+        "claims": 100000,
+        "expense_items": 200000,
+        "expenses": 40000,
+        "groups": 200,
+        "ledger_entries": 40000,
+        "ledger_transactions": 20000,
+        "memberships": 1440,
+        "users": 1200
+      },
+      "variants": {
+        "baseline": {
+          "variant": "baseline",
+          "total": {
+            "n": 65670,
+            "p50_ms": 1.157,
+            "p99_ms": 6.849,
+            "mean_ms": 1.826,
+            "ops_per_s": 4378,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 13199,
+              "p50_ms": 0.611,
+              "p99_ms": 1.265,
+              "mean_ms": 0.645,
+              "ops_per_s": 879.9333333333333,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 9763,
+              "p50_ms": 5.583,
+              "p99_ms": 8.197,
+              "mean_ms": 5.711,
+              "ops_per_s": 650.8666666666667,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 19687,
+              "p50_ms": 1.069,
+              "p99_ms": 2.018,
+              "mean_ms": 1.107,
+              "ops_per_s": 1312.4666666666667,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 16460,
+              "p50_ms": 1.757,
+              "p99_ms": 3.289,
+              "mean_ms": 1.847,
+              "ops_per_s": 1097.3333333333333,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 6561,
+              "p50_ms": 0.504,
+              "p99_ms": 1.064,
+              "mean_ms": 0.529,
+              "ops_per_s": 437.4,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "identity_only": {
+          "variant": "identity_only",
+          "total": {
+            "n": 32005,
+            "p50_ms": 3.787,
+            "p99_ms": 7.402,
+            "mean_ms": 3.749,
+            "ops_per_s": 2133.6666666666665,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 6505,
+              "p50_ms": 1.913,
+              "p99_ms": 3.124,
+              "mean_ms": 1.958,
+              "ops_per_s": 433.6666666666667,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 4738,
+              "p50_ms": 6.08,
+              "p99_ms": 8.583,
+              "mean_ms": 6.254,
+              "ops_per_s": 315.8666666666667,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 9615,
+              "p50_ms": 3.671,
+              "p99_ms": 5.51,
+              "mean_ms": 3.759,
+              "ops_per_s": 641,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 7933,
+              "p50_ms": 4.359,
+              "p99_ms": 6.555,
+              "mean_ms": 4.48,
+              "ops_per_s": 528.8666666666667,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 3214,
+              "p50_ms": 1.801,
+              "p99_ms": 3.015,
+              "mean_ms": 1.845,
+              "ops_per_s": 214.26666666666668,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "policies_on": {
+          "variant": "policies_on",
+          "total": {
+            "n": 26298,
+            "p50_ms": 4.192,
+            "p99_ms": 8.647,
+            "mean_ms": 4.562,
+            "ops_per_s": 1753.2,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 5315,
+              "p50_ms": 2.537,
+              "p99_ms": 4.336,
+              "mean_ms": 2.631,
+              "ops_per_s": 354.3333333333333,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 3919,
+              "p50_ms": 6.738,
+              "p99_ms": 9.436,
+              "mean_ms": 6.897,
+              "ops_per_s": 261.26666666666665,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 7864,
+              "p50_ms": 4.021,
+              "p99_ms": 6.182,
+              "mean_ms": 4.142,
+              "ops_per_s": 524.2666666666667,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 6521,
+              "p50_ms": 6.013,
+              "p99_ms": 9.184,
+              "mean_ms": 6.26,
+              "ops_per_s": 434.73333333333335,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 2679,
+              "p50_ms": 2.011,
+              "p99_ms": 3.674,
+              "mean_ms": 2.076,
+              "ops_per_s": 178.6,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 14,
+          "unguarded_expense_count_as_a_user": 200,
+          "measure_ms": 15000
+        }
+      },
+      "expenses_in_the_table": 40000,
+      "answers_compared_across_variants": 300
+    },
+    {
+      "rep": 5,
+      "order": [
+        "baseline",
+        "policies_on",
+        "identity_only"
+      ],
+      "seeded_rows": {
+        "claims": 100000,
+        "expense_items": 200000,
+        "expenses": 40000,
+        "groups": 200,
+        "ledger_entries": 40000,
+        "ledger_transactions": 20000,
+        "memberships": 1440,
+        "users": 1200
+      },
+      "variants": {
+        "baseline": {
+          "variant": "baseline",
+          "total": {
+            "n": 65815,
+            "p50_ms": 1.149,
+            "p99_ms": 6.812,
+            "mean_ms": 1.822,
+            "ops_per_s": 4387.666666666667,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 13360,
+              "p50_ms": 0.614,
+              "p99_ms": 1.246,
+              "mean_ms": 0.647,
+              "ops_per_s": 890.6666666666666,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 9918,
+              "p50_ms": 5.553,
+              "p99_ms": 8.062,
+              "mean_ms": 5.678,
+              "ops_per_s": 661.2,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 19844,
+              "p50_ms": 1.066,
+              "p99_ms": 1.947,
+              "mean_ms": 1.101,
+              "ops_per_s": 1322.9333333333334,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 16261,
+              "p50_ms": 1.74,
+              "p99_ms": 3.169,
+              "mean_ms": 1.829,
+              "ops_per_s": 1084.0666666666666,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 6432,
+              "p50_ms": 0.505,
+              "p99_ms": 1.053,
+              "mean_ms": 0.527,
+              "ops_per_s": 428.8,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "identity_only": {
+          "variant": "identity_only",
+          "total": {
+            "n": 31994,
+            "p50_ms": 3.786,
+            "p99_ms": 7.178,
+            "mean_ms": 3.75,
+            "ops_per_s": 2132.9333333333334,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 6508,
+              "p50_ms": 1.906,
+              "p99_ms": 3.185,
+              "mean_ms": 1.953,
+              "ops_per_s": 433.8666666666667,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 4761,
+              "p50_ms": 6.059,
+              "p99_ms": 8.38,
+              "mean_ms": 6.174,
+              "ops_per_s": 317.4,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 9689,
+              "p50_ms": 3.666,
+              "p99_ms": 5.568,
+              "mean_ms": 3.743,
+              "ops_per_s": 645.9333333333333,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 7958,
+              "p50_ms": 4.403,
+              "p99_ms": 6.464,
+              "mean_ms": 4.514,
+              "ops_per_s": 530.5333333333333,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 3078,
+              "p50_ms": 1.799,
+              "p99_ms": 2.953,
+              "mean_ms": 1.843,
+              "ops_per_s": 205.2,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "policies_on": {
+          "variant": "policies_on",
+          "total": {
+            "n": 25802,
+            "p50_ms": 4.232,
+            "p99_ms": 8.866,
+            "mean_ms": 4.649,
+            "ops_per_s": 1720.1333333333334,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 5158,
+              "p50_ms": 2.529,
+              "p99_ms": 4.477,
+              "mean_ms": 2.642,
+              "ops_per_s": 343.8666666666667,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 3844,
+              "p50_ms": 6.763,
+              "p99_ms": 9.846,
+              "mean_ms": 6.986,
+              "ops_per_s": 256.26666666666665,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 7901,
+              "p50_ms": 4.044,
+              "p99_ms": 6.264,
+              "mean_ms": 4.171,
+              "ops_per_s": 526.7333333333333,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 6425,
+              "p50_ms": 6.189,
+              "p99_ms": 9.414,
+              "mean_ms": 6.438,
+              "ops_per_s": 428.3333333333333,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 2474,
+              "p50_ms": 2.017,
+              "p99_ms": 3.804,
+              "mean_ms": 2.086,
+              "ops_per_s": 164.93333333333334,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 14,
+          "unguarded_expense_count_as_a_user": 200,
+          "measure_ms": 15000
+        }
+      },
+      "expenses_in_the_table": 40000,
+      "answers_compared_across_variants": 300
+    },
+    {
+      "rep": 6,
+      "order": [
+        "identity_only",
+        "baseline",
+        "policies_on"
+      ],
+      "seeded_rows": {
+        "claims": 100000,
+        "expense_items": 200000,
+        "expenses": 40000,
+        "groups": 200,
+        "ledger_entries": 40000,
+        "ledger_transactions": 20000,
+        "memberships": 1440,
+        "users": 1200
+      },
+      "variants": {
+        "baseline": {
+          "variant": "baseline",
+          "total": {
+            "n": 64628,
+            "p50_ms": 1.161,
+            "p99_ms": 7.1,
+            "mean_ms": 1.856,
+            "ops_per_s": 4308.533333333334,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 13029,
+              "p50_ms": 0.618,
+              "p99_ms": 1.31,
+              "mean_ms": 0.655,
+              "ops_per_s": 868.6,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 9739,
+              "p50_ms": 5.611,
+              "p99_ms": 8.562,
+              "mean_ms": 5.781,
+              "ops_per_s": 649.2666666666667,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 19252,
+              "p50_ms": 1.074,
+              "p99_ms": 2.158,
+              "mean_ms": 1.115,
+              "ops_per_s": 1283.4666666666667,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 16067,
+              "p50_ms": 1.781,
+              "p99_ms": 3.419,
+              "mean_ms": 1.876,
+              "ops_per_s": 1071.1333333333334,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 6541,
+              "p50_ms": 0.51,
+              "p99_ms": 1.09,
+              "mean_ms": 0.534,
+              "ops_per_s": 436.06666666666666,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "identity_only": {
+          "variant": "identity_only",
+          "total": {
+            "n": 32097,
+            "p50_ms": 3.776,
+            "p99_ms": 7.288,
+            "mean_ms": 3.738,
+            "ops_per_s": 2139.8,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 6421,
+              "p50_ms": 1.918,
+              "p99_ms": 3.106,
+              "mean_ms": 1.965,
+              "ops_per_s": 428.06666666666666,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 4778,
+              "p50_ms": 6.069,
+              "p99_ms": 8.368,
+              "mean_ms": 6.191,
+              "ops_per_s": 318.53333333333336,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 9639,
+              "p50_ms": 3.661,
+              "p99_ms": 5.428,
+              "mean_ms": 3.731,
+              "ops_per_s": 642.6,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 8055,
+              "p50_ms": 4.358,
+              "p99_ms": 6.34,
+              "mean_ms": 4.461,
+              "ops_per_s": 537,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 3204,
+              "p50_ms": 1.802,
+              "p99_ms": 2.903,
+              "mean_ms": 1.836,
+              "ops_per_s": 213.6,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 0,
+          "unguarded_expense_count_as_a_user": 40000,
+          "measure_ms": 15000
+        },
+        "policies_on": {
+          "variant": "policies_on",
+          "total": {
+            "n": 26111,
+            "p50_ms": 4.193,
+            "p99_ms": 8.796,
+            "mean_ms": 4.594,
+            "ops_per_s": 1740.7333333333333,
+            "failures": 0
+          },
+          "by_op": {
+            "balances": {
+              "n": 5287,
+              "p50_ms": 2.505,
+              "p99_ms": 4.409,
+              "mean_ms": 2.618,
+              "ops_per_s": 352.46666666666664,
+              "failures": 0
+            },
+            "claim_unclaim": {
+              "n": 3883,
+              "p50_ms": 6.714,
+              "p99_ms": 9.621,
+              "mean_ms": 6.903,
+              "ops_per_s": 258.8666666666667,
+              "failures": 0
+            },
+            "get_expense": {
+              "n": 7876,
+              "p50_ms": 4.014,
+              "p99_ms": 6.224,
+              "mean_ms": 4.139,
+              "ops_per_s": 525.0666666666667,
+              "failures": 0
+            },
+            "list_expenses": {
+              "n": 6489,
+              "p50_ms": 6.132,
+              "p99_ms": 9.335,
+              "mean_ms": 6.379,
+              "ops_per_s": 432.6,
+              "failures": 0
+            },
+            "list_groups": {
+              "n": 2576,
+              "p50_ms": 1.992,
+              "p99_ms": 3.825,
+              "mean_ms": 2.069,
+              "ops_per_s": 171.73333333333332,
+              "failures": 0
+            }
+          },
+          "tables_with_rls_enabled_and_forced": 14,
+          "unguarded_expense_count_as_a_user": 200,
+          "measure_ms": 15000
+        }
+      },
+      "expenses_in_the_table": 40000,
+      "answers_compared_across_variants": 300
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "by_op": {
+        "balances": {
+          "p50_ms_median": 0.616,
+          "p99_ms_median": 1.256
+        },
+        "claim_unclaim": {
+          "p50_ms_median": 5.588,
+          "p99_ms_median": 8.172
+        },
+        "get_expense": {
+          "p50_ms_median": 1.069,
+          "p99_ms_median": 2.0415
+        },
+        "list_expenses": {
+          "p50_ms_median": 1.769,
+          "p99_ms_median": 3.3395
+        },
+        "list_groups": {
+          "p50_ms_median": 0.506,
+          "p99_ms_median": 1.077
+        }
+      },
+      "ops_per_s_max": 4387.666666666667,
+      "ops_per_s_median": 4329.666666666667,
+      "ops_per_s_min": 4151.266666666666,
+      "p50_ms_median": 1.1600000000000001,
+      "p99_ms_median": 6.8985
+    },
+    "identity_only": {
+      "by_op": {
+        "balances": {
+          "p50_ms_median": 1.9144999999999999,
+          "p99_ms_median": 3.1585
+        },
+        "claim_unclaim": {
+          "p50_ms_median": 6.0665,
+          "p99_ms_median": 8.52
+        },
+        "get_expense": {
+          "p50_ms_median": 3.6675,
+          "p99_ms_median": 5.5785
+        },
+        "list_expenses": {
+          "p50_ms_median": 4.3605,
+          "p99_ms_median": 6.508
+        },
+        "list_groups": {
+          "p50_ms_median": 1.803,
+          "p99_ms_median": 3.0125
+        }
+      },
+      "ops_per_s_max": 2139.8,
+      "ops_per_s_median": 2133.3,
+      "ops_per_s_min": 2098.4,
+      "p50_ms_median": 3.79,
+      "p99_ms_median": 7.3125
+    },
+    "policies_on": {
+      "by_op": {
+        "balances": {
+          "p50_ms_median": 2.533,
+          "p99_ms_median": 4.443
+        },
+        "claim_unclaim": {
+          "p50_ms_median": 6.7465,
+          "p99_ms_median": 9.632000000000001
+        },
+        "get_expense": {
+          "p50_ms_median": 4.023,
+          "p99_ms_median": 6.253
+        },
+        "list_expenses": {
+          "p50_ms_median": 6.1325,
+          "p99_ms_median": 9.374500000000001
+        },
+        "list_groups": {
+          "p50_ms_median": 2.0035,
+          "p99_ms_median": 3.771
+        }
+      },
+      "ops_per_s_max": 1753.2,
+      "ops_per_s_median": 1732.4,
+      "ops_per_s_min": 1711.9333333333334,
+      "p50_ms_median": 4.2225,
+      "p99_ms_median": 8.8265
+    }
+  },
+  "throughput_ratios_per_repetition": {
+    "identity_only / baseline": [
+      0.5054842698614078,
+      0.4973643169058016,
+      0.4905611228586314,
+      0.48736104766255517,
+      0.48612018536807716,
+      0.49664232221328214
+    ],
+    "policies_on / baseline": [
+      0.41532704877226234,
+      0.4004834684965689,
+      0.40007967883301154,
+      0.40045682960255824,
+      0.3920382891438122,
+      0.40401992944234694
+    ],
+    "policies_on / identity_only": [
+      0.8216418858813064,
+      0.8052115016775894,
+      0.8155552084960175,
+      0.8216841118575223,
+      0.8064637119459899,
+      0.8135028195781536
+    ]
+  }
+}

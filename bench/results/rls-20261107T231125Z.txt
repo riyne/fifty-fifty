@@ -1,0 +1,56 @@
+Row-level security cost benchmark (synthetic data; Postgres in Docker on the same machine as the workers)
+started 2026-11-07T23:11:25Z, commit 8b9b6d9d06962ed91e73a5198d7d8ef3b0251750 (working tree dirty: false)
+machine: Apple M3 Pro, 11 CPUs, 19327352832 bytes RAM, Darwin 25.6.0 arm64; PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+docker: /fifty-fifty-postgres-1 image=postgres:17 memory_limit=0 nano_cpus=0 (0 means no limit); engine cpus=11 memory_bytes=8214716416 server=29.9.1
+load average at start: 16:11  up 80 days, 12:15, 1 user, load averages: 2.99 4.19 5.02
+parameters: map[expenses_per_group:200 groups:200 measure_per_variant:15s members_per_group:6 mix_percent:list_groups 10, list_expenses 25, get_expense 30, balances 20, claim_unclaim 15 (each claim_unclaim is two transactions: add the claim, remove it) repetitions:6 seed:1 warmup:3s workers:8]
+
+seeded per repetition: map[claims:100000 expense_items:200000 expenses:40000 groups:200 ledger_entries:40000 ledger_transactions:20000 memberships:1440 users:1200]
+answers compared across the variants in each repetition: 300 (they matched, or the run would have stopped)
+
+variant         ops/s (med)  [min - max over reps] p50 ms (med) p99 ms (med)
+baseline               4330          [4151 - 4388]         1.16         6.90
+identity_only          2133          [2098 - 2140]         3.79         7.31
+policies_on            1732          [1712 - 1753]         4.22         8.83
+
+throughput ratios, per repetition (median [min - max]):
+  identity_only / baseline       0.494 [0.486 - 0.505]  (n=6)
+  policies_on / identity_only    0.815 [0.805 - 0.822]  (n=6)
+  policies_on / baseline         0.400 [0.392 - 0.415]  (n=6)
+
+per operation, median over repetitions of p50 / p99 in ms:
+                              baseline          identity_only            policies_on
+list_groups           0.51 / 1.08            1.80 / 3.01            2.00 / 3.77     
+list_expenses         1.77 / 3.34            4.36 / 6.51            6.13 / 9.37     
+get_expense           1.07 / 2.04            3.67 / 5.58            4.02 / 6.25     
+balances              0.62 / 1.26            1.91 / 3.16            2.53 / 4.44     
+claim_unclaim         5.59 / 8.17            6.07 / 8.52            6.75 / 9.63     
+
+plans with the policies on (repetition 1), run as one user:
+--- all_expenses_unfiltered
+Aggregate (actual rows=1 loops=1)
+  ->  Seq Scan on expenses (actual rows=200 loops=1)
+        Filter: (ANY (group_id = (hashed SubPlan 1).col1))
+        Rows Removed by Filter: 39800
+        SubPlan 1
+          ->  ProjectSet (actual rows=1 loops=1)
+                ->  Result (actual rows=1 loops=1)
+--- all_ledger_entries_unfiltered
+Aggregate (actual rows=1 loops=1)
+  ->  Seq Scan on ledger_entries (actual rows=200 loops=1)
+        Filter: (ANY (group_id = (hashed SubPlan 1).col1))
+        Rows Removed by Filter: 39800
+        SubPlan 1
+          ->  ProjectSet (actual rows=1 loops=1)
+                ->  Result (actual rows=1 loops=1)
+--- items_of_one_expense
+Index Scan using expense_items_expense_id_position_key on expense_items (actual rows=5 loops=1)
+  Index Cond: (expense_id = '04b6daaf-65a5-40cf-bb6f-73b033e4cc75'::uuid)
+  Filter: EXISTS(SubPlan 2)
+  SubPlan 2
+    ->  Index Scan using expenses_pkey on expenses e (actual rows=1 loops=5)
+          Index Cond: (id = expense_items.expense_id)
+          Filter: (ANY (group_id = (hashed SubPlan 1).col1))
+          SubPlan 1
+            ->  ProjectSet (actual rows=1 loops=1)
+                  ->  Result (actual rows=1 loops=1)
