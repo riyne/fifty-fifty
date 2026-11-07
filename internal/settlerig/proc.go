@@ -16,9 +16,9 @@ import (
 )
 
 // Bins are the built binaries the rig runs.
-type Bins struct{ Worker, Mockpay string }
+type Bins struct{ Worker, Mockpay, Mockllm string }
 
-// Build compiles the worker and the mock provider into dir.
+// Build compiles the worker, the mock provider and the mock LLM into dir.
 func Build(ctx context.Context, dir string) (Bins, error) { return BuildWithTags(ctx, dir, "") }
 
 // BuildWithTags is Build with go build tags (the negative-control runs build the worker
@@ -28,8 +28,8 @@ func BuildWithTags(ctx context.Context, dir, tags string) (Bins, error) {
 	if err != nil {
 		return Bins{}, err
 	}
-	b := Bins{Worker: filepath.Join(dir, "worker"), Mockpay: filepath.Join(dir, "mockpay")}
-	for bin, pkg := range map[string]string{b.Worker: "./cmd/worker", b.Mockpay: "./cmd/mockpay"} {
+	b := Bins{Worker: filepath.Join(dir, "worker"), Mockpay: filepath.Join(dir, "mockpay"), Mockllm: filepath.Join(dir, "mockllm")}
+	for bin, pkg := range map[string]string{b.Worker: "./cmd/worker", b.Mockpay: "./cmd/mockpay", b.Mockllm: "./cmd/mockllm"} {
 		args := []string{"build", "-o", bin}
 		if tags != "" {
 			args = append(args, "-tags", tags)
@@ -173,4 +173,33 @@ func StartMockpay(bin, webhookSecret string, flags ...string) (p *Proc, baseURL 
 	}
 	p.Stop()
 	return nil, "", fmt.Errorf("mockpay did not start on %s\n%s", addr, p.Log())
+}
+
+// StartMockllm runs the mock LLM on a free port and waits until it answers. flags are
+// mockllm's own (latency, fault rates, --fixtures ...).
+func StartMockllm(bin string, flags ...string) (p *Proc, baseURL string, err error) {
+	addr, err := FreeAddr()
+	if err != nil {
+		return nil, "", err
+	}
+	p, err = Start("mockllm", bin, append([]string{"--addr", addr}, flags...), nil)
+	if err != nil {
+		return nil, "", err
+	}
+	baseURL = "http://" + addr
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case <-p.done:
+			return nil, "", fmt.Errorf("mockllm exited at startup: %v\n%s", p.err, p.Log())
+		default:
+		}
+		if resp, err := http.Get(baseURL + "/stats"); err == nil {
+			resp.Body.Close()
+			return p, baseURL, nil
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	p.Stop()
+	return nil, "", fmt.Errorf("mockllm did not start on %s\n%s", addr, p.Log())
 }

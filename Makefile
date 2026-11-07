@@ -50,14 +50,17 @@ run-api:
 export TEST_DATABASE_URL       ?= $(DATABASE_URL)
 export TEST_OWNER_DATABASE_URL ?= $(MIGRATE_DATABASE_URL)
 
+# -p 4: the packages share one Postgres (max_connections 100) and each test stack opens
+# its own pools; with every package at once (one per CPU) the server ran out of connections
+# and an unlucky test failed to connect. CI runs one package at a time.
 test:
-	go test ./...
+	go test -p 4 ./...
 
 # The negative-control seams (internal/controls) exist only with the unsafe_controls
 # tag. This runs their tests, and the whole suite once with the tag and every
 # protection still ON, which must behave exactly like the production build.
 test-unsafe:
-	go test -count=1 -tags unsafe_controls ./...
+	go test -p 4 -count=1 -tags unsafe_controls ./...
 
 # The negative controls at smoke size: the stress workload with one protection switched
 # off at a time, expecting the harness to see the effect (or the layer that caught it).
@@ -122,6 +125,8 @@ ci-generate:
 # should not be there is visible. Then the whole suite once more with the unsafe_controls
 # tag and nothing disabled.
 ci-test: export REQUIRE_DATABASE = 1
+# The OCR tests need the real tesseract program; here a missing one is a failure, not a skip.
+ci-test: export REQUIRE_TESSERACT = 1
 ci-test:
 	@set -o pipefail; go test -count=1 -p 1 -v ./... 2>&1 | tee ci-test.log | grep -E "^(--- FAIL|FAIL|ok|panic)"
 	@echo "skipped tests:"; grep -E "^\s*--- SKIP" ci-test.log | sed 's/ (.*//' | sort | uniq -c

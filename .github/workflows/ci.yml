@@ -1,8 +1,8 @@
 name: ci
 
 # Runs `make ci`: gofmt, go vet (production build and the unsafe_controls build), a check that
-# `make generate` leaves no diff, the tests against a real Postgres with skips for a missing
-# database turned into failures, the whole suite again with the unsafe_controls tag and nothing
+# `make generate` leaves no diff, the tests against a real Postgres and a real tesseract with
+# skips for a missing database or a missing tesseract turned into failures, the whole suite again with the unsafe_controls tag and nothing
 # disabled, and govulncheck. Not here: the end-to-end and stress tests, the negative controls
 # and the benchmarks (real processes, minutes, timing), lint and secret scanning (not built).
 # The same gates run on a developer machine with `make up && make migrate-up && make ci`.
@@ -43,6 +43,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # The OCR tests run the real tesseract program (REQUIRE_TESSERACT=1 in `make ci`
+      # makes a missing one a failure). The runner's apt version differs from the one
+      # results were recorded with; the tests only check that it reads clean renders.
+      - name: Install tesseract
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
       - name: Apply migrations
         run: make migrate-up
       - name: Run the gates

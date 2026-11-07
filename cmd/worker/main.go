@@ -22,6 +22,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/riyne/fifty-fifty/internal/anthropic"
+	"github.com/riyne/fifty-fifty/internal/objstore"
+	"github.com/riyne/fifty-fifty/internal/ocr"
 	"github.com/riyne/fifty-fifty/internal/payclient"
 	"github.com/riyne/fifty-fifty/internal/queue"
 	"github.com/riyne/fifty-fifty/internal/receiptparse"
@@ -44,7 +47,15 @@ requeue moves dead-lettered jobs back to the queue with a fresh set of attempts
 (their last_error is kept). It needs --kind or --id; there is no "all".
 Needs DATABASE_URL. If PAYMENTS_URL (the base URL of the payment provider, for
 example http://127.0.0.1:8090) is set, the worker also runs settlement.execute and
-settlement.reconcile jobs and the settlement watchdog; without it those jobs wait.`
+settlement.reconcile jobs and the settlement watchdog; without it those jobs wait.
+
+receipt.parse jobs (reading an uploaded receipt) are run only when RECEIPT_DIR (the
+directory the api stores images in; the same one) and a model are configured: either
+ANTHROPIC_API_KEY (the real API, https://api.anthropic.com unless ANTHROPIC_BASE_URL says
+otherwise) or ANTHROPIC_BASE_URL alone for a loopback address (the mock LLM, which needs no
+key). ANTHROPIC_MODEL overrides the default model. The tesseract program must be installed
+(TESSERACT_PATH if it is not on the PATH); the worker refuses to start without it. Without
+the configuration those jobs wait in the queue for a worker that can run them.`
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
@@ -95,7 +106,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	runCfg.Pool = pool
-	runCfg.Handlers, err = handlers(pool, os.Getenv("PAYMENTS_URL"))
+	runCfg.Handlers, err = handlers(pool, os.Getenv("PAYMENTS_URL"), receiptConfigFromEnv())
 	if err != nil {
 		return err
 	}
@@ -154,14 +165,20 @@ const paymentsTimeout = 10 * time.Second
 // and the watchdog are registered only when paymentsURL (the PAYMENTS_URL environment variable, the base URL of the
 // payment provider) is set: without a provider the worker must not claim settlement
 // jobs it cannot run, and they wait in the queue for a worker that can.
-func handlers(pool *pgxpool.Pool, paymentsURL string) (map[string]worker.Handler, error) {
+func handlers(pool *pgxpool.Pool, paymentsURL string, rc receiptConfig) (map[string]worker.Handler, error) {
 	h := map[string]worker.Handler{
 		worker.KindIdempotencyCleanup: worker.IdempotencyCleanup(pool),
 		worker.KindJobsPrune:          worker.JobsPrune(pool, worker.JobRetention),
 		// The sweep needs no outside service: it only gives up on receipts whose parse
-		// job died. The parse handler itself is not registered yet (it needs OCR and an
-		// extractor, M6.8 and M6.9): until then receipt.parse jobs wait in the queue.
+		// job died. The parse handler itself needs OCR and a model (see receiptHandler).
 		receiptparse.KindSweep: receiptparse.SweepHandler(pool, receiptparse.SweepConfig{}),
+	}
+	parse, err := receiptHandler(pool, rc)
+	if err != nil {
+		return nil, err
+	}
+	if parse != nil {
+		h[receiptparse.KindParse] = parse
 	}
 	if paymentsURL != "" {
 		c, err := payclient.New(paymentsURL, paymentsTimeout)
@@ -173,6 +190,55 @@ func handlers(pool *pgxpool.Pool, paymentsURL string) (map[string]worker.Handler
 		h[settlements.KindWatchdog] = settlements.WatchdogHandler(pool, settlements.WatchdogConfig{})
 	}
 	return h, nil
+}
+
+// receiptConfig is the environment that decides whether this worker reads receipts.
+type receiptConfig struct {
+	Dir           string // RECEIPT_DIR: where the api stored the images
+	APIKey        string // ANTHROPIC_API_KEY
+	BaseURL       string // ANTHROPIC_BASE_URL
+	Model         string // ANTHROPIC_MODEL
+	TesseractPath string // TESSERACT_PATH
+}
+
+func receiptConfigFromEnv() receiptConfig {
+	return receiptConfig{
+		Dir: os.Getenv("RECEIPT_DIR"), APIKey: os.Getenv("ANTHROPIC_API_KEY"), BaseURL: os.Getenv("ANTHROPIC_BASE_URL"),
+		Model: os.Getenv("ANTHROPIC_MODEL"), TesseractPath: os.Getenv("TESSERACT_PATH"),
+	}
+}
+
+// receiptHandler builds the receipt.parse handler, or returns nil when this worker is not
+// set up to read receipts: it needs the image directory and a model. A half-configured
+// worker logs what is missing and leaves the jobs for one that is complete. A fully
+// configured one that cannot start (a bad URL, a key with a space in it, tesseract not
+// installed) is an error: it must not look healthy and then fail every receipt.
+func receiptHandler(pool *pgxpool.Pool, rc receiptConfig) (worker.Handler, error) {
+	haveModel := rc.APIKey != "" || rc.BaseURL != ""
+	switch {
+	case rc.Dir == "" && !haveModel:
+		return nil, nil
+	case rc.Dir == "":
+		slog.Warn("receipt.parse is not enabled: ANTHROPIC_API_KEY or ANTHROPIC_BASE_URL is set but RECEIPT_DIR is not")
+		return nil, nil
+	case !haveModel:
+		slog.Warn("receipt.parse is not enabled: RECEIPT_DIR is set but neither ANTHROPIC_API_KEY nor ANTHROPIC_BASE_URL is")
+		return nil, nil
+	}
+	store, err := objstore.NewFS(rc.Dir)
+	if err != nil {
+		return nil, fmt.Errorf("RECEIPT_DIR: %w", err)
+	}
+	client, err := anthropic.New(anthropic.Config{BaseURL: rc.BaseURL, APIKey: rc.APIKey, Model: rc.Model})
+	if err != nil {
+		return nil, fmt.Errorf("ANTHROPIC_*: %w", err)
+	}
+	reader, err := ocr.New(ocr.Config{Path: rc.TesseractPath})
+	if err != nil {
+		return nil, fmt.Errorf("receipt.parse needs tesseract: %w", err)
+	}
+	slog.Info("receipt.parse enabled", "dir", rc.Dir, "base_url", client.BaseURL(), "model", client.Model())
+	return receiptparse.Handler(pool, store, reader, client, receiptparse.Config{}), nil
 }
 
 func parseRun(args []string, stderr io.Writer) (cfg worker.Config, metricsAddr string, err error) {

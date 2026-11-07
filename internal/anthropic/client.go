@@ -112,6 +112,12 @@ func New(cfg Config) (*Client, error) {
 	return c, nil
 }
 
+// BaseURL is the service URL requests go to (without the path), for a startup log line.
+func (c *Client) BaseURL() string { return strings.TrimSuffix(c.url, "/v1/messages") }
+
+// Model is the model requests ask for.
+func (c *Client) Model() string { return c.model }
+
 func isLoopback(host string) bool {
 	if host == "localhost" {
 		return true

@@ -8,6 +8,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -118,7 +120,7 @@ func TestParseRun(t *testing.T) {
 // Every kind the binary can run has a handler, and the periodic schedule only names
 // kinds that have one (worker.Run refuses otherwise).
 func TestHandlersCoverTheSchedule(t *testing.T) {
-	h, err := handlers(nil, "")
+	h, err := handlers(nil, "", receiptConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +134,7 @@ func TestHandlersCoverTheSchedule(t *testing.T) {
 // Settlement execution is registered only with a provider to talk to, and a bad URL
 // stops the worker at startup instead of failing every settlement later.
 func TestHandlers_SettlementExecutionNeedsAProvider(t *testing.T) {
-	h, err := handlers(nil, "")
+	h, err := handlers(nil, "", receiptConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +143,7 @@ func TestHandlers_SettlementExecutionNeedsAProvider(t *testing.T) {
 			t.Errorf("%s is registered without PAYMENTS_URL", k)
 		}
 	}
-	h, err = handlers(nil, "http://127.0.0.1:8090")
+	h, err = handlers(nil, "http://127.0.0.1:8090", receiptConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +157,7 @@ func TestHandlers_SettlementExecutionNeedsAProvider(t *testing.T) {
 	if _, ok := h[settlements.WatchdogSchedule.Kind]; !ok {
 		t.Error("the watchdog schedule names a kind with no handler")
 	}
-	if _, err := handlers(nil, "127.0.0.1:8090"); err == nil {
+	if _, err := handlers(nil, "127.0.0.1:8090", receiptConfig{}); err == nil {
 		t.Error("a PAYMENTS_URL without a scheme was accepted")
 	}
 }
@@ -195,5 +197,82 @@ func TestServeMetrics_ServesOnlyMetricsAndStopsWithTheContext(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the metrics server did not stop when its context was canceled")
+	}
+}
+
+// ---- receipt.parse registration ----
+
+func fakeTesseract(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "tesseract")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// The worker reads receipts only when it has the image directory and a model; a half
+// configuration leaves the jobs for a complete worker, and a complete one that cannot
+// work refuses to start instead of failing every receipt later.
+func TestHandlers_ReceiptParseNeedsTheWholeConfiguration(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "receipts")
+	tess := fakeTesseract(t)
+	registered := func(rc receiptConfig) bool {
+		t.Helper()
+		h, err := handlers(nil, "", rc)
+		if err != nil {
+			t.Fatalf("%+v: %v", rc, err)
+		}
+		_, sweep := h[receiptparse.KindSweep]
+		if !sweep {
+			t.Error("the sweep must always be registered")
+		}
+		_, ok := h[receiptparse.KindParse]
+		return ok
+	}
+	for name, rc := range map[string]receiptConfig{
+		"nothing":                 {},
+		"directory only":          {Dir: dir},
+		"model only (mock)":       {BaseURL: "http://127.0.0.1:8089"},
+		"key only":                {APIKey: "sk-ant-x"},
+		"model without directory": {APIKey: "sk-ant-x", TesseractPath: tess},
+	} {
+		if registered(rc) {
+			t.Errorf("%s: receipt.parse registered", name)
+		}
+	}
+	for name, rc := range map[string]receiptConfig{
+		"directory and a key":        {Dir: dir, APIKey: "sk-ant-x", TesseractPath: tess},
+		"directory and the mock":     {Dir: dir, BaseURL: "http://127.0.0.1:8089", TesseractPath: tess},
+		"with a model override":      {Dir: dir, APIKey: "sk-ant-x", Model: "claude-sonnet-5-5", TesseractPath: tess},
+		"key and a custom https url": {Dir: dir, APIKey: "sk-ant-x", BaseURL: "https://proxy.example.com", TesseractPath: tess},
+	} {
+		if !registered(rc) {
+			t.Errorf("%s: receipt.parse not registered", name)
+		}
+	}
+}
+
+func TestHandlers_AConfiguredButBrokenReceiptSetupStopsTheWorker(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "receipts")
+	tess := fakeTesseract(t)
+	for name, rc := range map[string]receiptConfig{
+		"tesseract missing":           {Dir: dir, APIKey: "sk-ant-x", TesseractPath: filepath.Join(t.TempDir(), "nope")},
+		"plain http to a remote host": {Dir: dir, APIKey: "sk-ant-x", BaseURL: "http://example.com", TesseractPath: tess},
+		"key with a space":            {Dir: dir, APIKey: "sk ant", TesseractPath: tess},
+		"remote host and no key":      {Dir: dir, BaseURL: "https://proxy.example.com", TesseractPath: tess},
+		"directory is a file":         {Dir: tess, APIKey: "sk-ant-x", TesseractPath: tess},
+	} {
+		if _, err := handlers(nil, "", rc); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	// A world-readable image directory is refused (receipts are private).
+	open := filepath.Join(t.TempDir(), "open")
+	if err := os.Mkdir(open, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handlers(nil, "", receiptConfig{Dir: open, APIKey: "sk-ant-x", TesseractPath: tess}); err == nil {
+		t.Error("a world-readable image directory was accepted")
 	}
 }
