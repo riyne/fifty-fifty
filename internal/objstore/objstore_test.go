@@ -94,8 +94,8 @@ func TestGet_Refusals(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, key), []byte("tampered"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Get(ctx, key); err == nil || errors.Is(err, objstore.ErrNotFound) {
-		t.Errorf("tampered object: err=%v, want a mismatch error", err)
+	if _, err := s.Get(ctx, key); !errors.Is(err, objstore.ErrCorrupt) {
+		t.Errorf("tampered object: err=%v, want ErrCorrupt", err)
 	}
 }
 
@@ -246,8 +246,8 @@ func TestGet_RefusesAnOversizeFileWithoutReadingItAll(t *testing.T) {
 	runtime.ReadMemStats(&before)
 	_, err = s.Get(context.Background(), key)
 	runtime.ReadMemStats(&after)
-	if err == nil || !strings.Contains(err.Error(), "larger than") {
-		t.Fatalf("err=%v, want the size refusal", err)
+	if !errors.Is(err, objstore.ErrCorrupt) || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("err=%v, want the size refusal as ErrCorrupt", err)
 	}
 	// Reading the cap (32 MiB) takes under 100 MB of allocation, including growth;
 	// reading the whole 300 MiB takes at least that.

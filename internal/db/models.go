@@ -124,16 +124,28 @@ type Membership struct {
 }
 
 type Receipt struct {
-	ID          uuid.UUID
-	ExpenseID   uuid.UUID
-	GroupID     uuid.UUID
-	UploaderID  uuid.UUID
-	ObjectKey   string
-	ContentType string
-	SizeBytes   int32
-	WidthPx     int32
-	HeightPx    int32
-	CreatedAt   time.Time
+	ID                uuid.UUID
+	ExpenseID         uuid.UUID
+	GroupID           uuid.UUID
+	UploaderID        uuid.UUID
+	ObjectKey         string
+	ContentType       string
+	SizeBytes         int32
+	WidthPx           int32
+	HeightPx          int32
+	CreatedAt         time.Time
+	ParsedAt          *time.Time
+	ParseOutcome      pgtype.Text
+	ParseReasons      []string
+	OcrChars          pgtype.Int4
+	RedactedCards     pgtype.Int4
+	RedactedEmails    pgtype.Int4
+	RedactedPhones    pgtype.Int4
+	Model             pgtype.Text
+	InputTokens       pgtype.Int4
+	OutputTokens      pgtype.Int4
+	PrintedTotalMinor pgtype.Int8
+	DiffMinor         pgtype.Int8
 }
 
 type ReceiptQuotum struct {

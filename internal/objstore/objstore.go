@@ -43,6 +43,10 @@ var ErrNotFound = errors.New("objstore: object not found")
 // ErrBadKey means the key is not 64 lowercase hex digits.
 var ErrBadKey = errors.New("objstore: malformed key")
 
+// ErrCorrupt means the stored bytes are not what the key promises (damaged, replaced or
+// over the size limit). Retrying will not help.
+var ErrCorrupt = errors.New("objstore: stored object is corrupt")
+
 // MaxObjectBytes bounds what Put accepts and Get reads, so a caller bug cannot fill the
 // disk or memory. Receipts are re-encoded images of a few megabytes.
 const MaxObjectBytes = 32 << 20
@@ -178,12 +182,12 @@ func (s *FS) Get(ctx context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("objstore: read: %w", err)
 	}
 	if len(b) > MaxObjectBytes {
-		return nil, fmt.Errorf("objstore: object %s is larger than %d bytes", key, MaxObjectBytes)
+		return nil, fmt.Errorf("%w: object %s is larger than %d bytes", ErrCorrupt, key, MaxObjectBytes)
 	}
 	// The name is a claim about the content; a file that does not match it was damaged
 	// or replaced, and handing it to a decoder or an OCR engine would be a mistake.
 	if Key(b) != key {
-		return nil, fmt.Errorf("objstore: object %s does not match its key", key)
+		return nil, fmt.Errorf("%w: object %s does not match its key", ErrCorrupt, key)
 	}
 	return b, nil
 }

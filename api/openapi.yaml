@@ -273,8 +273,13 @@ paths:
         anything appended after the image; PNG transparency is flattened onto white. The EXIF
         orientation tag is dropped without being applied, so send upright pixels. A caller who is not
         in the group gets 404 before the key or the body is looked at.
-        The expense is created with no items, payer = the caller, in status `parsing`; the parse
-        job that fills in the items is added in a later step, so for now it stays `parsing`.
+        The expense is created with no items, payer = the caller, in status `parsing`, and a
+        `receipt.parse` job is queued in the same transaction. A worker that can run it moves the
+        expense to `claiming` (items read and they add up to the receipt's printed total) or to
+        `needs_review` (the payer fills in or corrects the items, then confirms; this includes a
+        receipt that could not be read at all, which has no items). Until a worker does, it stays
+        `parsing`; poll `GET .../expenses/{expenseId}`. A `parsing` expense cannot be edited,
+        confirmed, claimed or finalized.
         Each caller gets 20 uploads per UTC day (a cost cap; 429 `quota_exceeded` with a Retry-After
         until the reset), and a per-user rate limit (429 `rate_limited`). Uploads over the quota
         or the rate limit are not stored under the key, so the same key may be retried later.

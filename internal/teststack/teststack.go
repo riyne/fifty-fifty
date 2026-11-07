@@ -142,6 +142,16 @@ func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 	srv.Config.ReadTimeout = cfg.readTimeout
 	srv.Start()
 	t.Cleanup(srv.Close)
+	// An upload enqueues a receipt.parse job, which a real worker pointed at this database
+	// would try to run. Receipts and expenses stay (the database is shared and never
+	// cleaned), but the jobs this stack's users caused go with the test.
+	issuerURL := iss.URL
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = pool.Exec(ctx, `DELETE FROM jobs WHERE kind = 'receipt.parse' AND payload->>'receipt_id' IN
+			(SELECT r.id::text FROM receipts r JOIN users u ON u.id = r.uploader_id WHERE u.issuer = $1)`, issuerURL)
+	})
 	return &Stack{Server: srv, Issuer: iss, Pool: pool, ReceiptDir: receiptDir}
 }
 

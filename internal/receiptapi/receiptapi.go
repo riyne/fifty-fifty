@@ -4,9 +4,10 @@
 // caller, bounds the request, hardens the image (internal/receipts.HardenImage), puts
 // the re-encoded bytes in the object store, and then, in one idempotent transaction,
 // takes one unit of the user's daily quota, creates an expense in status `parsing`
-// with no items, and records the receipt that points at the stored object. The parse
-// job that turns the image into items is enqueued in the same transaction from M6.7;
-// until then an uploaded expense stays in `parsing`.
+// with no items, records the receipt that points at the stored object, and enqueues the
+// receipt.parse job (internal/receiptparse) that turns the image into items. A worker
+// that can run that job (it needs OCR and an extractor) moves the expense on; without
+// one the job waits in the queue and the expense stays in `parsing`.
 //
 // Order of checks, and why:
 //
@@ -54,7 +55,9 @@ import (
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
 	"github.com/riyne/fifty-fifty/internal/objstore"
+	"github.com/riyne/fifty-fifty/internal/queue"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
+	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/receipts"
 )
 
@@ -236,6 +239,13 @@ func (h *Handler) insert(ctx context.Context, tx pgx.Tx, userID, groupID uuid.UU
 	})
 	if err != nil {
 		return idempotency.Result{}, fmt.Errorf("create receipt: %w", err)
+	}
+	// The parse job is written in this transaction (no dual write): the receipt exists
+	// exactly when its job does.
+	if _, err := queue.Enqueue(ctx, tx, queue.NewJob{
+		Kind: receiptparse.KindParse, Payload: receiptparse.Payload{ReceiptID: rc.ID}, MaxAttempts: receiptparse.ParseMaxAttempts,
+	}); err != nil {
+		return idempotency.Result{}, fmt.Errorf("enqueue parse job: %w", err)
 	}
 	audit, _ := json.Marshal(map[string]any{
 		"expense_id": e.ID, "receipt_id": rc.ID, "content_type": img.ContentType,

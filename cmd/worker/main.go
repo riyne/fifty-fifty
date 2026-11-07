@@ -24,6 +24,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/payclient"
 	"github.com/riyne/fifty-fifty/internal/queue"
+	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/settlements"
 	"github.com/riyne/fifty-fifty/internal/worker"
 )
@@ -98,7 +99,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	runCfg.Periodic = []queue.PeriodicJob{worker.CleanupSchedule, worker.PruneSchedule}
+	runCfg.Periodic = []queue.PeriodicJob{worker.CleanupSchedule, worker.PruneSchedule, receiptparse.SweepSchedule}
 	if _, ok := runCfg.Handlers[settlements.KindWatchdog]; ok {
 		runCfg.Periodic = append(runCfg.Periodic, settlements.WatchdogSchedule)
 	}
@@ -152,12 +153,15 @@ const paymentsTimeout = 10 * time.Second
 // handlers is every job kind this worker can run. Settlement execution, reconciliation
 // and the watchdog are registered only when paymentsURL (the PAYMENTS_URL environment variable, the base URL of the
 // payment provider) is set: without a provider the worker must not claim settlement
-// jobs it cannot run, and they wait in the queue for a worker that can. Receipts
-// arrive in M6.
+// jobs it cannot run, and they wait in the queue for a worker that can.
 func handlers(pool *pgxpool.Pool, paymentsURL string) (map[string]worker.Handler, error) {
 	h := map[string]worker.Handler{
 		worker.KindIdempotencyCleanup: worker.IdempotencyCleanup(pool),
 		worker.KindJobsPrune:          worker.JobsPrune(pool, worker.JobRetention),
+		// The sweep needs no outside service: it only gives up on receipts whose parse
+		// job died. The parse handler itself is not registered yet (it needs OCR and an
+		// extractor, M6.8 and M6.9): until then receipt.parse jobs wait in the queue.
+		receiptparse.KindSweep: receiptparse.SweepHandler(pool, receiptparse.SweepConfig{}),
 	}
 	if paymentsURL != "" {
 		c, err := payclient.New(paymentsURL, paymentsTimeout)

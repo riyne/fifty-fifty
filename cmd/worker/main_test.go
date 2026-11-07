@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/riyne/fifty-fifty/internal/queue"
+	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/settlements"
 	"github.com/riyne/fifty-fifty/internal/testutil"
 	"github.com/riyne/fifty-fifty/internal/worker"
@@ -121,7 +122,7 @@ func TestHandlersCoverTheSchedule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sched := range []queue.PeriodicJob{worker.CleanupSchedule, worker.PruneSchedule} {
+	for _, sched := range []queue.PeriodicJob{worker.CleanupSchedule, worker.PruneSchedule, receiptparse.SweepSchedule} {
 		if _, ok := h[sched.Kind]; !ok {
 			t.Errorf("no handler for the scheduled kind %q", sched.Kind)
 		}

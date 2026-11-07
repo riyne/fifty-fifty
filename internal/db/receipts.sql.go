@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const consumeReceiptQuota = `-- name: ConsumeReceiptQuota :one
@@ -121,4 +122,177 @@ func (q *Queries) CreateReceipt(ctx context.Context, arg CreateReceiptParams) (C
 	var i CreateReceiptRow
 	err := row.Scan(&i.ID, &i.CreatedAt)
 	return i, err
+}
+
+const getReceiptForParse = `-- name: GetReceiptForParse :one
+SELECT r.id, r.expense_id, r.group_id, r.uploader_id, r.object_key, r.content_type,
+       r.parsed_at, e.status AS expense_status
+FROM receipts r
+JOIN expenses e ON e.id = r.expense_id
+WHERE r.id = $1
+`
+
+type GetReceiptForParseRow struct {
+	ID            uuid.UUID
+	ExpenseID     uuid.UUID
+	GroupID       uuid.UUID
+	UploaderID    uuid.UUID
+	ObjectKey     string
+	ContentType   string
+	ParsedAt      *time.Time
+	ExpenseStatus string
+}
+
+// GetReceiptForParse is what the parse job reads first: the receipt, where its image is,
+// and whether its expense is still waiting. It does no authorization: the job's payload
+// is an id the api wrote itself.
+func (q *Queries) GetReceiptForParse(ctx context.Context, id uuid.UUID) (GetReceiptForParseRow, error) {
+	row := q.db.QueryRow(ctx, getReceiptForParse, id)
+	var i GetReceiptForParseRow
+	err := row.Scan(
+		&i.ID,
+		&i.ExpenseID,
+		&i.GroupID,
+		&i.UploaderID,
+		&i.ObjectKey,
+		&i.ContentType,
+		&i.ParsedAt,
+		&i.ExpenseStatus,
+	)
+	return i, err
+}
+
+const listStuckReceipts = `-- name: ListStuckReceipts :many
+SELECT r.id, r.expense_id, r.group_id, r.uploader_id
+FROM receipts r
+JOIN expenses e ON e.id = r.expense_id
+WHERE r.parsed_at IS NULL
+  AND e.status = 'parsing'
+  AND r.created_at < now() - make_interval(secs => $1::float8)
+  AND ($2::uuid = '00000000-0000-0000-0000-000000000000' OR r.group_id = $2::uuid)
+  AND NOT EXISTS (
+      SELECT 1 FROM jobs j
+      WHERE j.kind = 'receipt.parse' AND j.payload->>'receipt_id' = r.id::text AND j.state IN ('queued', 'running'))
+ORDER BY r.created_at
+LIMIT $3::int
+FOR UPDATE OF e SKIP LOCKED
+`
+
+type ListStuckReceiptsParams struct {
+	StuckSecs float64
+	GroupID   uuid.UUID
+	Batch     int32
+}
+
+type ListStuckReceiptsRow struct {
+	ID         uuid.UUID
+	ExpenseID  uuid.UUID
+	GroupID    uuid.UUID
+	UploaderID uuid.UUID
+}
+
+// ListStuckReceipts finds receipts whose expense is still `parsing` and that no live parse
+// job (queued or running) will ever finish: the job died (dead-lettered) or was never
+// written. It locks the expense rows it returns and skips rows another sweep holds, so
+// overlapping sweeps take different receipts. The kind is a literal so the partial index
+// on jobs applies.
+func (q *Queries) ListStuckReceipts(ctx context.Context, arg ListStuckReceiptsParams) ([]ListStuckReceiptsRow, error) {
+	rows, err := q.db.Query(ctx, listStuckReceipts, arg.StuckSecs, arg.GroupID, arg.Batch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStuckReceiptsRow
+	for rows.Next() {
+		var i ListStuckReceiptsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExpenseID,
+			&i.GroupID,
+			&i.UploaderID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markExpenseParsed = `-- name: MarkExpenseParsed :one
+UPDATE expenses
+SET status = $1::text, version = version + 1, tax_minor = $2, tip_minor = $3
+WHERE id = $4 AND status = 'parsing'
+RETURNING version
+`
+
+type MarkExpenseParsedParams struct {
+	Status   string
+	TaxMinor int64
+	TipMinor int64
+	ID       uuid.UUID
+}
+
+// MarkExpenseParsed moves an expense out of `parsing`. It is conditional on the status,
+// so the parse job and the sweep cannot both do it: whoever comes second gets no row and
+// must write nothing. The version goes up because the items and totals change, so an edit
+// made from an earlier read conflicts.
+func (q *Queries) MarkExpenseParsed(ctx context.Context, arg MarkExpenseParsedParams) (int32, error) {
+	row := q.db.QueryRow(ctx, markExpenseParsed,
+		arg.Status,
+		arg.TaxMinor,
+		arg.TipMinor,
+		arg.ID,
+	)
+	var version int32
+	err := row.Scan(&version)
+	return version, err
+}
+
+const recordReceiptParse = `-- name: RecordReceiptParse :execrows
+UPDATE receipts
+SET parsed_at = now(), parse_outcome = $1::text, parse_reasons = $2::text[],
+    ocr_chars = $3, redacted_cards = $4, redacted_emails = $5,
+    redacted_phones = $6, model = $7, input_tokens = $8,
+    output_tokens = $9, printed_total_minor = $10, diff_minor = $11
+WHERE id = $12 AND parsed_at IS NULL
+`
+
+type RecordReceiptParseParams struct {
+	Outcome           string
+	Reasons           []string
+	OcrChars          pgtype.Int4
+	RedactedCards     pgtype.Int4
+	RedactedEmails    pgtype.Int4
+	RedactedPhones    pgtype.Int4
+	Model             pgtype.Text
+	InputTokens       pgtype.Int4
+	OutputTokens      pgtype.Int4
+	PrintedTotalMinor pgtype.Int8
+	DiffMinor         pgtype.Int8
+	ID                uuid.UUID
+}
+
+// RecordReceiptParse writes the run's facts on the receipt, once.
+func (q *Queries) RecordReceiptParse(ctx context.Context, arg RecordReceiptParseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordReceiptParse,
+		arg.Outcome,
+		arg.Reasons,
+		arg.OcrChars,
+		arg.RedactedCards,
+		arg.RedactedEmails,
+		arg.RedactedPhones,
+		arg.Model,
+		arg.InputTokens,
+		arg.OutputTokens,
+		arg.PrintedTotalMinor,
+		arg.DiffMinor,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

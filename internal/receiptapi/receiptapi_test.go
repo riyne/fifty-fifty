@@ -28,6 +28,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/objstore"
 	"github.com/riyne/fifty-fifty/internal/receiptapi"
+	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/receipts"
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
 	"github.com/riyne/fifty-fifty/internal/settlerig"
@@ -167,6 +168,13 @@ func (w *world) quotaUsed(t *testing.T, user uuid.UUID) int {
 	return w.s.QueryInt(t, `SELECT coalesce(sum(used), 0) FROM receipt_quota WHERE user_id = $1`, user)
 }
 
+// parseJobs counts the receipt.parse jobs of the group's receipts, in any state.
+func (w *world) parseJobs(t *testing.T, group string) int {
+	t.Helper()
+	return w.s.QueryInt(t, `SELECT count(*) FROM jobs j JOIN receipts r ON r.id::text = j.payload->>'receipt_id'
+		WHERE j.kind = 'receipt.parse' AND r.group_id = $1`, group)
+}
+
 func objects(t *testing.T, s *teststack.Stack) int {
 	t.Helper()
 	entries, err := os.ReadDir(s.ReceiptDir)
@@ -248,6 +256,11 @@ func TestUpload_CreatesAParsingExpenseAndStoresTheImage(t *testing.T) {
 	}
 	if n := w.s.QueryInt(t, `SELECT count(*) FROM audit_events WHERE kind = 'receipt.uploaded' AND actor_user_id = $1 AND group_id = $2`, w.memberID, w.group); n != 1 {
 		t.Errorf("%d audit events", n)
+	}
+	// The parse job was written in the same transaction: one queued job naming this receipt.
+	if n := w.s.QueryInt(t, `SELECT count(*) FROM jobs WHERE kind = 'receipt.parse' AND state = 'queued' AND max_attempts = $2 AND payload = jsonb_build_object('receipt_id', $1::text)`,
+		u.ReceiptID, receiptparse.ParseMaxAttempts); n != 1 {
+		t.Errorf("%d queued parse jobs for the receipt, want 1", n)
 	}
 
 	// A parsing expense cannot be edited, confirmed, claimed or finalized yet.
@@ -512,6 +525,9 @@ func TestUpload_Idempotency(t *testing.T) {
 	if n := w.quotaUsed(t, w.memberID); n != 1 {
 		t.Errorf("replays consumed quota: %d", n)
 	}
+	if n := w.parseJobs(t, w.group); n != 1 {
+		t.Errorf("%d parse jobs after 4 identical requests", n)
+	}
 
 	// The same key with a different image, or a different description, is a client bug.
 	expectErr(t, w.upload(t, w.member, w.group, "same", filePart(pngOf(t, 8)), descPart("lunch")), 422, "idempotency_key_reuse")
@@ -583,6 +599,9 @@ func TestQuota_StopsAtTheLimitAndReplaysAreFree(t *testing.T) {
 	}
 	if objects(t, w.s) != 3 {
 		t.Errorf("%d objects: the refused upload must not have written its image", objects(t, w.s))
+	}
+	if n := w.parseJobs(t, w.group); n != 3 {
+		t.Errorf("%d parse jobs, want one per accepted upload", n)
 	}
 
 	// A replay of an earlier success still answers, at the limit, and uses nothing.
@@ -792,6 +811,9 @@ func TestUpload_ATransactionFailureRollsBackEverything(t *testing.T) {
 	if objects(t, w.s) != 1 {
 		t.Errorf("%d objects: the blob stored before the transaction is expected to remain", objects(t, w.s))
 	}
+	if n := w.parseJobs(t, w.group); n != 0 {
+		t.Errorf("failed upload left %d parse jobs", n)
+	}
 
 	if _, err := admin.Exec(ctx, `DROP TRIGGER refuse ON receipts`); err != nil {
 		t.Fatal(err)
@@ -799,8 +821,8 @@ func TestUpload_ATransactionFailureRollsBackEverything(t *testing.T) {
 	if r := w.upload(t, w.member, w.group, "retry-me", filePart(img)); r.Status != 202 || r.Header.Get("Idempotent-Replayed") != "" {
 		t.Fatalf("retry with the same key = %d %q: %s", r.Status, r.Header.Get("Idempotent-Replayed"), r.Body)
 	}
-	if e, rc := w.counts(t, w.group); e != 1 || rc != 1 || w.quotaUsed(t, w.memberID) != 1 || objects(t, w.s) != 1 {
-		t.Errorf("after the retry: %d expenses, %d receipts, quota %d, %d objects", e, rc, w.quotaUsed(t, w.memberID), objects(t, w.s))
+	if e, rc := w.counts(t, w.group); e != 1 || rc != 1 || w.quotaUsed(t, w.memberID) != 1 || objects(t, w.s) != 1 || w.parseJobs(t, w.group) != 1 {
+		t.Errorf("after the retry: %d expenses, %d receipts, quota %d, %d objects, %d parse jobs", e, rc, w.quotaUsed(t, w.memberID), objects(t, w.s), w.parseJobs(t, w.group))
 	}
 }
 
