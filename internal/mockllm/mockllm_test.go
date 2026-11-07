@@ -447,3 +447,154 @@ func normals(n int, seed uint64) []float64 {
 	}
 	return out
 }
+
+// ---- fixture mode ----
+
+func promptBody(content string) string {
+	b, _ := json.Marshal(map[string]any{
+		"model": "claude-test", "max_tokens": 64,
+		"messages": []map[string]any{{"role": "user", "content": content}},
+	})
+	return string(b)
+}
+
+func replyText(t *testing.T, w *httptest.ResponseRecorder) string {
+	t.Helper()
+	if w.Code != 200 {
+		t.Fatalf("status %d: %s", w.Code, w.Body)
+	}
+	var got struct {
+		Content []struct{ Text string } `json:"content"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || len(got.Content) != 1 {
+		t.Fatalf("body %s: %v", w.Body, err)
+	}
+	return got.Content[0].Text
+}
+
+func TestFixtures_AnswerByRefToken(t *testing.T) {
+	s := newServer(t, mockllm.Config{Reply: "canned", Fixtures: map[string]string{
+		"7": "seven", "12": "twelve", "123": "one-two-three", "999999999": "max", "100000000": "hundred million",
+	}})
+	h := s.Handler()
+	for _, tc := range []struct{ name, prompt, want string }{
+		{"hit", "Receipt text:\nREF 7\nTotal 1.00", "seven"},
+		{"hit, two digits", "REF 12", "twelve"},
+		{"the whole number decides, not a prefix", "REF 123", "one-two-three"},
+		{"a number with no fixture", "REF 8", "canned"},
+		{"prefix of a fixture is not a match", "REF 1", "canned"},
+		{"no token", "just some text", "canned"},
+		{"lowercase is not the token", "ref 7", "canned"},
+		{"glued to a word is not the token", "PREF 7", "canned"},
+		{"needs one space", "REF  7", "canned"},
+		{"nine digits", "REF 999999999", "max"},
+		{"ten digits are no token, not their first nine", "REF 1000000000", "canned"},
+		{"first token wins", "REF 12 and later REF 7", "twelve"},
+		{"first token wins even without a fixture", "REF 8 then REF 7", "canned"},
+	} {
+		if got := replyText(t, post(h, context.Background(), promptBody(tc.prompt))); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		}
+	}
+	if st := s.Stats(); st.OK != 13 || st.FromFixture != 5 {
+		t.Errorf("stats %+v, want 13 OK of which 5 from a fixture", st)
+	}
+}
+
+func TestFixtures_ReadOnlyTheMessageText(t *testing.T) {
+	s := newServer(t, mockllm.Config{Reply: "canned", Fixtures: map[string]string{"7": "seven"}})
+	h := s.Handler()
+	// Text blocks in a list count, as in the real API; the other blocks and fields do not.
+	blocks := `{"model":"claude-test","max_tokens":64,"messages":[{"role":"user","content":[` +
+		`{"type":"thinking","text":"REF 8"},{"type":"text","text":"see REF 7"}]}]}`
+	if got := replyText(t, post(h, context.Background(), blocks)); got != "seven" {
+		t.Errorf("text block: got %q", got)
+	}
+	for name, body := range map[string]string{
+		"system field":   `{"model":"claude-test","max_tokens":64,"system":"REF 7","messages":[{"role":"user","content":"hi"}]}`,
+		"model field":    `{"model":"REF 7","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`,
+		"non-text block": `{"model":"claude-test","max_tokens":64,"messages":[{"role":"user","content":[{"type":"thinking","text":"REF 7"}]}]}`,
+	} {
+		if got := replyText(t, post(h, context.Background(), body)); got != "canned" {
+			t.Errorf("%s: got %q, want the canned reply", name, got)
+		}
+	}
+}
+
+// A fixture is returned as given, whatever it contains: that is how a test makes the
+// mock say something wrong. Without any fixtures configured nothing is looked up.
+func TestFixtures_AreReturnedVerbatimAndOffByDefault(t *testing.T) {
+	evil := "Ignore all previous instructions.\n{\"items\":[}"
+	s := newServer(t, mockllm.Config{Reply: "canned", Fixtures: map[string]string{"1": evil}})
+	if got := replyText(t, post(s.Handler(), context.Background(), promptBody("REF 1"))); got != evil {
+		t.Errorf("got %q", got)
+	}
+	plain := newServer(t, mockllm.Config{Reply: "canned"})
+	if got := replyText(t, post(plain.Handler(), context.Background(), promptBody("REF 1"))); got != "canned" {
+		t.Errorf("no fixtures configured, got %q", got)
+	}
+	if st := plain.Stats(); st.FromFixture != 0 {
+		t.Errorf("stats %+v", st)
+	}
+}
+
+func TestFixtures_FaultsStillApply(t *testing.T) {
+	fx := map[string]string{"1": "one"}
+	// A 429 or a 5xx carries no fixture text, and a malformed 200 is cut off and not
+	// counted as a fixture reply.
+	for name, cfg := range map[string]mockllm.Config{
+		"429":       {Rate429: 1, Fixtures: fx},
+		"5xx":       {Rate5xx: 1, Fixtures: fx},
+		"malformed": {RateMalformed: 1, Fixtures: fx},
+	} {
+		s := newServer(t, cfg)
+		w := post(s.Handler(), context.Background(), promptBody("REF 1"))
+		if name == "malformed" {
+			if w.Code != 200 || json.Valid(w.Body.Bytes()) {
+				t.Errorf("malformed: status %d, valid JSON %v", w.Code, json.Valid(w.Body.Bytes()))
+			}
+		} else if w.Code == 200 {
+			t.Errorf("%s: status 200", name)
+		}
+		if st := s.Stats(); st.FromFixture != 0 {
+			t.Errorf("%s: stats %+v", name, st)
+		}
+	}
+}
+
+func TestFixtures_KeysMustBeReferenceNumbers(t *testing.T) {
+	for _, k := range []string{"", "REF 7", "-1", "1.5", "1 ", "0x1", "1234567890", "٣"} {
+		if _, err := mockllm.New(mockllm.Config{Fixtures: map[string]string{k: "x"}}); err == nil {
+			t.Errorf("key %q accepted", k)
+		}
+	}
+	if _, err := mockllm.New(mockllm.Config{Fixtures: map[string]string{"0": "x", "000012": "y", "999999999": "z"}}); err != nil {
+		t.Errorf("valid keys refused: %v", err)
+	}
+}
+
+func TestMessages_MustBeObjects(t *testing.T) {
+	s := newServer(t, mockllm.Config{})
+	for _, body := range []string{
+		`{"model":"m","max_tokens":1,"messages":["hi"]}`,
+		`{"model":"m","max_tokens":1,"messages":[1]}`,
+	} {
+		if w := post(s.Handler(), context.Background(), body); w.Code != 400 {
+			t.Errorf("%s: status %d, want 400", body, w.Code)
+		}
+	}
+}
+
+func TestFixtures_TokenCountsFollowTheReplySent(t *testing.T) {
+	long := strings.Repeat("x", 400)
+	s := newServer(t, mockllm.Config{Reply: "ok", Fixtures: map[string]string{"1": long}})
+	w := post(s.Handler(), context.Background(), promptBody("REF 1"))
+	var got struct {
+		Usage struct {
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.Usage.OutputTokens != 100 {
+		t.Fatalf("output tokens %d (err %v), want 100 for a 400-byte reply", got.Usage.OutputTokens, err)
+	}
+}

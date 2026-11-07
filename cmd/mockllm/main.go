@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -86,7 +87,8 @@ func serve(ctx context.Context, ln net.Listener, s *mockllm.Server, cfg mockllm.
 	slog.Info("mockllm listening", "addr", ln.Addr().String(),
 		"latency_median", cfg.LatencyMedian.String(), "latency_sigma", cfg.LatencySigma,
 		"rate_timeout", cfg.RateTimeout, "rate_429", cfg.Rate429, "rate_5xx", cfg.Rate5xx, "rate_malformed", cfg.RateMalformed,
-		"timeout_hold", cfg.TimeoutHold.String(), "retry_after", cfg.RetryAfter.String(), "seed", cfg.Seed)
+		"timeout_hold", cfg.TimeoutHold.String(), "retry_after", cfg.RetryAfter.String(), "seed", cfg.Seed,
+		"fixtures", len(cfg.Fixtures))
 
 	go func() {
 		<-ctx.Done()
@@ -119,6 +121,7 @@ func parse(args []string, stderr io.Writer) (addr string, cfg mockllm.Config, er
 	fs.DurationVar(&cfg.TimeoutHold, "timeout-hold", time.Minute, "how long a timeout fault holds the connection before aborting it")
 	fs.DurationVar(&cfg.RetryAfter, "retry-after", time.Second, "retry-after on a 429, rounded up to whole seconds")
 	fs.Uint64Var(&cfg.Seed, "seed", 1, "seed for the random draws")
+	fixtures := fs.String("fixtures", "", "JSON file mapping a receipt reference number to the reply for a prompt containing \"REF <number>\" (see cmd/receiptgen); other prompts get the canned reply")
 	if err := fs.Parse(args); err != nil {
 		return "", cfg, errUsage
 	}
@@ -126,5 +129,35 @@ func parse(args []string, stderr io.Writer) (addr string, cfg mockllm.Config, er
 		fs.Usage()
 		return "", cfg, errUsage
 	}
+	if *fixtures != "" {
+		f, err := loadFixtures(*fixtures)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return "", cfg, errUsage
+		}
+		cfg.Fixtures = f
+	}
 	return addr, cfg, nil
+}
+
+// maxFixtureFileBytes bounds the fixtures file; a few thousand receipts are well under it.
+const maxFixtureFileBytes = 64 << 20
+
+func loadFixtures(path string) (map[string]string, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if fi.Size() > maxFixtureFileBytes {
+		return nil, fmt.Errorf("fixtures file %s is larger than %d bytes", path, maxFixtureFileBytes)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]string
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("fixtures file %s must be a JSON object of strings: %w", path, err)
+	}
+	return m, nil
 }

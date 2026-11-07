@@ -15,8 +15,12 @@
 //     rates: timeout, 429, 5xx, malformed 200, otherwise success. The outcomes are
 //     mutually exclusive, so the observed frequencies converge on the configured
 //     rates. A retry draws again, as it would against a real API.
-//   - It never looks at the prompt. The reply is the same canned text; a benchmark of
-//     the queue does not need a model.
+//   - By default it never looks at the prompt: the reply is the same canned text, and a
+//     benchmark of the queue does not need a model. With Config.Fixtures it looks for
+//     one thing only, a "REF n" token in the text of the messages, and answers with the
+//     fixture stored under n (a receipt's ground-truth answer, or an adversarial one a
+//     test wants the client to face). It does not read, understand or follow anything
+//     else in the prompt, so it says nothing about how a real model treats a prompt.
 //
 // Reproducibility: the random draws come from a seeded generator, so the same seed
 // gives the same sequence of draws. Which request receives which draw still depends
@@ -34,7 +38,9 @@ import (
 	"math"
 	"math/rand/v2"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -72,6 +78,12 @@ type Config struct {
 	// Reply is the assistant text in a successful response. Empty means a short
 	// canned sentence.
 	Reply string
+	// Fixtures maps a reference number (decimal digits, as printed after "REF " on a
+	// receipt) to the assistant text returned when the messages contain "REF <number>".
+	// The first token in the messages decides; a request with no token, or a number
+	// with no fixture, gets Reply. The text is returned as given, valid or not: a
+	// fixture is how a test makes the mock say something wrong.
+	Fixtures map[string]string
 }
 
 // Validate reports a configuration that cannot mean what the caller intends.
@@ -88,6 +100,11 @@ func (c Config) Validate() error {
 	}
 	if c.LatencyMedian < 0 || c.TimeoutHold < 0 || c.RetryAfter < 0 {
 		return errors.New("mockllm: durations must not be negative")
+	}
+	for k := range c.Fixtures {
+		if !validRef(k) {
+			return fmt.Errorf("mockllm: fixture key %q must be 1 to %d decimal digits", k, maxRefDigits)
+		}
 	}
 	// 2 already means a p99 of ~100x the median; beyond it is almost surely a typo.
 	if math.IsNaN(c.LatencySigma) || c.LatencySigma < 0 || c.LatencySigma > 2 {
@@ -108,6 +125,9 @@ type Stats struct {
 	Malformed   int64 `json:"malformed"`
 	Timeouts    int64 `json:"timeouts"`
 	BadRequests int64 `json:"bad_requests"` // refused as invalid, not injected faults
+	// FromFixture is how many of the OK responses carried a fixture's text instead of
+	// Reply (a malformed response is not counted: it is cut off).
+	FromFixture int64 `json:"from_fixture"`
 }
 
 // Server is the mock. Create it with New and serve Handler.
@@ -117,8 +137,8 @@ type Server struct {
 	mu  sync.Mutex // guards rng
 	rng *rand.Rand
 
-	requests, ok, rateLimited, serverError, malformed, timeouts, badRequests atomic.Int64
-	nextID                                                                   atomic.Int64
+	requests, ok, rateLimited, serverError, malformed, timeouts, badRequests, fromFixture atomic.Int64
+	nextID                                                                                atomic.Int64
 }
 
 // New returns a Server, or an error if cfg is invalid.
@@ -156,6 +176,7 @@ func (s *Server) Stats() Stats {
 		Malformed:   s.malformed.Load(),
 		Timeouts:    s.timeouts.Load(),
 		BadRequests: s.badRequests.Load(),
+		FromFixture: s.fromFixture.Load(),
 	}
 }
 
@@ -204,9 +225,72 @@ func (c Config) latency(z float64) time.Duration {
 }
 
 type messageRequest struct {
-	Model     string            `json:"model"`
-	MaxTokens int               `json:"max_tokens"`
-	Messages  []json.RawMessage `json:"messages"`
+	Model     string    `json:"model"`
+	MaxTokens int       `json:"max_tokens"`
+	Messages  []message `json:"messages"`
+}
+
+// message is one entry of messages. Content is a string or a list of blocks, as in the
+// real API; only text is kept, because that is all the fixture lookup reads.
+type message struct {
+	Content json.RawMessage `json:"content"`
+}
+
+// maxRefDigits keeps a reference number far below int overflow and a token cheap to scan.
+const maxRefDigits = 9
+
+var refRE = regexp.MustCompile(`\bREF (\d{1,` + strconv.Itoa(maxRefDigits) + `})\b`)
+
+func validRef(k string) bool {
+	if k == "" || len(k) > maxRefDigits {
+		return false
+	}
+	for _, c := range k {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// promptText joins the text of the messages: a string content as is, and the text
+// blocks of a list. Anything else (images, tool blocks) is ignored.
+func promptText(msgs []message) string {
+	var sb strings.Builder
+	for _, m := range msgs {
+		var s string
+		if json.Unmarshal(m.Content, &s) == nil {
+			sb.WriteString(s)
+			sb.WriteByte('\n')
+			continue
+		}
+		var blocks []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(m.Content, &blocks) == nil {
+			for _, b := range blocks {
+				if b.Type == "text" {
+					sb.WriteString(b.Text)
+					sb.WriteByte('\n')
+				}
+			}
+		}
+	}
+	return sb.String()
+}
+
+// reply chooses the assistant text for a request and says whether it is a fixture's.
+func (s *Server) reply(msgs []message) (text string, fixture bool) {
+	if len(s.cfg.Fixtures) == 0 {
+		return s.cfg.Reply, false
+	}
+	if m := refRE.FindStringSubmatch(promptText(msgs)); m != nil {
+		if f, ok := s.cfg.Fixtures[m[1]]; ok {
+			return f, true
+		}
+	}
+	return s.cfg.Reply, false
 }
 
 func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
@@ -232,6 +316,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	reply, fromFixture := s.reply(req.Messages)
 	o, latency, status := s.draw()
 	switch o {
 	case outTimeout:
@@ -253,7 +338,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.malformed.Add(1)
-		full := s.success(req.Model, len(body))
+		full := s.success(req.Model, len(body), reply)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(full[:len(full)/2]) // a truncated body: 200, and not JSON
 	default:
@@ -261,8 +346,11 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.ok.Add(1)
+		if fromFixture {
+			s.fromFixture.Add(1)
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(s.success(req.Model, len(body)))
+		_, _ = w.Write(s.success(req.Model, len(body), reply))
 	}
 }
 
@@ -293,18 +381,18 @@ func sleep(ctx context.Context, d time.Duration) bool {
 
 // success builds a Messages API response. The token counts are a rough bytes/4
 // estimate: the mock has no tokenizer, and a client only needs the fields to exist.
-func (s *Server) success(model string, requestBytes int) []byte {
+func (s *Server) success(model string, requestBytes int, reply string) []byte {
 	b, _ := json.Marshal(map[string]any{
 		"id":            "msg_mock_" + strconv.FormatInt(s.nextID.Add(1), 10),
 		"type":          "message",
 		"role":          "assistant",
 		"model":         model,
-		"content":       []map[string]string{{"type": "text", "text": s.cfg.Reply}},
+		"content":       []map[string]string{{"type": "text", "text": reply}},
 		"stop_reason":   "end_turn",
 		"stop_sequence": nil,
 		"usage": map[string]int{
 			"input_tokens":  requestBytes / 4,
-			"output_tokens": len(s.cfg.Reply) / 4,
+			"output_tokens": len(reply) / 4,
 		},
 	})
 	return b

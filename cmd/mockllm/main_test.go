@@ -7,6 +7,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,8 +39,65 @@ func TestParse_Flags(t *testing.T) {
 	}
 	want := mockllm.Config{LatencyMedian: 50 * time.Millisecond, Rate429: 0.1, Rate5xx: 0.2, RateMalformed: 0.3, RateTimeout: 0.05,
 		TimeoutHold: 3 * time.Second, RetryAfter: 2 * time.Second, Seed: 9}
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("got %+v, want %+v", cfg, want)
+	}
+}
+
+func TestParse_Fixtures(t *testing.T) {
+	dir := t.TempDir()
+	good := filepath.Join(dir, "good.json")
+	if err := os.WriteFile(good, []byte(`{"7":"seven","12":"twelve"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, cfg, err := parse([]string{"--fixtures", good}, io.Discard)
+	if err != nil || !reflect.DeepEqual(cfg.Fixtures, map[string]string{"7": "seven", "12": "twelve"}) {
+		t.Fatalf("fixtures %v, err %v", cfg.Fixtures, err)
+	}
+	if _, cfg, _ := parse(nil, io.Discard); cfg.Fixtures != nil {
+		t.Errorf("no flag, but fixtures %v", cfg.Fixtures)
+	}
+
+	for name, content := range map[string]string{
+		"not json": `{`, "an array": `["a"]`, "non-string values": `{"1": 2}`, "trailing key text": `{"1": "a"} x`,
+	} {
+		p := filepath.Join(dir, "bad.json")
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var stderr bytes.Buffer
+		if _, _, err := parse([]string{"--fixtures", p}, &stderr); !errors.Is(err, errUsage) || stderr.Len() == 0 {
+			t.Errorf("%s: err=%v stderr=%q, want a usage error with a message", name, err, stderr.String())
+		}
+	}
+	var stderr bytes.Buffer
+	if _, _, err := parse([]string{"--fixtures", filepath.Join(dir, "missing.json")}, &stderr); !errors.Is(err, errUsage) || stderr.Len() == 0 {
+		t.Errorf("missing file: err=%v stderr=%q", err, stderr.String())
+	}
+
+	// A file over the size cap is refused from its size alone, before it is read.
+	huge := filepath.Join(dir, "huge.json")
+	f, err := os.Create(huge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(maxFixtureFileBytes + 1); err != nil { // sparse: costs no disk
+		t.Fatal(err)
+	}
+	f.Close()
+	stderr.Reset()
+	if _, _, err := parse([]string{"--fixtures", huge}, &stderr); !errors.Is(err, errUsage) || !strings.Contains(stderr.String(), "larger than") {
+		t.Errorf("oversize file: err=%v stderr=%q", err, stderr.String())
+	}
+
+	// A key that is not a reference number is refused by the server's own validation.
+	badKey := filepath.Join(dir, "key.json")
+	if err := os.WriteFile(badKey, []byte(`{"REF 7":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stderr.Reset()
+	if err := run(context.Background(), []string{"--fixtures", badKey}, &stderr); !errors.Is(err, errUsage) || stderr.Len() == 0 {
+		t.Errorf("bad key: err=%v stderr=%q", err, stderr.String())
 	}
 }
 
