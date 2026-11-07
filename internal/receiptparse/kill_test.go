@@ -29,7 +29,7 @@ import (
 
 // refOCR "reads" the receipt whose stored image it is given, by looking its object key up
 // in a map of key to synthetic receipt ref (the images are rendered from known ground
-// truth; real OCR comes in a later step).
+// truth; the real-binary version with real Tesseract is in test/e2e).
 type refOCR struct{ refs map[string]int }
 
 func (o refOCR) Text(_ context.Context, img []byte, _ string) (string, error) {

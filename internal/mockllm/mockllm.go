@@ -1,5 +1,5 @@
 // Package mockllm is a stand-in for the Anthropic Messages API, used by the queue
-// benchmarks and later by the receipt-parsing tests. It speaks the subset of the wire
+// benchmarks and by the receipt-pipeline tests. It speaks the subset of the wire
 // format a client needs (POST /v1/messages, the response envelope, the error bodies,
 // the status codes and the retry-after header), so the client code that talks to it
 // is the code that talks to the real API.

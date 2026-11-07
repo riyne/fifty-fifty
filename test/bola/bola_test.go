@@ -575,7 +575,7 @@ func confirmPath(group, expense string) string {
 }
 
 // needsReviewBy has `payer` create an expense in group A and puts it in needs_review
-// (the receipt pipeline that does this arrives later in M6).
+// (in production the receipt parse job does this; the test sets the status directly).
 func (f *fixture) needsReviewBy(t *testing.T, payer actor) string {
 	t.Helper()
 	id := f.s.CreateExpense(t, f.tokens[payer], f.groupA, expenseBody)

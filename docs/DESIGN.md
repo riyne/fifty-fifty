@@ -109,13 +109,13 @@ docker-compose services:
 
 Mobile app (`mobile/`, Expo) talks only to `api` and Dex (system browser for login).
 
-As built through M4, compose runs only `postgres` and `dex`; `api`, `worker`, `mockllm` and `mockpay` run on the host (`make run-api`, `go run ./cmd/worker run`, `go run ./cmd/mockllm`, `go run ./cmd/mockpay`). The other services arrive with their milestones.
+As built through M6, compose runs only `postgres` and `dex`; `api`, `worker`, `mockllm` and `mockpay` run on the host (`make run-api`, `go run ./cmd/worker run`, `go run ./cmd/mockllm`, `go run ./cmd/mockpay`), and `tesseract` is a program installed on the host (`brew install tesseract`). Containerizing the rest is not built and is not needed for the milestones that remain.
 
-Repo layout. Built (as of M6.7; fourteen migrations, 00001-00014):
+Repo layout. Built (as of M6; fourteen migrations, 00001-00014):
 
     api/openapi.yaml                 the spec; test/bola reads it to check authz coverage
     cmd/api/                         HTTP server entrypoint
-    cmd/worker/                      worker binary: `run` (M3.5) and `requeue` (M3.4)
+    cmd/worker/                      worker binary: `run` (M3.5; settlement jobs with `PAYMENTS_URL`, receipt parsing with `RECEIPT_DIR` and a model, M6.9a) and `requeue` (M3.4)
     cmd/mockllm/                     mock Anthropic Messages API server for benchmarks (M3.7)
     cmd/mockpay/                     mock payment provider: idempotency keys, faults, signed webhooks (M4.3)
     bench/queue/, bench/recovery/, bench/settlement/, bench/stress/, bench/redaction/   benchmark programs; bench/README.md has the methodology, bench/results/ the raw recorded runs
@@ -161,7 +161,7 @@ Repo layout. Built (as of M6.7; fourteen migrations, 00001-00014):
     tools/go.mod                     separate module pinning goose, sqlc and govulncheck
     sqlc.yaml  Makefile
     test/bola/                       BOLA suite
-    test/e2e/                        end-to-end settlement scenarios and the stress smoke test with real processes (`make test-e2e`, E2E=1); the negative controls at smoke size (`make test-controls`, tag unsafe_controls)
+    test/e2e/                        end-to-end settlement scenarios, the receipt pipeline with real worker, Tesseract and mock-LLM processes and a SIGKILL (M6.9a), and the stress smoke test, with real processes (`make test-e2e`, E2E=1); the negative controls at smoke size (`make test-controls`, tag unsafe_controls)
     test/dbinvariants/               raw-SQL tests of what the schema itself refuses (ledger, cross-group rows)
 
 Planned, not built yet:
@@ -272,7 +272,7 @@ Mobile login: Auth Code + PKCE via the system browser; tokens in Keychain/Keysto
 
 ## 10. Testing and benchmarking plan
 
-Every number in README/resume comes from a recorded run listed in `docs/CLAIMS.md`. Item 1 is recorded (M5.6); 6-7 are not started. Each benchmark records: machine, Docker resource limits, Postgres version, commit hash, parameters, number of runs, spread (not just best run), and raw output committed under `bench/results/`.
+Every number in README/resume comes from a recorded run listed in `docs/CLAIMS.md`. Items 1-6 except the accuracy eval are recorded (redaction recall: M6.9c); the accuracy eval and item 7 are not started. Each benchmark records: machine, Docker resource limits, Postgres version, commit hash, parameters, number of runs, spread (not just best run), and raw output committed under `bench/results/`.
 
 1. **Ledger stress (M5):** N users over G groups for K seconds through the real API with real tokens, plus real worker processes and a mock payment provider for settlements; a concurrent mix of create/claim/unclaim/finalize/void/balances and, in separate settle groups, settle, with retries, duplicate keys and cancelled requests. Checks, all recomputed from tables and the provider's books (never from responses): every ledger transaction, group and the whole ledger sums to zero; each finalized expense's entries equal the shares recomputed from its claims (which also catches a claim accepted after finalize); one expense or settlement per logical idempotency key; no settlement over capacity; succeeded = ledger postings = provider charges. Run on the production build (expect 0 anomalies, with proof that the races and retries happened) and on `unsafe_controls` builds, one protection disabled at a time (report anomaly counts and which layer caught each). Plan and decisions: decision log "M5 plan decisions". Not covered: a finalize or void racing a settlement (accepted, M4). **Done: CLAIMS rows 1, 2 and 21.**
 2. **Queue throughput/latency:** jobs/s and end-to-end p50/p99 vs worker count (1, 2, 4, 8) against mock LLM with stated simulated latency. **Done: CLAIMS row 4.**
