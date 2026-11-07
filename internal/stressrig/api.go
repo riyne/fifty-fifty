@@ -15,6 +15,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/auth/authtest"
 	"github.com/riyne/fifty-fifty/internal/balances"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbrole"
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
@@ -57,6 +58,13 @@ func StartAPI(ctx context.Context, pool *pgxpool.Pool, webhookSecret string) (*A
 		a.Close()
 		return nil, fmt.Errorf("verifier: %w", err)
 	}
+	// The second pool, as cmd/api builds it: provisioning and the webhook run as fifty_system.
+	systemPool, err := dbrole.Pool(ctx, pool, dbrole.System, 4)
+	if err != nil {
+		a.Close()
+		return nil, err
+	}
+	a.closeFn = append(a.closeFn, systemPool.Close)
 	// Uploads are mounted as in cmd/api, over a private temporary directory that Close
 	// removes; the stress workload does not use them.
 	receiptDir, err := os.MkdirTemp("", "stressrig-receipts-")
@@ -72,7 +80,7 @@ func StartAPI(ctx context.Context, pool *pgxpool.Pool, webhookSecret string) (*A
 	}
 	receiptHandler := receiptapi.NewHandler(pool, store, ratelimit.New(rate.Inf, 1_000_000), receiptapi.Config{})
 	v1 := httpapi.NewV1(
-		auth.Middleware(verifier, db.New(pool)),
+		auth.Middleware(verifier, db.New(systemPool)),
 		groups.NewHandler(pool, ratelimit.New(rate.Inf, 1_000_000)),
 		expenses.NewHandler(pool),
 		balances.NewHandler(pool),
@@ -81,7 +89,7 @@ func StartAPI(ctx context.Context, pool *pgxpool.Pool, webhookSecret string) (*A
 	)
 	var webhooks http.Handler
 	if webhookSecret != "" {
-		wh, err := settlements.NewWebhookHandler(pool, []byte(webhookSecret))
+		wh, err := settlements.NewWebhookHandler(systemPool, []byte(webhookSecret))
 		if err != nil {
 			a.Close()
 			return nil, fmt.Errorf("webhook handler: %w", err)

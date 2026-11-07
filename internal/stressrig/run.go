@@ -341,7 +341,7 @@ func Run(ctx context.Context, p Params) (Result, error) {
 		defer mock.Stop()
 		mockURL = url
 		for i := 1; i <= p.Workers; i++ {
-			w, err := settlerig.StartWorker(settlerig.WorkerSpec{Bin: p.Bins.Worker, DatabaseURL: scratch.AppURL, PaymentsURL: mockURL,
+			w, err := settlerig.StartWorker(settlerig.WorkerSpec{Bin: p.Bins.Worker, DatabaseURL: scratch.WorkerURL, PaymentsURL: mockURL,
 				Name: fmt.Sprintf("worker-%d", i), Concurrency: p.WorkerConcurrency, Lease: p.Lease, Poll: p.Poll, Env: workerEnv})
 			if err != nil {
 				return res, err

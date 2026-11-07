@@ -85,7 +85,7 @@ func TestReceiptParse_RealProcessesAndARealKill(t *testing.T) {
 	})
 	startWorker := func(name string) *settlerig.Proc {
 		p, err := settlerig.StartWorker(settlerig.WorkerSpec{
-			Bin: bins.Worker, DatabaseURL: db.AppURL, Name: name, Concurrency: 3, Lease: time.Second, Poll: 100 * time.Millisecond,
+			Bin: bins.Worker, DatabaseURL: db.WorkerURL, Name: name, Concurrency: 3, Lease: time.Second, Poll: 100 * time.Millisecond,
 			Env: []string{"RECEIPT_DIR=" + stack.ReceiptDir, "ANTHROPIC_BASE_URL=" + mockURL},
 		})
 		if err != nil {

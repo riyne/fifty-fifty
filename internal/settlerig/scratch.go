@@ -19,6 +19,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/riyne/fifty-fifty/internal/dbrole"
 )
 
 // scratchPrefix marks the databases this package may drop. Drop refuses any other name.
@@ -28,10 +30,12 @@ const scratchPrefix = "fifty_e2e_"
 // a run starts from an empty jobs table and no pending settlements, whatever earlier
 // tests and benchmarks left in the shared development database.
 type Scratch struct {
-	Name     string
-	OwnerURL string // for migrations and administration
-	AppURL   string // the unprivileged application role, as production runs
-	Pool     *pgxpool.Pool
+	Name      string
+	OwnerURL  string // for migrations and administration
+	AppURL    string // the unprivileged application role, as production runs
+	WorkerURL string // the worker role (fifty_worker), for worker processes
+	SystemURL string // the api's second role (fifty_system)
+	Pool      *pgxpool.Pool
 
 	adminURL string
 }
@@ -81,6 +85,12 @@ func NewScratch(ctx context.Context, ownerURL, appURL string) (*Scratch, error) 
 		return nil, err
 	}
 	if s.AppURL, err = withDatabase(appURL, s.Name); err != nil {
+		return nil, err
+	}
+	if s.WorkerURL, err = dbrole.URL(s.AppURL, dbrole.Worker); err != nil {
+		return nil, err
+	}
+	if s.SystemURL, err = dbrole.URL(s.AppURL, dbrole.System); err != nil {
 		return nil, err
 	}
 

@@ -45,7 +45,8 @@ poll, 20s grace. --metrics-addr (off by default) serves Prometheus metrics at
 
 requeue moves dead-lettered jobs back to the queue with a fresh set of attempts
 (their last_error is kept). It needs --kind or --id; there is no "all".
-Needs DATABASE_URL. If PAYMENTS_URL (the base URL of the payment provider, for
+Needs DATABASE_URL, which must name the fifty_worker role (migration 00015), not the
+application role fifty_app. If PAYMENTS_URL (the base URL of the payment provider, for
 example http://127.0.0.1:8090) is set, the worker also runs settlement.execute and
 settlement.reconcile jobs and the settlement watchdog; without it those jobs wait.
 

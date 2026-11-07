@@ -31,7 +31,7 @@ Needs Go 1.27+ and Docker. Everything below is dev-only with throwaway credentia
     TOKEN=$(scripts/dev-token.sh alice)     # alice, bob or carol; password is "password"
     curl -H "Authorization: Bearer $TOKEN" localhost:8080/v1/me
 
-    go run ./cmd/worker run --help          # the queue worker (PAYMENTS_URL enables settlement jobs; RECEIPT_DIR plus ANTHROPIC_BASE_URL or ANTHROPIC_API_KEY enables receipt parsing, which needs `brew install tesseract`)
+    DATABASE_URL=postgres://fifty_worker:fifty@localhost:5433/fifty?sslmode=disable go run ./cmd/worker run --help   # the queue worker; it connects as its own role, fifty_worker, not fifty_app (PAYMENTS_URL enables settlement jobs; RECEIPT_DIR plus ANTHROPIC_BASE_URL or ANTHROPIC_API_KEY enables receipt parsing, which needs `brew install tesseract`)
     go run ./cmd/receiptgen --help          # synthetic receipts (images, text, ground truth) for demos and the mock LLM
     go run ./cmd/mockllm --help             # the mock LLM (--fixtures answers receipts from their ground truth)
     go run ./cmd/mockpay --help             # the mock payment provider (settlement is simulated)

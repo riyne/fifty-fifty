@@ -41,6 +41,14 @@ func run() error {
 	if dbURL == "" {
 		return errors.New("DATABASE_URL is required")
 	}
+	// The second pool is for what runs without a user: first-login provisioning in
+	// the auth middleware and the payment webhook. It must be a different role from
+	// DATABASE_URL (fifty_system, migration 00015); there is no fallback to the
+	// application pool, because row-level security would then hide those rows.
+	systemURL := os.Getenv("SYSTEM_DATABASE_URL")
+	if systemURL == "" {
+		return errors.New("SYSTEM_DATABASE_URL is required (the fifty_system role)")
+	}
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {
 		addr = ":8080"
@@ -62,6 +70,11 @@ func run() error {
 		return fmt.Errorf("create pool: %w", err)
 	}
 	defer pool.Close()
+	systemPool, err := pgxpool.New(ctx, systemURL)
+	if err != nil {
+		return fmt.Errorf("create system pool: %w", err)
+	}
+	defer systemPool.Close()
 
 	// OIDC discovery happens once at startup, so a wrong issuer fails loudly
 	// here instead of as 401s later. OIDC_DISCOVERY_URL is only for when the api
@@ -97,13 +110,13 @@ func run() error {
 		slog.Info("receipt upload enabled", "dir", dir, "daily_quota", quota)
 	}
 
-	v1 := httpapi.NewV1(auth.Middleware(verifier, db.New(pool)), groups.NewHandler(pool, joinLimiter), expenses.NewHandler(pool), balances.NewHandler(pool), settlements.NewHandler(pool), receiptHandler)
+	v1 := httpapi.NewV1(auth.Middleware(verifier, db.New(systemPool)), groups.NewHandler(pool, joinLimiter), expenses.NewHandler(pool), balances.NewHandler(pool), settlements.NewHandler(pool), receiptHandler)
 
 	// Payment webhooks are accepted only when a signing secret is configured; without
 	// one the route does not exist (404), never "accept anything".
 	var webhooks http.Handler
 	if secret := os.Getenv("PAYMENTS_WEBHOOK_SECRET"); secret != "" {
-		wh, err := settlements.NewWebhookHandler(pool, []byte(secret))
+		wh, err := settlements.NewWebhookHandler(systemPool, []byte(secret))
 		if err != nil {
 			return fmt.Errorf("payment webhooks: %w", err)
 		}

@@ -32,7 +32,7 @@ Use a scratch directory outside the repo for the images.
     make run-api
 
     # terminal 2: a worker that can read receipts (it needs the same RECEIPT_DIR as the api)
-    export DATABASE_URL=postgres://fifty_app:fifty@localhost:5433/fifty?sslmode=disable
+    export DATABASE_URL=postgres://fifty_worker:fifty@localhost:5433/fifty?sslmode=disable   # the worker role, not fifty_app
     export RECEIPT_DIR=$HOME/.fifty-fifty-receipts
     go run ./cmd/worker run                   # logs "receipt.parse enabled" with the model and base URL
 

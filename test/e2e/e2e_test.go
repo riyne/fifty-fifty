@@ -147,7 +147,7 @@ func run(t *testing.T, sc scenario) {
 	})
 	startWorker := func(name string) *settlerig.Proc {
 		p, err := settlerig.StartWorker(settlerig.WorkerSpec{
-			Bin: bins.Worker, DatabaseURL: db.AppURL, PaymentsURL: mockURL, Name: name,
+			Bin: bins.Worker, DatabaseURL: db.WorkerURL, PaymentsURL: mockURL, Name: name,
 			Concurrency: 4, Lease: sc.lease, Poll: 100 * time.Millisecond,
 		})
 		if err != nil {

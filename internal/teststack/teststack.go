@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/auth/authtest"
 	"github.com/riyne/fifty-fifty/internal/balances"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/dbrole"
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
@@ -107,6 +109,9 @@ func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 	for _, o := range opts {
 		o(&cfg)
 	}
+	// The api's second pool, as cmd/api builds it: first-login provisioning and the
+	// payment webhook run as fifty_system, the handlers as the pool's own role.
+	systemPool := systemPoolFor(t, pool)
 	iss := authtest.NewIssuer(t)
 	verifier, err := auth.NewOIDCVerifier(context.Background(), iss.URL, "", ClientID)
 	if err != nil {
@@ -123,7 +128,7 @@ func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 		store = fsStore
 	}
 	v1 := httpapi.NewV1(
-		auth.Middleware(verifier, db.New(pool)),
+		auth.Middleware(verifier, db.New(systemPool)),
 		groups.NewHandler(pool, ratelimit.New(cfg.joinRate, cfg.joinBurst)),
 		expenses.NewHandler(pool),
 		balances.NewHandler(pool),
@@ -132,7 +137,7 @@ func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 	)
 	var webhooks http.Handler
 	if cfg.webhookSecret != "" {
-		wh, err := settlements.NewWebhookHandler(pool, []byte(cfg.webhookSecret))
+		wh, err := settlements.NewWebhookHandler(systemPool, []byte(cfg.webhookSecret))
 		if err != nil {
 			t.Fatalf("webhook handler: %v", err)
 		}
@@ -153,6 +158,32 @@ func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 			(SELECT r.id::text FROM receipts r JOIN users u ON u.id = r.uploader_id WHERE u.issuer = $1)`, issuerURL)
 	})
 	return &Stack{Server: srv, Issuer: iss, Pool: pool, ReceiptDir: receiptDir}
+}
+
+var (
+	systemPoolsMu sync.Mutex
+	systemPools   = map[string]*pgxpool.Pool{}
+)
+
+// systemPoolFor returns the fifty_system pool for pool's database, one per database for
+// the whole test process. Tests start many stacks (one test starts a dozen), the shared
+// development database allows 100 connections in all, and a pool per stack that is only
+// closed when its test ends used them up. It is never closed: the process exit does it,
+// and dropping a scratch database ends its connections.
+func systemPoolFor(t testing.TB, pool *pgxpool.Pool) *pgxpool.Pool {
+	t.Helper()
+	systemPoolsMu.Lock()
+	defer systemPoolsMu.Unlock()
+	key := pool.Config().ConnString()
+	if p, ok := systemPools[key]; ok {
+		return p
+	}
+	p, err := dbrole.Pool(context.Background(), pool, dbrole.System, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	systemPools[key] = p
+	return p
 }
 
 // Token mints a valid token for a brand-new user named name.

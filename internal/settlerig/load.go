@@ -158,7 +158,7 @@ func RunLoad(ctx context.Context, p LoadParams) (LoadResult, error) {
 		}
 	}()
 	for i := 1; i <= p.Workers; i++ {
-		w, err := StartWorker(WorkerSpec{Bin: p.Bins.Worker, DatabaseURL: scratch.AppURL, PaymentsURL: mockURL,
+		w, err := StartWorker(WorkerSpec{Bin: p.Bins.Worker, DatabaseURL: scratch.WorkerURL, PaymentsURL: mockURL,
 			Name: fmt.Sprintf("worker-%d", i), Concurrency: p.Concurrency, Lease: p.Lease, Poll: p.Poll})
 		if err != nil {
 			return res, err

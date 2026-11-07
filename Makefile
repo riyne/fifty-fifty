@@ -8,6 +8,9 @@ GOOSE   := go tool -modfile=tools/go.mod goose -dir migrations postgres
 # tests run as the unprivileged `fifty_app`, which cannot UPDATE or DELETE the ledger.
 export MIGRATE_DATABASE_URL ?= postgres://fifty:fifty@localhost:5433/fifty?sslmode=disable
 export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?sslmode=disable
+# The api's second pool (user provisioning, payment webhook) and the worker use their own roles.
+export SYSTEM_DATABASE_URL  ?= postgres://fifty_system:fifty@localhost:5433/fifty?sslmode=disable
+export WORKER_DATABASE_URL  ?= postgres://fifty_worker:fifty@localhost:5433/fifty?sslmode=disable
 
 .PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-redaction ci ci-format ci-vet ci-generate ci-test ci-vuln
 
