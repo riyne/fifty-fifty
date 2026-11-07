@@ -1,0 +1,35 @@
+{
+  "name": "fifty-fifty-mobile",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "expo": "~58.0.23",
+    "expo-crypto": "~58.0.7",
+    "expo-status-bar": "~58.0.4",
+    "openapi-fetch": "^0.17.0",
+    "react": "19.3.0",
+    "react-native": "0.88.1"
+  },
+  "devDependencies": {
+    "@react-native/jest-preset": "^0.88.1",
+    "@types/jest": "30.0.0",
+    "@types/react": "~19.3.0",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.14",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "ios": "expo run:ios",
+    "typecheck": "tsc --noEmit",
+    "gen:api": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts",
+    "check:api": "node scripts/check-api-types.mjs",
+    "test": "jest",
+    "check": "npm run typecheck && npm run check:api && npm test"
+  },
+  "private": true,
+  "jest": {
+    "preset": "jest-expo"
+  }
+}

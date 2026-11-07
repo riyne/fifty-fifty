@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Fifty Fifty",
+    "slug": "fifty-fifty",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.riyne.fiftyfifty"
+    },
+    "scheme": "fiftyfifty",
+    "platforms": [
+      "ios"
+    ]
+  }
+}

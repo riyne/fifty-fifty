@@ -14,7 +14,7 @@ export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?s
 export SYSTEM_DATABASE_URL  ?= postgres://fifty_system:fifty@localhost:5433/fifty?sslmode=disable
 export WORKER_DATABASE_URL  ?= postgres://fifty_worker:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction ci ci-format ci-vet ci-generate ci-test ci-vuln
+.PHONY: mobile-check mobile-generate up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction ci ci-format ci-vet ci-generate ci-test ci-vuln
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -154,3 +154,11 @@ ci-test:
 # Known vulnerabilities in the dependencies and in the standard library that the code reaches.
 ci-vuln:
 	go tool -modfile=tools/go.mod govulncheck ./...
+
+# Mobile client (M8). Not part of `make ci` (no mobile job in the workflow yet; DESIGN
+# section 13). Needs `cd mobile && npm install` once.
+mobile-generate: ## regenerate mobile/src/api/schema.d.ts from api/openapi.yaml
+	cd mobile && npm run gen:api
+
+mobile-check: ## typecheck, check the generated api types are current, run the Jest tests
+	cd mobile && npm run check
