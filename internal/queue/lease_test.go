@@ -29,11 +29,11 @@ type effects struct {
 
 func newEffects(t *testing.T, pool *pgxpool.Pool) *effects {
 	t.Helper()
-	u, err := db.New(pool).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://queue-test.example", Subject: testutil.UniqueSubject("fx")})
+	u, err := db.New(testutil.SharedOwnerPool(t)).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://queue-test.example", Subject: testutil.UniqueSubject("fx")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := db.New(pool).CreateGroup(ctx, db.CreateGroupParams{Name: "fx", Currency: "CAD", CreatedBy: u.ID})
+	g, err := db.New(testutil.SharedOwnerPool(t)).CreateGroup(ctx, db.CreateGroupParams{Name: "fx", Currency: "CAD", CreatedBy: u.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func (e *effects) write(ctx context.Context, tx pgx.Tx) error {
 func (e *effects) count(t *testing.T) int {
 	t.Helper()
 	var n int
-	if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE kind = $1`, e.kind).Scan(&n); err != nil {
+	if err := testutil.SharedOwnerPool(t).QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE kind = $1`, e.kind).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -79,7 +79,7 @@ func completeAlone(t *testing.T, pool *pgxpool.Pool, c queue.Claimed) error {
 // ---- heartbeat ----
 
 func TestHeartbeat_ExtendsTheLease(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("hb")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind})
 	c := claim(t, pool, kind, 1)[0]
@@ -105,7 +105,7 @@ func TestHeartbeat_ExtendsTheLease(t *testing.T) {
 }
 
 func TestHeartbeat_RejectsBadLease(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	if _, err := queue.Heartbeat(ctx, pool, queue.Claimed{ID: uuid.New(), LeaseToken: uuid.New()}, 0); !errors.Is(err, queue.ErrInvalidClaim) {
 		t.Errorf("err = %v, want ErrInvalidClaim", err)
 	}
@@ -114,7 +114,7 @@ func TestHeartbeat_RejectsBadLease(t *testing.T) {
 // Pinned decision: a lease that ran out but was not taken over can still be
 // extended by its holder, since the token matches and nobody else has the job.
 func TestHeartbeat_RevivesAnExpiredButUnclaimedLease(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("hb-late")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind})
 	c := claim(t, pool, kind, 1)[0]
@@ -133,7 +133,7 @@ func TestHeartbeat_RevivesAnExpiredButUnclaimedLease(t *testing.T) {
 // A stale worker is the whole reason for the lease token. Whatever it tries, in
 // whatever order, the newer attempt is untouched.
 func TestFencing_StaleWorkerCannotTouchTheNewAttempt(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	stale, current := staleAndCurrent(t, pool, newKind("stale"), 3)
 	before := getJob(t, pool, current.ID)
 
@@ -165,7 +165,7 @@ func TestFencing_StaleWorkerCannotTouchTheNewAttempt(t *testing.T) {
 // Once a job is finished, even its rightful holder's old token is worthless: a
 // late duplicate cannot revive or undo it.
 func TestFencing_NothingWorksOnAFinishedJob(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("finished")
 	done := enqueue(t, pool, queue.NewJob{Kind: kind})
 	dead := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 1})
@@ -199,7 +199,7 @@ func TestFencing_NothingWorksOnAFinishedJob(t *testing.T) {
 }
 
 func TestFencing_WrongTokenOrWrongJob(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("wrong")
 	a := enqueue(t, pool, queue.NewJob{Kind: kind})
 	enqueue(t, pool, queue.NewJob{Kind: kind})
@@ -237,7 +237,7 @@ func TestFencing_WrongTokenOrWrongJob(t *testing.T) {
 // ---- effects and completion are one transaction ----
 
 func TestCompleteWith_EffectsAndCompletionCommitTogether(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	fx := newEffects(t, pool)
 	kind := newKind("atomic")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind})
@@ -257,7 +257,7 @@ func TestCompleteWith_EffectsAndCompletionCommitTogether(t *testing.T) {
 var errHandler = errors.New("handler failed")
 
 func TestCompleteWith_HandlerErrorDiscardsEffectsAndLeavesTheJob(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	fx := newEffects(t, pool)
 	kind := newKind("atomic-fail")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind})
@@ -289,7 +289,7 @@ func TestCompleteWith_HandlerErrorDiscardsEffectsAndLeavesTheJob(t *testing.T) {
 // the job over and finishes it. A wakes up and tries to complete. A's effect must
 // not exist: exactly one worker's effects are committed.
 func TestCompleteWith_PausedWorkersEffectsAreDiscarded(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	fx := newEffects(t, pool)
 	kind := newKind("paused")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind})
@@ -334,7 +334,7 @@ func TestCompleteWith_PausedWorkersEffectsAreDiscarded(t *testing.T) {
 // completion statement has run nobody can take the job from under it before it
 // commits: the completion holds the row, and claims skip held rows.
 func TestComplete_HoldsTheRowSoNobodyTakesOverMidCommit(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	fx := newEffects(t, pool)
 	kind := newKind("midcommit")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind})
@@ -372,7 +372,7 @@ func TestComplete_HoldsTheRowSoNobodyTakesOverMidCommit(t *testing.T) {
 
 // Both writes run on one row; the row lock makes exactly one of them take effect.
 func TestFencing_CompleteAndFailRaceHasOneWinner(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	for round := range 40 {
 		// A kind per round: when Fail wins, its job goes back to queued and stays
 		// claimable, and the next round's claim would take it instead of the job just
@@ -410,7 +410,7 @@ func TestFencing_CompleteAndFailRaceHasOneWinner(t *testing.T) {
 // ---- fail ----
 
 func TestFail_RequeuesOrDeadLetters(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 
 	t.Run("an attempt left: queued for later, not claimable until then", func(t *testing.T) {
 		kind := newKind("fail-retry")

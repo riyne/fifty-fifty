@@ -318,7 +318,7 @@ func Run(ctx context.Context, p Params) (Result, error) {
 	}
 	defer api.Close()
 
-	env := &Env{API: api, Client: NewClient(api.URL), Pool: scratch.Pool, Stats: newStats(), Seed: p.Seed, prefix: uuid.NewString()[:8]}
+	env := &Env{API: api, Client: NewClient(api.URL), Pool: scratch.Owner, Stats: newStats(), Seed: p.Seed, prefix: uuid.NewString()[:8]}
 
 	// The api logs every internal error through slog. Count them by cause instead of
 	// printing thousands of lines: a request the client abandoned logs "context canceled",
@@ -393,7 +393,7 @@ func Run(ctx context.Context, p Params) (Result, error) {
 	// The workload.
 	runCtx, stop := context.WithTimeout(ctx, p.Duration)
 	defer stop()
-	sampler := startSampler(ctx, scratch.Pool)
+	sampler := startSampler(ctx, scratch.Owner)
 	var wg sync.WaitGroup
 	stream := uint64(0)
 	for _, g := range groups {
@@ -429,11 +429,11 @@ func Run(ctx context.Context, p Params) (Result, error) {
 	var provider []mockpay.Ledger
 	exp := Expect{}
 	if p.SettleWorkers > 0 {
-		ids, err := settlementIDs(ctx, scratch.Pool)
+		ids, err := settlementIDs(ctx, scratch.Owner)
 		if err != nil {
 			return res, err
 		}
-		if res.Unresolved, err = settlerig.WaitResolved(ctx, scratch.Pool, ids, p.ResolveTimeout); err != nil {
+		if res.Unresolved, err = settlerig.WaitResolved(ctx, scratch.Owner, ids, p.ResolveTimeout); err != nil {
 			return res, err
 		}
 		time.Sleep(2 * time.Second)
@@ -447,7 +447,7 @@ func Run(ctx context.Context, p Params) (Result, error) {
 		}
 		res.Provider = &st
 		var ok int64
-		if err := scratch.Pool.QueryRow(ctx, `SELECT count(*) FROM settlements WHERE status = 'succeeded'`).Scan(&ok); err != nil {
+		if err := scratch.Owner.QueryRow(ctx, `SELECT count(*) FROM settlements WHERE status = 'succeeded'`).Scan(&ok); err != nil {
 			return res, err
 		}
 		env.Stats.Add("settlements_succeeded", ok)
@@ -456,7 +456,7 @@ func Run(ctx context.Context, p Params) (Result, error) {
 	env.mu.Lock()
 	exp.Creates, exp.Frozen = env.creates, env.frozen
 	env.mu.Unlock()
-	if res.Report, err = Check(ctx, scratch.Pool, exp); err != nil {
+	if res.Report, err = Check(ctx, scratch.Owner, exp); err != nil {
 		return res, err
 	}
 	res.Checked, res.Violations, res.Examples = res.Report.Checked, res.Report.Counts, res.Report.Examples

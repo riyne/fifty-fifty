@@ -624,35 +624,40 @@ func TestEdit_WaitsForFinalizeThenIsRefused(t *testing.T) {
 // priced differently from what its claims were made at).
 func TestEdit_RaceWithClaimsAndFinalizeKeepsTheLedgerHonest(t *testing.T) {
 	for round := 0; round < 12; round++ {
-		w := newWorld(t)
-		exp, items := w.newExpense(t, w.member, goodBody)
-		var wg sync.WaitGroup
-		start := make(chan struct{})
-		var fin teststack.Response
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			fin = w.finalize(t, w.member, w.group, exp, splitBody(w.memberID), uuid.NewString())
-		}()
-		for i := 0; i < 3; i++ {
-			wg.Add(2)
+		// A subtest per round, so that the round's api stack and its database pools are
+		// released when the round ends. Twelve stacks held until the end of the test used
+		// most of the shared database's 100 connections.
+		t.Run(fmt.Sprintf("round%02d", round), func(t *testing.T) {
+			w := newWorld(t)
+			exp, items := w.newExpense(t, w.member, goodBody)
+			var wg sync.WaitGroup
+			start := make(chan struct{})
+			var fin teststack.Response
+			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				<-start
-				w.patch(t, w.member, w.group, exp, fmt.Sprintf(`{"version":%d,"update":[{"item_id":%q,"price_minor":%d}]}`, 1+i, items[0], 1600+i), uuid.NewString())
+				fin = w.finalize(t, w.member, w.group, exp, splitBody(w.memberID), uuid.NewString())
 			}()
-			go func() {
-				defer wg.Done()
-				<-start
-				w.put(t, w.owner, w.group, exp, items[i%2])
-			}()
-		}
-		close(start)
-		wg.Wait()
-		if fin.Status == 200 {
-			w.assertLedgerMatchesClaims(t, exp)
-		}
+			for i := 0; i < 3; i++ {
+				wg.Add(2)
+				go func() {
+					defer wg.Done()
+					<-start
+					w.patch(t, w.member, w.group, exp, fmt.Sprintf(`{"version":%d,"update":[{"item_id":%q,"price_minor":%d}]}`, 1+i, items[0], 1600+i), uuid.NewString())
+				}()
+				go func() {
+					defer wg.Done()
+					<-start
+					w.put(t, w.owner, w.group, exp, items[i%2])
+				}()
+			}
+			close(start)
+			wg.Wait()
+			if fin.Status == 200 {
+				w.assertLedgerMatchesClaims(t, exp)
+			}
+		})
 	}
 }
 

@@ -12,14 +12,14 @@ import (
 
 func periodicRows(t *testing.T, kind string) (n int) {
 	t.Helper()
-	if err := testutil.Pool(t).QueryRow(ctx, `SELECT count(*) FROM jobs WHERE kind = $1`, kind).Scan(&n); err != nil {
+	if err := testutil.WorkerPool(t).QueryRow(ctx, `SELECT count(*) FROM jobs WHERE kind = $1`, kind).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
 }
 
 func TestEnqueuePeriodic_OneJobPerPeriod(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("periodic")
 	p := queue.PeriodicJob{Kind: kind, Every: time.Hour, MaxAttempts: 2, Payload: map[string]any{"x": 1}}
 
@@ -44,7 +44,7 @@ func TestEnqueuePeriodic_OneJobPerPeriod(t *testing.T) {
 
 // Many workers starting at once must still produce one job.
 func TestEnqueuePeriodic_ConcurrentCallersCreateOne(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("periodic-race")
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -71,7 +71,7 @@ func TestEnqueuePeriodic_ConcurrentCallersCreateOne(t *testing.T) {
 // A finished job for a period still blocks a second one for that period, and the
 // next period gets a new job.
 func TestEnqueuePeriodic_NextPeriodGetsANewJob(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("periodic-next")
 	p := queue.PeriodicJob{Kind: kind, Every: time.Second}
 
@@ -109,7 +109,7 @@ func TestEnqueuePeriodic_NextPeriodGetsANewJob(t *testing.T) {
 }
 
 func TestEnqueuePeriodic_RejectsBadJobs(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	for name, p := range map[string]queue.PeriodicJob{
 		"period under a second": {Kind: "k", Every: 999 * time.Millisecond},
 		"no period":             {Kind: "k"},

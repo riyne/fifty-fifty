@@ -56,9 +56,9 @@ func newRig(t *testing.T, cfg mockpay.Config) *rig {
 	// watchdog's execute job). Nothing in these tests runs them, so remove them with
 	// the test instead of leaving them for a real worker to find.
 	t.Cleanup(func() {
-		_, _ = r.pool.Exec(ctx, `DELETE FROM jobs WHERE kind IN ('settlement.execute', 'settlement.reconcile')
+		_, _ = r.owner.Exec(ctx, `DELETE FROM jobs WHERE kind IN ('settlement.execute', 'settlement.reconcile')
 		                         AND payload->>'settlement_id' IN (SELECT id::text FROM settlements WHERE group_id = $1)`, r.group)
-		_, _ = r.pool.Exec(ctx, `DELETE FROM jobs WHERE kind = $1`, r.kind)
+		_, _ = r.owner.Exec(ctx, `DELETE FROM jobs WHERE kind = $1`, r.kind)
 	})
 	return r
 }
@@ -124,7 +124,7 @@ func (r *rig) job(t *testing.T, id uuid.UUID) jobInfo {
 	t.Helper()
 	var j jobInfo
 	var le *string
-	if err := r.pool.QueryRow(ctx, `SELECT state, attempts, last_error FROM jobs WHERE id = $1`, id).Scan(&j.state, &j.attempts, &le); err != nil {
+	if err := r.owner.QueryRow(ctx, `SELECT state, attempts, last_error FROM jobs WHERE id = $1`, id).Scan(&j.state, &j.attempts, &le); err != nil {
 		t.Fatal(err)
 	}
 	if le != nil {
@@ -154,7 +154,7 @@ func (r *rig) waitJob(t *testing.T, id uuid.UUID, states ...string) jobInfo {
 // settlement's reconcile job; found is false when there is none.
 func (r *rig) reconcileJobs(t *testing.T, id uuid.UUID) (n int, payload string, future bool) {
 	t.Helper()
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.owner.Query(ctx,
 		`SELECT payload::text, run_at > now() FROM jobs WHERE kind = $1 AND payload->>'settlement_id' = $2`, settlements.KindReconcile, id.String())
 	if err != nil {
 		t.Fatal(err)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"mime/multipart"
 	"net/http"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
 	"github.com/riyne/fifty-fifty/internal/teststack"
+	"github.com/riyne/fifty-fifty/internal/testutil"
 	"github.com/riyne/fifty-fifty/internal/worker"
 )
 
@@ -85,7 +87,10 @@ func (f *fakeExtractor) Extract(ctx context.Context, text string) (receiptparse.
 // ---- the rig: a stack, a group with a payer, and a way to run the handler once ----
 
 type rig struct {
-	s       *teststack.Stack
+	s *teststack.Stack // s.Pool is the owner: it seeds and inspects
+	// worker is the WORKER role (fifty_worker): the handlers, the sweep, the commit and the
+	// worker loop under test run as it, as they do in cmd/worker.
+	worker  *pgxpool.Pool
 	store   *objstore.FS
 	payer   string // token
 	payerID uuid.UUID
@@ -98,16 +103,16 @@ func newRig(t *testing.T, opts ...teststack.Option) *rig {
 	t.Helper()
 	// These tests upload far more than the default daily quota.
 	opts = append([]teststack.Option{teststack.WithReceiptConfig(receiptapi.Config{DailyQuota: 10000})}, opts...)
-	return newRigOn(t, teststack.New(t, opts...))
+	return newRigOn(t, teststack.New(t, opts...), testutil.WorkerPool(t))
 }
 
-func newRigOn(t *testing.T, s *teststack.Stack) *rig {
+func newRigOn(t *testing.T, s *teststack.Stack, worker *pgxpool.Pool) *rig {
 	t.Helper()
 	store, err := objstore.NewFS(s.ReceiptDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &rig{s: s, store: store, payer: s.Token(t, "payer"), ocr: &fakeOCR{}, ex: &fakeExtractor{model: "fake-model", in: 120, out: 80}}
+	r := &rig{s: s, worker: worker, store: store, payer: s.Token(t, "payer"), ocr: &fakeOCR{}, ex: &fakeExtractor{model: "fake-model", in: 120, out: 80}}
 	r.group = s.CreateGroup(t, r.payer, "G")
 	r.payerID = s.UserID(t, r.payer)
 	return r
@@ -147,7 +152,7 @@ func (r *rig) uploadSynth(t *testing.T, ref int) upload {
 }
 
 func (r *rig) handler(cfg receiptparse.Config) worker.Handler {
-	return receiptparse.Handler(r.s.Pool, r.store, r.ocr, r.ex, cfg)
+	return receiptparse.Handler(r.worker, r.store, r.ocr, r.ex, cfg)
 }
 
 // runOnce runs the handler for a receipt as attempt n of max: phase one, then, if it
@@ -164,7 +169,7 @@ func (r *rig) runOnce(t *testing.T, h worker.Handler, id uuid.UUID, attempt, max
 
 func (r *rig) commitIn(t *testing.T, commit worker.Commit) error {
 	t.Helper()
-	tx, err := r.s.Pool.Begin(ctx)
+	tx, err := r.worker.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

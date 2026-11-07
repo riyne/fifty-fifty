@@ -16,7 +16,8 @@ import (
 // listing could not see; this sweep must notice and not enqueue a second one. Without
 // the re-check it does, and the settlement gets two jobs.
 func TestSweep_ARivalsJobCommittedAfterTheListingIsNotDuplicated(t *testing.T) {
-	pool := testutil.Pool(t)
+	// pool (the owner) seeds and inspects; the sweep and the rival's commit run as the worker.
+	pool, worker := testutil.SharedOwnerPool(t), testutil.WorkerPool(t)
 	ctx := context.Background()
 
 	var from, to, group, id uuid.UUID
@@ -40,7 +41,7 @@ func TestSweep_ARivalsJobCommittedAfterTheListingIsNotDuplicated(t *testing.T) {
 	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM jobs WHERE payload->>'settlement_id' = $1`, id.String()) })
 
 	rival := func() {
-		tx, err := pool.Begin(ctx)
+		tx, err := worker.Begin(ctx)
 		if err != nil {
 			t.Error(err)
 			return
@@ -57,7 +58,7 @@ func TestSweep_ARivalsJobCommittedAfterTheListingIsNotDuplicated(t *testing.T) {
 	afterList = rival
 	t.Cleanup(func() { afterList = nil })
 
-	n, err := sweep(ctx, pool, WatchdogConfig{StuckAfter: time.Minute, MaxExecuteJobs: 3, Batch: 5, Group: &group})
+	n, err := sweep(ctx, worker, WatchdogConfig{StuckAfter: time.Minute, MaxExecuteJobs: 3, Batch: 5, Group: &group})
 	if err != nil {
 		t.Fatal(err)
 	}

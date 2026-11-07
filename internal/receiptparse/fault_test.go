@@ -28,7 +28,7 @@ func (r *rig) withClient(t *testing.T, url string) receiptparse.Extractor {
 }
 
 func (r *rig) handlerWith(ex receiptparse.Extractor) worker.Handler {
-	return receiptparse.Handler(r.s.Pool, r.store, r.ocr, ex, receiptparse.Config{ExtractTimeout: 10 * time.Second})
+	return receiptparse.Handler(r.worker, r.store, r.ocr, ex, receiptparse.Config{ExtractTimeout: 10 * time.Second})
 }
 
 // allowAttempts raises the attempts of the receipts' jobs, so that a test with a high fault

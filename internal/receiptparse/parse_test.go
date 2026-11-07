@@ -357,7 +357,7 @@ func TestParse_ImageProblems(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			r := newRig(t)
 			u := r.uploadSynth(t, 10)
-			h := receiptparse.Handler(r.s.Pool, brokenStore{r.store, err}, r.ocr, r.ex, receiptparse.Config{})
+			h := receiptparse.Handler(r.worker, brokenStore{r.store, err}, r.ocr, r.ex, receiptparse.Config{})
 			if committed, err := r.runOnce(t, h, u.ReceiptID, 1, maxAttempts); err != nil || !committed {
 				t.Fatalf("committed=%v err=%v", committed, err)
 			}
@@ -370,7 +370,7 @@ func TestParse_ImageProblems(t *testing.T) {
 	// An I/O error might pass: retried, and only the last attempt gives up.
 	r := newRig(t)
 	u := r.uploadSynth(t, 11)
-	h := receiptparse.Handler(r.s.Pool, brokenStore{r.store, errors.New("input/output error")}, r.ocr, r.ex, receiptparse.Config{})
+	h := receiptparse.Handler(r.worker, brokenStore{r.store, errors.New("input/output error")}, r.ocr, r.ex, receiptparse.Config{})
 	if committed, err := r.runOnce(t, h, u.ReceiptID, 1, maxAttempts); err == nil || committed {
 		t.Fatalf("first attempt: committed=%v err=%v", committed, err)
 	}

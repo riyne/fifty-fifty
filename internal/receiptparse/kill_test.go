@@ -122,7 +122,7 @@ func TestKill_AWorkerKilledMidCallLeavesNothingHalfDone(t *testing.T) {
 	}
 	ts := httptest.NewServer(mock.Handler())
 	defer ts.Close()
-	appURL := scratchAppURL(t, r)
+	appURL := scratchWorkerURL(t, r)
 
 	first := r.startHelper(t, appURL, ts.URL, refs)
 	// Wait until the first worker is inside the model call: the mock has the request and

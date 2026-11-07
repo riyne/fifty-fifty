@@ -120,7 +120,7 @@ func run(t *testing.T, sc scenario) {
 		}
 	})
 
-	stack := teststack.NewOn(t, db.Pool, teststack.WithWebhookSecret(webhookSecret))
+	stack := teststack.NewOn(t, db.Pool, db.Owner, teststack.WithWebhookSecret(webhookSecret))
 	flags := append([]string{"--seed", "1", "--timeout-hold", "300ms"}, sc.mock...)
 	if sc.webhooks {
 		flags = append(flags, "--webhook-url", stack.Server.URL+settlements.WebhookPath)

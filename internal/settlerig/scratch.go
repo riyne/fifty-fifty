@@ -31,11 +31,12 @@ const scratchPrefix = "fifty_e2e_"
 // tests and benchmarks left in the shared development database.
 type Scratch struct {
 	Name      string
-	OwnerURL  string // for migrations and administration
-	AppURL    string // the unprivileged application role, as production runs
-	WorkerURL string // the worker role (fifty_worker), for worker processes
-	SystemURL string // the api's second role (fifty_system)
-	Pool      *pgxpool.Pool
+	OwnerURL  string        // for migrations and administration
+	AppURL    string        // the unprivileged application role, as production runs
+	WorkerURL string        // the worker role (fifty_worker), for worker processes
+	SystemURL string        // the api's second role (fifty_system)
+	Pool      *pgxpool.Pool // the application role
+	Owner     *pgxpool.Pool // the owner: sees every row and bypasses grants; for seeding and inspection
 
 	adminURL string
 }
@@ -113,6 +114,10 @@ func NewScratch(ctx context.Context, ownerURL, appURL string) (*Scratch, error) 
 		_ = s.Drop(context.Background())
 		return nil, fmt.Errorf("open pool: %w", err)
 	}
+	if s.Owner, err = pgxpool.New(ctx, s.OwnerURL); err != nil {
+		_ = s.Drop(context.Background())
+		return nil, fmt.Errorf("open owner pool: %w", err)
+	}
 	return s, nil
 }
 
@@ -124,6 +129,9 @@ func (s *Scratch) Drop(ctx context.Context) error {
 	}
 	if s.Pool != nil {
 		s.Pool.Close()
+	}
+	if s.Owner != nil {
+		s.Owner.Close()
 	}
 	admin, err := pgx.Connect(ctx, s.adminURL)
 	if err != nil {

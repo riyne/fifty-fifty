@@ -26,7 +26,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	pool := testutil.Pool(t)
+	pool := testutil.SharedOwnerPool(t)
 	f := &fixture{t: t}
 	for _, id := range []*uuid.UUID{&f.from, &f.to} {
 		if err := pool.QueryRow(ctx, `INSERT INTO users (issuer, subject) VALUES ('test', $1) RETURNING id`, testutil.UniqueSubject("rig")).Scan(id); err != nil {
@@ -47,7 +47,7 @@ func newFixture(t *testing.T) *fixture {
 // settlement inserts one and brings it to status through Resolve (the real path).
 func (f *fixture) settlement(status string) uuid.UUID {
 	f.t.Helper()
-	pool := testutil.Pool(f.t)
+	pool := testutil.SharedOwnerPool(f.t)
 	var id uuid.UUID
 	if err := pool.QueryRow(ctx, `INSERT INTO settlements (group_id, from_member, to_member, amount_minor) VALUES ($1, $2, $3, 700) RETURNING id`, f.group, f.from, f.to).Scan(&id); err != nil {
 		f.t.Fatal(err)
@@ -103,7 +103,7 @@ func verify(t *testing.T, ids []uuid.UUID, payments ...mockpay.Ledger) settlerig
 	if err != nil {
 		t.Fatal(err)
 	}
-	rep, err := settlerig.Verify(ctx, testutil.Pool(t), got, ids)
+	rep, err := settlerig.Verify(ctx, testutil.SharedOwnerPool(t), got, ids)
 	if err != nil {
 		t.Fatal(err)
 	}

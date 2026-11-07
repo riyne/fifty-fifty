@@ -136,11 +136,11 @@ type effects struct {
 
 func newEffects(t *testing.T, pool *pgxpool.Pool) *effects {
 	t.Helper()
-	u, err := db.New(pool).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://worker-test.example", Subject: testutil.UniqueSubject("w")})
+	u, err := db.New(testutil.SharedOwnerPool(t)).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://worker-test.example", Subject: testutil.UniqueSubject("w")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	g, err := db.New(pool).CreateGroup(ctx, db.CreateGroupParams{Name: "w", Currency: "CAD", CreatedBy: u.ID})
+	g, err := db.New(testutil.SharedOwnerPool(t)).CreateGroup(ctx, db.CreateGroupParams{Name: "w", Currency: "CAD", CreatedBy: u.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func (e *effects) commit(job uuid.UUID) worker.Commit {
 func (e *effects) count(t *testing.T) int {
 	t.Helper()
 	var n int
-	if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE kind = $1`, e.kind).Scan(&n); err != nil {
+	if err := testutil.SharedOwnerPool(t).QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE kind = $1`, e.kind).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -168,7 +168,7 @@ func (e *effects) count(t *testing.T) int {
 func (e *effects) distinctJobs(t *testing.T) int {
 	t.Helper()
 	var n int
-	if err := e.pool.QueryRow(ctx, `SELECT count(DISTINCT data->>'job') FROM audit_events WHERE kind = $1`, e.kind).Scan(&n); err != nil {
+	if err := testutil.SharedOwnerPool(t).QueryRow(ctx, `SELECT count(DISTINCT data->>'job') FROM audit_events WHERE kind = $1`, e.kind).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -177,7 +177,7 @@ func (e *effects) distinctJobs(t *testing.T) int {
 // ---- running jobs ----
 
 func TestWorker_RunsJobsAndCommitsTheirEffects(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	fx, kind := newEffects(t, pool), newKind("run")
 	start(t, fastConfig(pool, kind, func(_ context.Context, j queue.Claimed) (worker.Commit, error) {
 		return fx.commit(j.ID), nil
@@ -196,7 +196,7 @@ func TestWorker_RunsJobsAndCommitsTheirEffects(t *testing.T) {
 }
 
 func TestWorker_OnlyClaimsKindsItHasHandlersFor(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	mine, theirs := newKind("mine"), newKind("theirs")
 	start(t, fastConfig(pool, mine, func(context.Context, queue.Claimed) (worker.Commit, error) { return nil, nil }))
 
@@ -209,7 +209,7 @@ func TestWorker_OnlyClaimsKindsItHasHandlersFor(t *testing.T) {
 }
 
 func TestWorker_FailingHandlerIsRetriedThenDeadLettered(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("fail")
 	var calls atomic.Int32
 	start(t, fastConfig(pool, kind, func(context.Context, queue.Claimed) (worker.Commit, error) {
@@ -226,7 +226,7 @@ func TestWorker_FailingHandlerIsRetriedThenDeadLettered(t *testing.T) {
 }
 
 func TestWorker_FailedCommitDiscardsEffectsAndRetries(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	fx, kind := newEffects(t, pool), newKind("badcommit")
 	var calls atomic.Int32
 	start(t, fastConfig(pool, kind, func(_ context.Context, j queue.Claimed) (worker.Commit, error) {
@@ -250,7 +250,7 @@ func TestWorker_FailedCommitDiscardsEffectsAndRetries(t *testing.T) {
 }
 
 func TestWorker_PanicIsAFailureAndTheWorkerSurvives(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("panic")
 	var calls atomic.Int32
 	start(t, fastConfig(pool, kind, func(context.Context, queue.Claimed) (worker.Commit, error) {
@@ -271,7 +271,7 @@ func TestWorker_PanicIsAFailureAndTheWorkerSurvives(t *testing.T) {
 }
 
 func TestWorker_ConcurrencyIsBounded(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("conc")
 	var now, peak atomic.Int32
 	cfg := fastConfig(pool, kind, func(context.Context, queue.Claimed) (worker.Commit, error) {
@@ -302,7 +302,7 @@ func TestWorker_ConcurrencyIsBounded(t *testing.T) {
 // The lease is 300 ms and the job takes 1.2 s, with a second worker polling the
 // whole time. Only the heartbeat stops the second worker taking it over.
 func TestWorker_HeartbeatKeepsALongJobAlive(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("long")
 	var calls atomic.Int32
 	h := func(ctx context.Context, _ queue.Claimed) (worker.Commit, error) {
@@ -328,7 +328,7 @@ func TestWorker_HeartbeatKeepsALongJobAlive(t *testing.T) {
 // next heartbeat finds out, the handler's context is canceled, and the worker
 // reports nothing: the new holder's attempt is the one that counts.
 func TestWorker_LostLeaseCancelsTheHandlerAndReportsNothing(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("lost")
 	started, cause := make(chan struct{}), make(chan error, 1)
 	cfg := fastConfig(pool, kind, func(ctx context.Context, _ queue.Claimed) (worker.Commit, error) {
@@ -374,7 +374,7 @@ func TestWorker_LostLeaseCancelsTheHandlerAndReportsNothing(t *testing.T) {
 }
 
 func TestWorker_ReapsJobsThatDiedOnTheirLastAttempt(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("reap")
 	start(t, fastConfig(pool, kind, func(context.Context, queue.Claimed) (worker.Commit, error) { return nil, nil }))
 
@@ -395,7 +395,7 @@ func TestWorker_ReapsJobsThatDiedOnTheirLastAttempt(t *testing.T) {
 // ---- shutdown ----
 
 func TestWorker_ShutdownLetsRunningJobsFinishAndTakesNoNewOnes(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	fx, kind := newEffects(t, pool), newKind("graceful")
 	started := make(chan struct{})
 	var once sync.Once
@@ -423,7 +423,7 @@ func TestWorker_ShutdownLetsRunningJobsFinishAndTakesNoNewOnes(t *testing.T) {
 }
 
 func TestWorker_ShutdownPastTheGracePeriodHandsTheJobBack(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("grace")
 	started, sawCancel := make(chan struct{}), make(chan struct{})
 	cfg := fastConfig(pool, kind, func(ctx context.Context, _ queue.Claimed) (worker.Commit, error) {
@@ -464,7 +464,7 @@ func TestWorker_ShutdownPastTheGracePeriodHandsTheJobBack(t *testing.T) {
 // Two workers, 150 jobs: every job's effect is committed exactly once and each job
 // is handled once (no crashes here, so a second call would mean a double claim).
 func TestWorker_TwoWorkersHandleEachJobOnce(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	fx, kind := newEffects(t, pool), newKind("two")
 	var mu sync.Mutex
 	handled := map[uuid.UUID]int{}
@@ -515,7 +515,7 @@ func TestWorker_TwoWorkersHandleEachJobOnce(t *testing.T) {
 // Both workers try to schedule the periodic job at start-up and every 50 ms after:
 // still exactly one job for the period, run once.
 func TestWorker_SchedulesAPeriodicJobOncePerPeriod(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("periodic")
 	var calls atomic.Int32
 	h := func(context.Context, queue.Claimed) (worker.Commit, error) { calls.Add(1); return nil, nil }
@@ -536,7 +536,7 @@ func TestWorker_SchedulesAPeriodicJobOncePerPeriod(t *testing.T) {
 }
 
 func TestRun_RejectsBadConfig(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	ok := func() worker.Config {
 		return fastConfig(pool, "k", func(context.Context, queue.Claimed) (worker.Commit, error) { return nil, nil })
 	}
@@ -563,14 +563,14 @@ func TestRun_RejectsBadConfig(t *testing.T) {
 
 // The real cleanup handler, scheduled by the real scheduler, run by the real loop.
 func TestWorker_IdempotencyCleanupRunsEndToEnd(t *testing.T) {
-	pool := testutil.Pool(t)
-	u, err := db.New(pool).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://worker-test.example", Subject: testutil.UniqueSubject("e2e")})
+	pool := testutil.WorkerPool(t)
+	u, err := db.New(testutil.SharedOwnerPool(t)).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://worker-test.example", Subject: testutil.UniqueSubject("e2e")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	insert := func(in string) string {
 		k := uuid.NewString()
-		if _, err := pool.Exec(ctx, `INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
+		if _, err := testutil.SharedOwnerPool(t).Exec(ctx, `INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
 			VALUES ($1, $2, '\x01', 200, '\x7b7d', now() + $3::interval)`, u.ID, k, in); err != nil {
 			t.Fatal(err)
 		}
@@ -578,7 +578,7 @@ func TestWorker_IdempotencyCleanupRunsEndToEnd(t *testing.T) {
 	}
 	exists := func(k string) bool {
 		var n int
-		if err := pool.QueryRow(ctx, `SELECT count(*) FROM idempotency_keys WHERE user_id = $1 AND key = $2`, u.ID, k).Scan(&n); err != nil {
+		if err := testutil.SharedOwnerPool(t).QueryRow(ctx, `SELECT count(*) FROM idempotency_keys WHERE user_id = $1 AND key = $2`, u.ID, k).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		return n == 1
@@ -606,7 +606,7 @@ func (maxRand) Int64N(n int64) int64 { return n - 1 }
 // clock: with a one-hour ceiling and the top draw, the retry is an hour away and
 // the worker does not retry in the meantime.
 func TestWorker_RetryWaitsTheBackoffDelay(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("backoff")
 	var calls atomic.Int32
 	cfg := fastConfig(pool, kind, func(context.Context, queue.Claimed) (worker.Commit, error) {
@@ -634,7 +634,7 @@ func TestWorker_RetryWaitsTheBackoffDelay(t *testing.T) {
 // claimed one at a time would sit on the first job (which is waiting for the others)
 // until the next poll.
 func TestWorker_ClaimsABacklogIntoAllFreeSlotsAtOnce(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("batch")
 	const n = 4
 	var wg sync.WaitGroup
@@ -683,7 +683,7 @@ func (zeroRand) Int64N(int64) int64 { return 0 }
 // was scheduled, measured on the database clock.
 func retryIn(t *testing.T, mutate func(*worker.Config), err error) time.Duration {
 	t.Helper()
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("retryafter")
 	cfg := fastConfig(pool, kind, func(context.Context, queue.Claimed) (worker.Commit, error) { return nil, err })
 	cfg.Rand = zeroRand{} // the backoff delay is 0, so the retry-after alone decides
@@ -752,7 +752,7 @@ func TestWorker_RetryAfterNeverShortensTheBackoff(t *testing.T) {
 }
 
 func TestWorker_NegativeMaxRetryAfterIsRefused(t *testing.T) {
-	cfg := fastConfig(testutil.Pool(t), newKind("neg"), func(context.Context, queue.Claimed) (worker.Commit, error) { return nil, nil })
+	cfg := fastConfig(testutil.WorkerPool(t), newKind("neg"), func(context.Context, queue.Claimed) (worker.Commit, error) { return nil, nil })
 	cfg.MaxRetryAfter = -time.Second
 	if err := worker.Run(ctx, cfg); err == nil {
 		t.Error("a negative MaxRetryAfter was accepted")

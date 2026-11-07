@@ -40,7 +40,12 @@ const ClientID = "test-client"
 type Stack struct {
 	Server *httptest.Server
 	Issuer *authtest.Issuer
-	Pool   *pgxpool.Pool
+	// Pool is the OWNER connection: tests seed fixtures and inspect state with it, and
+	// it sees every row whatever row-level security does to the roles under test.
+	// AppPool is the pool the api's handlers use (fifty_app); only code that must run as
+	// the application role should touch it.
+	Pool    *pgxpool.Pool
+	AppPool *pgxpool.Pool
 	// ReceiptDir is the directory of the stack's receipt object store (a fresh
 	// temporary directory, removed with the test).
 	ReceiptDir string
@@ -98,12 +103,13 @@ func WithWebhookSecret(secret string) Option {
 // TEST_DATABASE_URL is unset.
 func New(t testing.TB, opts ...Option) *Stack {
 	t.Helper()
-	return NewOn(t, testutil.Pool(t), opts...)
+	return NewOn(t, testutil.Pool(t), testutil.SharedOwnerPool(t), opts...)
 }
 
-// NewOn starts the stack on pool, for tests that bring their own database (the
-// end-to-end tests use a scratch one).
-func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
+// NewOn starts the stack on pool (the application role), for tests that bring their own
+// database (the end-to-end tests use a scratch one); owner is the owner connection to
+// the same database, which becomes Stack.Pool.
+func NewOn(t testing.TB, pool, owner *pgxpool.Pool, opts ...Option) *Stack {
 	t.Helper()
 	cfg := config{joinRate: rate.Inf, joinBurst: 1_000_000, uploadRate: rate.Inf, uploadBurst: 1_000_000}
 	for _, o := range opts {
@@ -154,10 +160,10 @@ func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_, _ = pool.Exec(ctx, `DELETE FROM jobs WHERE kind = 'receipt.parse' AND payload->>'receipt_id' IN
+		_, _ = owner.Exec(ctx, `DELETE FROM jobs WHERE kind = 'receipt.parse' AND payload->>'receipt_id' IN
 			(SELECT r.id::text FROM receipts r JOIN users u ON u.id = r.uploader_id WHERE u.issuer = $1)`, issuerURL)
 	})
-	return &Stack{Server: srv, Issuer: iss, Pool: pool, ReceiptDir: receiptDir}
+	return &Stack{Server: srv, Issuer: iss, Pool: owner, AppPool: pool, ReceiptDir: receiptDir}
 }
 
 var (

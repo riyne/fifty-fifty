@@ -86,7 +86,7 @@ type nextCheck struct {
 // nextChecks returns the real-kind reconcile jobs for the settlement.
 func (r *rig) nextChecks(t *testing.T, id uuid.UUID) []nextCheck {
 	t.Helper()
-	rows, err := r.pool.Query(ctx,
+	rows, err := r.owner.Query(ctx,
 		`SELECT (payload->>'check')::int, extract(epoch FROM run_at - now())::float8, payload::text
 		 FROM jobs WHERE kind = $1 AND payload->>'settlement_id' = $2 ORDER BY 1`, settlements.KindReconcile, id.String())
 	if err != nil {

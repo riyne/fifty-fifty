@@ -39,7 +39,7 @@ func jobExists(t *testing.T, pool *pgxpool.Pool, id uuid.UUID) bool {
 // The pruner touches succeeded jobs past retention and nothing else: not recent
 // ones, not dead-letters (however old), not queued or running jobs.
 func TestPruneFinished_DeletesOnlyOldSucceededJobs(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("prune")
 	// A retention of a day and ages of days: other tests' jobs, which are minutes
 	// old, are never in range, so this cannot disturb them.
@@ -88,7 +88,7 @@ func TestPruneFinished_DeletesOnlyOldSucceededJobs(t *testing.T) {
 // Oldest first, so a backlog is worked off from the end that is furthest past
 // retention and a cut-off batch never leaves an older job behind a newer one.
 func TestPruneFinished_DeletesOldestFirst(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("prune-order")
 	// Older than anything another test or earlier run leaves behind.
 	a := finishedJob(t, pool, kind, "succeeded", "42 years")
@@ -115,7 +115,7 @@ func TestPruneFinished_DeletesOldestFirst(t *testing.T) {
 }
 
 func TestPruneFinished_RefusesDangerousInput(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("prune-guard")
 	fresh := finishedJob(t, pool, kind, "succeeded", "1 second")
 

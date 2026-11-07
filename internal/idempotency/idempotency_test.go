@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/dbscope"
@@ -19,9 +18,12 @@ import (
 	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
-func newUser(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
+// The helpers below seed and inspect as the owner, which sees every row whatever
+// row-level security does to the roles under test; Do itself runs on the app pool and
+// DeleteExpired on the worker pool, the roles they run as.
+func newUser(t *testing.T) uuid.UUID {
 	t.Helper()
-	u, err := db.New(pool).EnsureUser(context.Background(), db.EnsureUserParams{
+	u, err := db.New(testutil.SharedOwnerPool(t)).EnsureUser(context.Background(), db.EnsureUserParams{
 		Issuer: "https://idempotency-test.example", Subject: testutil.UniqueSubject("u"),
 	})
 	if err != nil {
@@ -30,10 +32,10 @@ func newUser(t *testing.T, pool *pgxpool.Pool) uuid.UUID {
 	return u.ID
 }
 
-func keyRows(t *testing.T, pool *pgxpool.Pool, user uuid.UUID, key string) int {
+func keyRows(t *testing.T, user uuid.UUID, key string) int {
 	t.Helper()
 	var n int
-	err := pool.QueryRow(context.Background(), `SELECT count(*) FROM idempotency_keys WHERE user_id = $1 AND key = $2`, user, key).Scan(&n)
+	err := testutil.SharedOwnerPool(t).QueryRow(context.Background(), `SELECT count(*) FROM idempotency_keys WHERE user_id = $1 AND key = $2`, user, key).Scan(&n)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +46,7 @@ var fp = idempotency.Fingerprint("POST", "/x", "body")
 
 func TestDo_RunsOnceThenReplays(t *testing.T) {
 	pool := testutil.Pool(t)
-	user, key := newUser(t, pool), uuid.NewString()
+	user, key := newUser(t), uuid.NewString()
 	calls := 0
 	fn := func(context.Context, pgx.Tx) (idempotency.Result, error) {
 		calls++
@@ -66,7 +68,7 @@ func TestDo_RunsOnceThenReplays(t *testing.T) {
 
 func TestDo_StoresClientErrorOutcomes(t *testing.T) {
 	pool := testutil.Pool(t)
-	user, key := newUser(t, pool), uuid.NewString()
+	user, key := newUser(t), uuid.NewString()
 	calls := 0
 	fn := func(context.Context, pgx.Tx) (idempotency.Result, error) {
 		calls++
@@ -84,7 +86,7 @@ func TestDo_StoresClientErrorOutcomes(t *testing.T) {
 
 func TestDo_ServerErrorsAndFailuresAreNotStored(t *testing.T) {
 	pool := testutil.Pool(t)
-	user := newUser(t, pool)
+	user := newUser(t)
 
 	t.Run("5xx result", func(t *testing.T) {
 		key := uuid.NewString()
@@ -98,8 +100,8 @@ func TestDo_ServerErrorsAndFailuresAreNotStored(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if calls != 2 || keyRows(t, pool, user, key) != 0 {
-			t.Fatalf("calls=%d rows=%d, want a retry to re-run and nothing stored", calls, keyRows(t, pool, user, key))
+		if calls != 2 || keyRows(t, user, key) != 0 {
+			t.Fatalf("calls=%d rows=%d, want a retry to re-run and nothing stored", calls, keyRows(t, user, key))
 		}
 	})
 
@@ -112,7 +114,7 @@ func TestDo_ServerErrorsAndFailuresAreNotStored(t *testing.T) {
 		if !errors.Is(err, boom) {
 			t.Fatalf("err = %v, want boom", err)
 		}
-		if keyRows(t, pool, user, key) != 0 {
+		if keyRows(t, user, key) != 0 {
 			t.Fatal("a failed attempt left a key row behind")
 		}
 		out, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, fp, func(context.Context, pgx.Tx) (idempotency.Result, error) {
@@ -127,17 +129,23 @@ func TestDo_ServerErrorsAndFailuresAreNotStored(t *testing.T) {
 // fn's own writes must roll back with the claim when fn fails.
 func TestDo_EffectsCommitOrRollBackWithTheKey(t *testing.T) {
 	pool := testutil.Pool(t)
-	user := newUser(t, pool)
+	owner := testutil.SharedOwnerPool(t)
+	user := newUser(t)
 	count := func() int {
 		var n int
-		if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE actor_user_id = $1`, user).Scan(&n); err != nil {
+		if err := owner.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE actor_user_id = $1`, user).Scan(&n); err != nil {
 			t.Fatal(err)
 		}
 		return n
 	}
 	// audit_events needs a group; make one.
-	g, err := db.New(pool).CreateGroup(context.Background(), db.CreateGroupParams{Name: "g", Currency: "CAD", CreatedBy: user})
+	g, err := db.New(owner).CreateGroup(context.Background(), db.CreateGroupParams{Name: "g", Currency: "CAD", CreatedBy: user})
 	if err != nil {
+		t.Fatal(err)
+	}
+	// The user must belong to the group the audit event is in: row-level security
+	// refuses an event for a group the caller is not in.
+	if err := db.New(owner).AddMembership(context.Background(), db.AddMembershipParams{GroupID: g.ID, UserID: user, Role: "owner"}); err != nil {
 		t.Fatal(err)
 	}
 	write := func(ctx context.Context, tx pgx.Tx) error {
@@ -164,7 +172,7 @@ func TestDo_EffectsCommitOrRollBackWithTheKey(t *testing.T) {
 
 func TestDo_FingerprintMismatch(t *testing.T) {
 	pool := testutil.Pool(t)
-	user, key := newUser(t, pool), uuid.NewString()
+	user, key := newUser(t), uuid.NewString()
 	ok := func(context.Context, pgx.Tx) (idempotency.Result, error) {
 		return idempotency.Result{Status: 200, Body: []byte(`{}`)}, nil
 	}
@@ -208,9 +216,9 @@ func TestParseKey(t *testing.T) {
 
 // insertKey writes an idempotency row directly, expiring `age` from now (negative:
 // already expired).
-func insertKey(t *testing.T, pool *pgxpool.Pool, user uuid.UUID, key string, in string) {
+func insertKey(t *testing.T, user uuid.UUID, key string, in string) {
 	t.Helper()
-	_, err := pool.Exec(context.Background(),
+	_, err := testutil.SharedOwnerPool(t).Exec(context.Background(),
 		`INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
 		 VALUES ($1, $2, '\x01', 200, '\x7b7d', now() + $3::interval)`, user, key, in)
 	if err != nil {
@@ -219,30 +227,30 @@ func insertKey(t *testing.T, pool *pgxpool.Pool, user uuid.UUID, key string, in 
 }
 
 func TestDeleteExpired_RemovesOnlyExpiredKeysAndRespectsTheBatch(t *testing.T) {
-	pool := testutil.Pool(t)
-	user := newUser(t, pool)
+	worker := testutil.WorkerPool(t)
+	user := newUser(t)
 	var expired, live []string
 	for i := range 7 {
 		k := uuid.NewString()
 		// Older than anything another test leaves behind, so these sort first and
 		// the batch below is made of them.
-		insertKey(t, pool, user, k, "-10 years -"+string(rune('0'+i))+" seconds")
+		insertKey(t, user, k, "-10 years -"+string(rune('0'+i))+" seconds")
 		expired = append(expired, k)
 	}
 	for range 3 {
 		k := uuid.NewString()
-		insertKey(t, pool, user, k, "1 hour")
+		insertKey(t, user, k, "1 hour")
 		live = append(live, k)
 	}
 
 	// The cleanup is global and the table shared, so another test's cleanup running
 	// at the same moment can take some of these rows: assert what holds either way.
-	n, err := idempotency.DeleteExpired(context.Background(), pool, 3)
+	n, err := idempotency.DeleteExpired(context.Background(), worker, 3)
 	if err != nil || n > 3 {
 		t.Fatalf("deleted %d, %v; one call must delete at most its batch of 3", n, err)
 	}
 	for { // until a call deletes nothing, as the worker does
-		n, err := idempotency.DeleteExpired(context.Background(), pool, 3)
+		n, err := idempotency.DeleteExpired(context.Background(), worker, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -251,17 +259,17 @@ func TestDeleteExpired_RemovesOnlyExpiredKeysAndRespectsTheBatch(t *testing.T) {
 		}
 	}
 	for _, k := range expired {
-		if keyRows(t, pool, user, k) != 0 {
+		if keyRows(t, user, k) != 0 {
 			t.Errorf("expired key %s survived", k)
 		}
 	}
 	for _, k := range live {
-		if keyRows(t, pool, user, k) != 1 {
+		if keyRows(t, user, k) != 1 {
 			t.Errorf("live key %s was deleted", k)
 		}
 	}
 	for _, bad := range []int{0, -1} {
-		if _, err := idempotency.DeleteExpired(context.Background(), pool, bad); err == nil {
+		if _, err := idempotency.DeleteExpired(context.Background(), worker, bad); err == nil {
 			t.Errorf("batch %d accepted", bad)
 		}
 	}
@@ -271,12 +279,13 @@ func TestDeleteExpired_RemovesOnlyExpiredKeysAndRespectsTheBatch(t *testing.T) {
 // it. The cleanup must wait for that request and then leave the now-live key alone;
 // deleting it would let the request's duplicate run twice.
 func TestDeleteExpired_DoesNotDeleteAKeyReclaimedInFlight(t *testing.T) {
-	pool := testutil.Pool(t)
+	app, worker := testutil.Pool(t), testutil.WorkerPool(t)
 	ctx := context.Background()
-	user, key := newUser(t, pool), uuid.NewString()
-	insertKey(t, pool, user, key, "-10 years")
+	user, key := newUser(t), uuid.NewString()
+	insertKey(t, user, key, "-10 years")
 
-	tx, err := pool.Begin(ctx)
+	// The request that takes the key over runs as the app role, as the user.
+	tx, err := dbscope.New(app).Begin(ctx, user)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,7 +295,7 @@ func TestDeleteExpired_DoesNotDeleteAKeyReclaimedInFlight(t *testing.T) {
 	}
 
 	done := make(chan error, 1)
-	go func() { _, err := idempotency.DeleteExpired(ctx, pool, 1000); done <- err }()
+	go func() { _, err := idempotency.DeleteExpired(ctx, worker, 1000); done <- err }()
 	select {
 	case err := <-done:
 		t.Fatalf("the cleanup finished (%v) without waiting for the in-flight claim of the row it was about to delete", err)
@@ -298,7 +307,7 @@ func TestDeleteExpired_DoesNotDeleteAKeyReclaimedInFlight(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	if keyRows(t, pool, user, key) != 1 {
+	if keyRows(t, user, key) != 1 {
 		t.Fatal("the cleanup deleted a key that a request had just re-claimed")
 	}
 }

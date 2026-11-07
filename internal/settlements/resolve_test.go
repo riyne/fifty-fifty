@@ -21,27 +21,31 @@ var ctx = context.Background()
 // builds its own, so nothing depends on the shared database being empty. There is no
 // create-settlement code yet (step 4.2), so settlements are inserted with SQL.
 type world struct {
+	// pool is the WORKER role (fifty_worker): what the code under test runs as (Resolve,
+	// the handlers, the queue). owner seeds fixtures and inspects state; it sees every
+	// row whatever policies apply to the worker.
 	pool                *pgxpool.Pool
+	owner               *pgxpool.Pool
 	group               uuid.UUID
 	from, to, bystander uuid.UUID
 }
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
-	w := &world{pool: testutil.Pool(t)}
+	w := &world{pool: testutil.WorkerPool(t), owner: testutil.SharedOwnerPool(t)}
 	for _, id := range []*uuid.UUID{&w.from, &w.to, &w.bystander} {
-		must(t, w.pool.QueryRow(ctx,
+		must(t, w.owner.QueryRow(ctx,
 			`INSERT INTO users (issuer, subject) VALUES ('test', $1) RETURNING id`,
 			testutil.UniqueSubject("settle")).Scan(id))
 	}
-	must(t, w.pool.QueryRow(ctx,
+	must(t, w.owner.QueryRow(ctx,
 		`INSERT INTO groups (name, currency, created_by) VALUES ('g', 'CAD', $1) RETURNING id`, w.from).Scan(&w.group))
 	for i, m := range []uuid.UUID{w.from, w.to, w.bystander} {
 		role := "member"
 		if i == 0 {
 			role = "owner"
 		}
-		_, err := w.pool.Exec(ctx, `INSERT INTO memberships (group_id, user_id, role) VALUES ($1, $2, $3)`, w.group, m, role)
+		_, err := w.owner.Exec(ctx, `INSERT INTO memberships (group_id, user_id, role) VALUES ($1, $2, $3)`, w.group, m, role)
 		must(t, err)
 	}
 	return w
@@ -50,7 +54,7 @@ func newWorld(t *testing.T) *world {
 func (w *world) settlement(t *testing.T, amount int64) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
-	must(t, w.pool.QueryRow(ctx,
+	must(t, w.owner.QueryRow(ctx,
 		`INSERT INTO settlements (group_id, from_member, to_member, amount_minor) VALUES ($1, $2, $3, $4) RETURNING id`,
 		w.group, w.from, w.to, amount).Scan(&id))
 	return id
@@ -87,7 +91,7 @@ type row struct {
 func (w *world) row(t *testing.T, id uuid.UUID) row {
 	t.Helper()
 	var r row
-	must(t, w.pool.QueryRow(ctx,
+	must(t, w.owner.QueryRow(ctx,
 		`SELECT status, failure_code, ledger_transaction_id, resolved_at IS NOT NULL FROM settlements WHERE id = $1`, id).
 		Scan(&r.status, &r.failureCode, &r.ledgerTx, &r.resolved))
 	return r
@@ -96,7 +100,7 @@ func (w *world) row(t *testing.T, id uuid.UUID) row {
 func (w *world) postings(t *testing.T, id uuid.UUID) int {
 	t.Helper()
 	var n int
-	must(t, w.pool.QueryRow(ctx,
+	must(t, w.owner.QueryRow(ctx,
 		`SELECT count(*) FROM ledger_transactions WHERE settlement_id = $1`, id).Scan(&n))
 	return n
 }
@@ -104,7 +108,7 @@ func (w *world) postings(t *testing.T, id uuid.UUID) int {
 func (w *world) audits(t *testing.T, kind string) int {
 	t.Helper()
 	var n int
-	must(t, w.pool.QueryRow(ctx,
+	must(t, w.owner.QueryRow(ctx,
 		`SELECT count(*) FROM audit_events WHERE group_id = $1 AND kind = $2`, w.group, kind).Scan(&n))
 	return n
 }
@@ -112,7 +116,7 @@ func (w *world) audits(t *testing.T, kind string) int {
 // balances recomputes every member's balance from the ledger entries.
 func (w *world) balances(t *testing.T) map[uuid.UUID]int64 {
 	t.Helper()
-	rows, err := w.pool.Query(ctx,
+	rows, err := w.owner.Query(ctx,
 		`SELECT member_id, SUM(amount_minor)::bigint FROM ledger_entries WHERE group_id = $1 GROUP BY member_id`, w.group)
 	must(t, err)
 	defer rows.Close()
@@ -368,7 +372,7 @@ func TestResolve_WaitsForTheRowLock(t *testing.T) {
 	w := newWorld(t)
 	id := w.settlement(t, 600)
 
-	holder, err := w.pool.Begin(ctx)
+	holder, err := w.owner.Begin(ctx) // stands in for another resolver, not the code under test
 	must(t, err)
 	defer holder.Rollback(ctx) //nolint:errcheck
 	_, err = holder.Exec(ctx,

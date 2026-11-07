@@ -27,7 +27,7 @@ func (r *rig) addExecuteJob(t *testing.T, id uuid.UUID, state string, age time.D
 		"running": `'running', 5, 1, gen_random_uuid(), now() + interval '1 hour', now() + interval '1 hour'`,
 		"dead":    `'dead', 5, 5, now(), 'earlier failure'`,
 	}[state]
-	_, err := r.pool.Exec(ctx, fmt.Sprintf(
+	_, err := r.owner.Exec(ctx, fmt.Sprintf(
 		`INSERT INTO jobs (kind, payload, created_at, %s) VALUES ('settlement.execute', jsonb_build_object('settlement_id', $1::text), now() - make_interval(secs => $2::float8), %s)`,
 		cols, vals), id.String(), age.Seconds())
 	if err != nil {
@@ -39,7 +39,7 @@ func (r *rig) addExecuteJob(t *testing.T, id uuid.UUID, state string, age time.D
 func (r *rig) oldSettlement(t *testing.T, amount int64) uuid.UUID {
 	t.Helper()
 	id := r.settlement(t, amount)
-	if _, err := r.pool.Exec(ctx, `UPDATE settlements SET created_at = now() - interval '1 hour' WHERE id = $1`, id); err != nil {
+	if _, err := r.owner.Exec(ctx, `UPDATE settlements SET created_at = now() - interval '1 hour' WHERE id = $1`, id); err != nil {
 		t.Fatal(err)
 	}
 	return id
@@ -48,7 +48,7 @@ func (r *rig) oldSettlement(t *testing.T, amount int64) uuid.UUID {
 func (r *rig) countQuery(t *testing.T, sql string, args ...any) int {
 	t.Helper()
 	var n int
-	if err := r.pool.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
+	if err := r.owner.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -57,7 +57,7 @@ func (r *rig) countQuery(t *testing.T, sql string, args ...any) int {
 func (r *rig) executeJobs(t *testing.T, id uuid.UUID) int {
 	t.Helper()
 	var n int
-	if err := r.pool.QueryRow(ctx,
+	if err := r.owner.QueryRow(ctx,
 		`SELECT count(*) FROM jobs WHERE kind = 'settlement.execute' AND payload->>'settlement_id' = $1`, id.String()).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestWatchdog_ReplacesALostExecuteJob(t *testing.T) {
 		t.Fatalf("execute jobs: %d and %d, want 2 and 1", r.executeJobs(t, withDead), r.executeJobs(t, noJob))
 	}
 	var state string
-	if err := r.pool.QueryRow(ctx, `SELECT state FROM jobs WHERE kind = 'settlement.execute' AND payload->>'settlement_id' = $1 AND state <> 'dead'`, withDead.String()).Scan(&state); err != nil || state != "queued" {
+	if err := r.owner.QueryRow(ctx, `SELECT state FROM jobs WHERE kind = 'settlement.execute' AND payload->>'settlement_id' = $1 AND state <> 'dead'`, withDead.String()).Scan(&state); err != nil || state != "queued" {
 		t.Errorf("the replacement is %q (%v), want queued", state, err)
 	}
 	if n := r.countQuery(t, `SELECT count(*) FROM audit_events WHERE group_id = $1 AND kind = 'settlement.execute_requeued' AND data->>'settlement_id' = $2 AND (data->>'earlier_execute_jobs')::int = 1`, r.group, withDead.String()); n != 1 {
@@ -164,7 +164,7 @@ func TestWatchdog_StopsReplacingAtTheCap(t *testing.T) {
 		t.Fatalf("with 2 dead jobs: %d jobs after the sweep, want 3", r.executeJobs(t, two))
 	}
 	// The third dies as well (backdate it so it is not "recent") and nothing more is created.
-	if _, err := r.pool.Exec(ctx, `UPDATE jobs SET state = 'dead', attempts = 5, finished_at = now(), lease_token = NULL, lease_expires_at = NULL,
+	if _, err := r.owner.Exec(ctx, `UPDATE jobs SET state = 'dead', attempts = 5, finished_at = now(), lease_token = NULL, lease_expires_at = NULL,
 	    created_at = now() - interval '1 hour' WHERE kind = 'settlement.execute' AND payload->>'settlement_id' = $1 AND state = 'queued'`, two.String()); err != nil {
 		t.Fatal(err)
 	}
@@ -222,12 +222,12 @@ func TestWatchdog_TouchesOnlyTheGroupItWasGiven(t *testing.T) {
 	r := newRig(t, mockpay.Config{})
 	other := newWorld(t)
 	var otherID uuid.UUID
-	if err := r.pool.QueryRow(ctx, `INSERT INTO settlements (group_id, from_member, to_member, amount_minor, created_at)
+	if err := r.owner.QueryRow(ctx, `INSERT INTO settlements (group_id, from_member, to_member, amount_minor, created_at)
 	    VALUES ($1, $2, $3, 100, now() - interval '1 hour') RETURNING id`, other.group, other.from, other.to).Scan(&otherID); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = r.pool.Exec(ctx, `DELETE FROM jobs WHERE payload->>'settlement_id' = $1`, otherID.String())
+		_, _ = r.owner.Exec(ctx, `DELETE FROM jobs WHERE payload->>'settlement_id' = $1`, otherID.String())
 	})
 	mine := r.oldSettlement(t, 100)
 
@@ -248,7 +248,7 @@ func TestWatchdog_ARecoveredSettlementIsExecutedOnce(t *testing.T) {
 	// Hand the replacement to this test's worker: a worker on the real kind would also
 	// claim every other test's leftover execute jobs.
 	var replacement uuid.UUID
-	if err := r.pool.QueryRow(ctx, `UPDATE jobs SET kind = $1 WHERE kind = 'settlement.execute' AND state = 'queued'
+	if err := r.owner.QueryRow(ctx, `UPDATE jobs SET kind = $1 WHERE kind = 'settlement.execute' AND state = 'queued'
 	    AND payload->>'settlement_id' = $2 RETURNING id`, r.kind, id.String()).Scan(&replacement); err != nil {
 		t.Fatal(err)
 	}

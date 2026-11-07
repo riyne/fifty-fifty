@@ -54,7 +54,7 @@ func TestReceiptParse_RealProcessesAndARealKill(t *testing.T) {
 			t.Errorf("drop %s: %v", db.Name, err)
 		}
 	})
-	stack := teststack.NewOn(t, db.Pool, teststack.WithReceiptConfig(receiptapi.Config{DailyQuota: 1000}))
+	stack := teststack.NewOn(t, db.Pool, db.Owner, teststack.WithReceiptConfig(receiptapi.Config{DailyQuota: 1000}))
 
 	const n = 6
 	fixtures := filepath.Join(t.TempDir(), "fixtures.json")

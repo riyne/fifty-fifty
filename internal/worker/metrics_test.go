@@ -58,7 +58,7 @@ func wantSamples(t *testing.T, body string, want map[string]float64) {
 }
 
 func TestMetrics_ExposesTheQueueStateOfEachKind(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind, quiet := newKind("m-state"), newKind("m-quiet")
 	enqueue(t, pool, queue.NewJob{Kind: kind, RunAt: time.Now().Add(-90 * time.Second)})
 	enqueue(t, pool, queue.NewJob{Kind: kind, RunAt: time.Now().Add(time.Hour)})
@@ -101,7 +101,7 @@ func TestMetrics_ExposesTheQueueStateOfEachKind(t *testing.T) {
 }
 
 func TestMetrics_HTTPMethodsAndErrors(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	srv := httptest.NewServer(worker.NewMetrics().Handler(pool, nil))
 	defer srv.Close()
 
@@ -140,7 +140,7 @@ func TestMetrics_HTTPMethodsAndErrors(t *testing.T) {
 // A worker run with Metrics: one job succeeds first time, one fails once then
 // succeeds, one fails every time and dies on its third attempt.
 func TestMetrics_CountsOutcomesAndTheAttemptsHistogram(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("m-count")
 	m := worker.NewMetrics()
 	var flakyCalls atomic.Int32
@@ -190,7 +190,7 @@ func TestMetrics_CountsOutcomesAndTheAttemptsHistogram(t *testing.T) {
 
 // A worker that loses a lease counts it, and it does not count as a final attempt.
 func TestMetrics_CountsLostLeases(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("m-lost")
 	m := worker.NewMetrics()
 	started := make(chan struct{})

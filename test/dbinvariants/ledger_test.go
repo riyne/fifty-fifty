@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +41,15 @@ var ctx = context.Background()
 // ---- fixtures ----
 
 type world struct {
-	pool *pgxpool.Pool
+	// pool is what the tests aim refused statements at: the application role, fifty_app,
+	// with its connections carrying the identity of actor (a member of every group in the
+	// world) so that row-level security lets each statement through and it is the
+	// constraint, trigger or revoked privilege under test that refuses it. Without the
+	// identity RLS would refuse everything and the tests would pass for the wrong reason.
+	// owner seeds fixtures (users, groups, memberships, expenses, items).
+	pool  *pgxpool.Pool
+	owner *pgxpool.Pool
+	actor uuid.UUID
 
 	g, h              uuid.UUID // two groups
 	payer, b, c       uuid.UUID // members of g
@@ -55,7 +64,9 @@ type world struct {
 
 func newWorld(t *testing.T) *world {
 	t.Helper()
-	w := &world{pool: testutil.Pool(t)}
+	w := &world{owner: testutil.SharedOwnerPool(t)}
+	w.actor = w.user(t)
+	w.pool = appPoolAs(t, w.actor)
 	w.payer, w.b, w.c, w.outsider = w.user(t), w.user(t), w.user(t), w.user(t)
 	w.otherGroupMember = w.outsider
 	w.members = []uuid.UUID{w.payer, w.b, w.c}
@@ -70,7 +81,7 @@ func newWorld(t *testing.T) *world {
 func (w *world) user(t *testing.T) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
-	err := w.pool.QueryRow(ctx,
+	err := w.owner.QueryRow(ctx,
 		`INSERT INTO users (issuer, subject) VALUES ('test', $1) RETURNING id`,
 		testutil.UniqueSubject("dbinv")).Scan(&id)
 	must(t, err)
@@ -81,25 +92,28 @@ func (w *world) user(t *testing.T) uuid.UUID {
 func (w *world) group(t *testing.T, members ...uuid.UUID) uuid.UUID {
 	t.Helper()
 	var id uuid.UUID
-	must(t, w.pool.QueryRow(ctx,
+	must(t, w.owner.QueryRow(ctx,
 		`INSERT INTO groups (name, currency, created_by) VALUES ('g', 'CAD', $1) RETURNING id`, members[0]).Scan(&id))
 	for i, m := range members {
 		role := "member"
 		if i == 0 {
 			role = "owner"
 		}
-		_, err := w.pool.Exec(ctx, `INSERT INTO memberships (group_id, user_id, role) VALUES ($1, $2, $3)`, id, m, role)
+		_, err := w.owner.Exec(ctx, `INSERT INTO memberships (group_id, user_id, role) VALUES ($1, $2, $3)`, id, m, role)
 		must(t, err)
 	}
+	// The actor sees every group, so row-level security never is what refuses a statement.
+	_, err := w.owner.Exec(ctx, `INSERT INTO memberships (group_id, user_id, role) VALUES ($1, $2, 'member') ON CONFLICT DO NOTHING`, id, w.actor)
+	must(t, err)
 	return id
 }
 
 func (w *world) expenseWithTwoItems(t *testing.T, group, payer uuid.UUID) (exp, i1, i2 uuid.UUID) {
 	t.Helper()
 	exp = w.newExpense(t, group, payer, "claiming")
-	must(t, w.pool.QueryRow(ctx,
+	must(t, w.owner.QueryRow(ctx,
 		`INSERT INTO expense_items (expense_id, position, description, price_minor) VALUES ($1, 0, 'pizza', 1500) RETURNING id`, exp).Scan(&i1))
-	must(t, w.pool.QueryRow(ctx,
+	must(t, w.owner.QueryRow(ctx,
 		`INSERT INTO expense_items (expense_id, position, description, price_minor) VALUES ($1, 1, 'beer', 800) RETURNING id`, exp).Scan(&i2))
 	return exp, i1, i2
 }
@@ -111,7 +125,7 @@ func (w *world) newExpense(t *testing.T, group, payer uuid.UUID, status string) 
 	if status == "finalized" {
 		q = `INSERT INTO expenses (group_id, payer_id, description, status, finalized_at) VALUES ($1, $2, 'dinner', $3, now()) RETURNING id`
 	}
-	must(t, w.pool.QueryRow(ctx, q, group, payer, status).Scan(&id))
+	must(t, w.owner.QueryRow(ctx, q, group, payer, status).Scan(&id))
 	return id
 }
 
@@ -122,6 +136,26 @@ func (w *world) finalizedExpense(t *testing.T) uuid.UUID {
 }
 
 // ---- helpers ----
+
+// appPoolAs returns a pool of the application role whose every connection starts with
+// app.user_id set to id (a session-level setting, unlike production's transaction-local
+// one; these tests are about the schema, and the isolation tests are in test/rls).
+func appPoolAs(t *testing.T, id uuid.UUID) *pgxpool.Pool {
+	t.Helper()
+	testutil.Pool(t) // skips, or fails under REQUIRE_DATABASE=1, when there is no database
+	cfg, err := pgxpool.ParseConfig(os.Getenv("TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.MaxConns = 4
+	cfg.ConnConfig.RuntimeParams["options"] = "-c app.user_id=" + id.String()
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	return pool
+}
 
 func must(t *testing.T, err error) {
 	t.Helper()

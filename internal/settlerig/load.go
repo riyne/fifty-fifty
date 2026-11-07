@@ -116,13 +116,21 @@ func RunLoad(ctx context.Context, p LoadParams) (LoadResult, error) {
 			logf("drop %s: %v", scratch.Name, err)
 		}
 	}()
-	pool := scratch.Pool
+	// The harness seeds, inserts settlements as the create handler does, and checks, with the
+	// owner connection: it sees every row whatever row-level security does to the roles
+	// under test. The webhook handler below runs as fifty_system, as in the api.
+	pool := scratch.Owner
+	sysPool, err := pgxpool.New(ctx, scratch.SystemURL)
+	if err != nil {
+		return res, fmt.Errorf("system pool: %w", err)
+	}
+	defer sysPool.Close()
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM jobs`).Scan(&res.DatabaseJobsRows); err != nil {
 		return res, err
 	}
 
 	// The api's webhook endpoint, served from this process on the scratch database.
-	wh, err := settlements.NewWebhookHandler(pool, []byte(p.WebhookSecret))
+	wh, err := settlements.NewWebhookHandler(sysPool, []byte(p.WebhookSecret))
 	if err != nil {
 		return res, err
 	}

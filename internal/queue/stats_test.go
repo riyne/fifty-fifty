@@ -10,7 +10,7 @@ import (
 
 func statsFor(t *testing.T, kind string, always ...string) (queue.KindStats, []queue.KindStats) {
 	t.Helper()
-	all, err := queue.Stats(ctx, testutil.Pool(t), append([]string{}, always...))
+	all, err := queue.Stats(ctx, testutil.WorkerPool(t), append([]string{}, always...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func statsFor(t *testing.T, kind string, always ...string) (queue.KindStats, []q
 
 // One job in every state a job can be in, counted once each, in the right bucket.
 func TestStats_CountsEachStateOnce(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("stats")
 
 	// Running with a live lease, running with an expired one, dead. Each is claimed
@@ -71,7 +71,7 @@ func TestStats_CountsEachStateOnce(t *testing.T) {
 }
 
 func TestStats_ZeroForQuietKindsAndNoFinishedJobs(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	finished, quiet := newKind("stats-done"), newKind("stats-quiet")
 	enqueue(t, pool, queue.NewJob{Kind: finished})
 	c := claim(t, pool, finished, 1)
@@ -106,7 +106,7 @@ func TestStats_ZeroForQuietKindsAndNoFinishedJobs(t *testing.T) {
 // Nothing due, only a retry backing off: nothing is waiting, so the age is zero, not
 // the (negative) time until the retry.
 func TestStats_OldestReadyAgeIgnoresDelayedJobs(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("stats-delayed")
 	enqueue(t, pool, queue.NewJob{Kind: kind, RunAt: time.Now().Add(time.Hour)})
 

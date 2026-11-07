@@ -28,7 +28,7 @@ func (r *rig) sweep(t *testing.T, cfg receiptparse.SweepConfig) {
 	t.Helper()
 	g := r.groupID(t)
 	cfg.Group = &g
-	commit, err := receiptparse.SweepHandler(r.s.Pool, cfg)(ctx, queue.Claimed{Kind: receiptparse.KindSweep})
+	commit, err := receiptparse.SweepHandler(r.worker, cfg)(ctx, queue.Claimed{Kind: receiptparse.KindSweep})
 	if err != nil || commit != nil {
 		t.Fatalf("sweep: commit=%v err=%v", commit != nil, err)
 	}

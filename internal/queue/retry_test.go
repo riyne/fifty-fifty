@@ -58,7 +58,7 @@ func failUntilGone(t *testing.T, pool *pgxpool.Pool, kind string, id uuid.UUID, 
 // used max_attempts, then dead-lettered with the last error. Never more attempts
 // than allowed.
 func TestRetry_AlwaysFailingJobEndsDeadAfterMaxAttempts(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("retry-dead")
 	const maxAttempts = 5
 	id := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: maxAttempts})
@@ -87,7 +87,7 @@ func TestRetry_AlwaysFailingJobEndsDeadAfterMaxAttempts(t *testing.T) {
 // A transient failure: two failed attempts, then success. The job ends succeeded,
 // on its third attempt, not dead.
 func TestRetry_TransientFailureEventuallySucceeds(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("retry-ok")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 5})
 	rnd := rand.New(rand.NewPCG(4, 4))
@@ -116,7 +116,7 @@ func TestRetry_TransientFailureEventuallySucceeds(t *testing.T) {
 // Crashes use leases, not backoff: each takeover is the next attempt, and when the
 // last attempt's lease runs out the reaper dead-letters the job.
 func TestRetry_RepeatedCrashesEndDeadViaTheReaper(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("retry-crash")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 3})
 
@@ -153,7 +153,7 @@ func killJob(t *testing.T, pool *pgxpool.Pool, kind string) uuid.UUID {
 }
 
 func TestRequeue_GivesDeadJobsAFreshSetOfAttempts(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("requeue")
 	dead := killJob(t, pool, kind)
 
@@ -173,7 +173,7 @@ func TestRequeue_GivesDeadJobsAFreshSetOfAttempts(t *testing.T) {
 }
 
 func TestRequeue_ByKindAndIdAreScopedAndIdempotent(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind, other := newKind("rq-kind"), newKind("rq-other")
 	a, b, o := killJob(t, pool, kind), killJob(t, pool, kind), killJob(t, pool, other)
 	live := enqueue(t, pool, queue.NewJob{Kind: kind})
@@ -216,7 +216,7 @@ func TestRequeue_ByKindAndIdAreScopedAndIdempotent(t *testing.T) {
 }
 
 func TestRequeue_RefusesToMatchEverything(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	if _, err := queue.Requeue(ctx, pool, queue.RequeueParams{}); !errors.Is(err, queue.ErrInvalidJob) {
 		t.Errorf("err = %v, want ErrInvalidJob", err)
 	}

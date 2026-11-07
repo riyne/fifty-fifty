@@ -778,7 +778,7 @@ func TestUpload_ATransactionFailureRollsBackEverything(t *testing.T) {
 			t.Errorf("drop %s: %v", sc.Name, err)
 		}
 	})
-	w := newWorldOn(t, teststack.NewOn(t, sc.Pool))
+	w := newWorldOn(t, teststack.NewOn(t, sc.Pool, sc.Owner))
 
 	admin, err := pgx.Connect(ctx, sc.OwnerURL)
 	if err != nil {

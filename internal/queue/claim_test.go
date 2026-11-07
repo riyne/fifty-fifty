@@ -103,7 +103,7 @@ func expireLease(t *testing.T, pool *pgxpool.Pool, id uuid.UUID) {
 func past(d time.Duration) time.Time { return time.Now().Add(-d) }
 
 func TestClaim_LeasesADueJob(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("lease")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind, Payload: map[string]any{"n": 1}, MaxAttempts: 3})
 
@@ -137,7 +137,7 @@ func TestClaim_LeasesADueJob(t *testing.T) {
 }
 
 func TestClaim_SkipsIneligibleJobs(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind, otherKind := newKind("skip"), newKind("skip-other")
 
 	enqueue(t, pool, queue.NewJob{Kind: kind, RunAt: time.Now().Add(time.Hour)}) // not due yet
@@ -168,7 +168,7 @@ func TestClaim_SkipsIneligibleJobs(t *testing.T) {
 }
 
 func TestClaim_TakesOverAnExpiredLease(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("takeover")
 	id := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 3})
 
@@ -194,7 +194,7 @@ func TestClaim_TakesOverAnExpiredLease(t *testing.T) {
 }
 
 func TestClaim_OldestFirstAndLimited(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("order")
 	// Enqueued out of order on purpose.
 	age := []time.Duration{3, 5, 1, 4, 2}
@@ -223,7 +223,7 @@ func sorted(in []uuid.UUID) []uuid.UUID {
 // worker that is in the middle of claiming a row. Racing real workers would only
 // hit this by luck.
 func TestClaim_PassesOverRowsLockedByAnotherClaimer(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("locked")
 	a := enqueue(t, pool, queue.NewJob{Kind: kind, RunAt: past(2 * time.Minute)}) // oldest, so it would be picked first
 	b := enqueue(t, pool, queue.NewJob{Kind: kind, RunAt: past(time.Minute)})
@@ -268,7 +268,7 @@ func TestClaim_PassesOverRowsLockedByAnotherClaimer(t *testing.T) {
 // Randomized complement to the test above: many workers draining one kind. Every
 // job must be handed out exactly once.
 func TestClaim_ConcurrentClaimersNeverShareAJob(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("race")
 	const jobs, workers, batch = 300, 8, 7
 
@@ -330,7 +330,7 @@ func TestClaim_ConcurrentClaimersNeverShareAJob(t *testing.T) {
 }
 
 func TestClaim_RejectsBadParams(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	ok := queue.ClaimParams{Kinds: []string{"k"}, Limit: 1, Lease: time.Second}
 	for name, mutate := range map[string]func(p *queue.ClaimParams){
 		"no kinds":       func(p *queue.ClaimParams) { p.Kinds = nil },
@@ -351,7 +351,7 @@ func TestClaim_RejectsBadParams(t *testing.T) {
 // not be claimable again (that would be attempt max+1) and must not stay
 // "running" forever.
 func TestReapExhausted(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := newKind("reap")
 	lastAttempt := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 1})
 	stillLeased := enqueue(t, pool, queue.NewJob{Kind: kind, MaxAttempts: 1})

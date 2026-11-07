@@ -15,15 +15,15 @@ import (
 
 // deleteAllExpired loops over batches until none are left.
 func TestDeleteAllExpired_LoopsOverBatches(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	ctx := context.Background()
-	u, err := db.New(pool).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://worker-test.example", Subject: testutil.UniqueSubject("c")})
+	u, err := db.New(testutil.SharedOwnerPool(t)).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://worker-test.example", Subject: testutil.UniqueSubject("c")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	insert := func(in string) uuid.UUID {
 		k := uuid.New()
-		if _, err := pool.Exec(ctx, `INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
+		if _, err := testutil.SharedOwnerPool(t).Exec(ctx, `INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
 			VALUES ($1, $2, '\x01', 200, '\x7b7d', now() + $3::interval)`, u.ID, k.String(), in); err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func TestDeleteAllExpired_LoopsOverBatches(t *testing.T) {
 	count := func(ids []uuid.UUID) (n int) {
 		for _, k := range ids {
 			var c int
-			if err := pool.QueryRow(ctx, `SELECT count(*) FROM idempotency_keys WHERE user_id = $1 AND key = $2`, u.ID, k.String()).Scan(&c); err != nil {
+			if err := testutil.SharedOwnerPool(t).QueryRow(ctx, `SELECT count(*) FROM idempotency_keys WHERE user_id = $1 AND key = $2`, u.ID, k.String()).Scan(&c); err != nil {
 				t.Fatal(err)
 			}
 			n += c
@@ -61,9 +61,9 @@ func TestDeleteAllExpired_LoopsOverBatches(t *testing.T) {
 // deterministic with a lock: a transaction holds the oldest row, the first batch
 // blocks on it, the transaction deletes it, and the batch finishes one row short.
 func TestDeleteAllExpired_ContinuesAfterAShortBatch(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	ctx := context.Background()
-	u, err := db.New(pool).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://worker-test.example", Subject: testutil.UniqueSubject("short")})
+	u, err := db.New(testutil.SharedOwnerPool(t)).EnsureUser(ctx, db.EnsureUserParams{Issuer: "https://worker-test.example", Subject: testutil.UniqueSubject("short")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,14 +71,15 @@ func TestDeleteAllExpired_ContinuesAfterAShortBatch(t *testing.T) {
 	for i := range 5 { // key 4 is the oldest, then 3, 2, ...: batches of two take 4+3, 2+1, 0
 		k := uuid.NewString()
 		keys = append(keys, k)
-		if _, err := pool.Exec(ctx, `INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
+		if _, err := testutil.SharedOwnerPool(t).Exec(ctx, `INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
 			VALUES ($1, $2, '\x01', 200, '\x7b7d', now() - interval '20 years' - make_interval(secs => $3))`, u.ID, k, i); err != nil {
 			t.Fatal(err)
 		}
 	}
 	oldest := keys[4]
 
-	tx, err := pool.Begin(ctx)
+	// The holder stands in for a request that is using the key, not for the worker.
+	tx, err := testutil.SharedOwnerPool(t).Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func TestDeleteAllExpired_ContinuesAfterAShortBatch(t *testing.T) {
 	}
 
 	var left int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM idempotency_keys WHERE user_id = $1`, u.ID).Scan(&left); err != nil {
+	if err := testutil.SharedOwnerPool(t).QueryRow(ctx, `SELECT count(*) FROM idempotency_keys WHERE user_id = $1`, u.ID).Scan(&left); err != nil {
 		t.Fatal(err)
 	}
 	if left != 0 {
@@ -139,7 +140,7 @@ func jobGone(t *testing.T, pool *pgxpool.Pool, id uuid.UUID) bool {
 // leaves dead-letters and recent jobs alone. Ages are days against a day of
 // retention so other tests' fresh jobs are never in range.
 func TestPruneAll_LoopsOverBatches(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := "test.prune." + uuid.NewString()
 	var old []uuid.UUID
 	for range 7 {
@@ -162,7 +163,7 @@ func TestPruneAll_LoopsOverBatches(t *testing.T) {
 }
 
 func TestJobsPrune_HandlerRunsThePrune(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	kind := "test.prune-handler." + uuid.NewString()
 	old := finishedJobAt(t, pool, kind, "succeeded", "9 days")
 	keep := finishedJobAt(t, pool, kind, "succeeded", "1 day")

@@ -50,7 +50,7 @@ func inTx(t *testing.T, pool *pgxpool.Pool, commit bool, fn func(tx pgx.Tx)) {
 }
 
 func TestEnqueue_CommitStoresAQueuedJob(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	m := marker()
 	var id uuid.UUID
 	var err error
@@ -95,7 +95,7 @@ func TestEnqueue_CommitStoresAQueuedJob(t *testing.T) {
 
 // The reason Enqueue takes a transaction: the job vanishes with it.
 func TestEnqueue_RollbackLeavesNoJob(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	m := marker()
 	inTx(t, pool, false, func(tx pgx.Tx) {
 		if _, err := queue.Enqueue(ctx, tx, queue.NewJob{Kind: "test.rollback", Payload: map[string]any{"marker": m}}); err != nil {
@@ -112,7 +112,7 @@ func TestEnqueue_RollbackLeavesNoJob(t *testing.T) {
 }
 
 func TestEnqueue_RunAtAndMaxAttempts(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	m := marker()
 	at := time.Now().Add(time.Hour).Truncate(time.Microsecond)
 	var id uuid.UUID
@@ -135,7 +135,7 @@ func TestEnqueue_RunAtAndMaxAttempts(t *testing.T) {
 
 // A nil payload is an empty object, not a JSON null (which the table refuses).
 func TestEnqueue_NilPayloadIsEmptyObject(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	var id uuid.UUID
 	inTx(t, pool, true, func(tx pgx.Tx) {
 		var err error
@@ -150,7 +150,7 @@ func TestEnqueue_NilPayloadIsEmptyObject(t *testing.T) {
 }
 
 func TestEnqueue_RejectsInvalidJobs(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t)
 	long := make([]byte, queue.MaxKindLen+1)
 	for i := range long {
 		long[i] = 'k'
@@ -193,8 +193,10 @@ func TestEnqueue_RejectsInvalidJobs(t *testing.T) {
 // of an idempotent request, so a retried or duplicated request does not enqueue
 // a second job. Ten concurrent requests with one key must leave exactly one job.
 func TestEnqueue_InsideIdempotentRequestEnqueuesOnce(t *testing.T) {
-	pool := testutil.Pool(t)
-	user, err := db.New(pool).EnsureUser(ctx, db.EnsureUserParams{
+	// The request is a user's, so it runs on the application role's pool; the
+	// count of jobs it left is read as the worker, which owns the queue.
+	app, pool := testutil.Pool(t), testutil.WorkerPool(t)
+	user, err := db.New(testutil.SharedOwnerPool(t)).EnsureUser(ctx, db.EnsureUserParams{
 		Issuer: "https://queue-test.example", Subject: testutil.UniqueSubject("q"),
 	})
 	if err != nil {
@@ -211,7 +213,7 @@ func TestEnqueue_InsideIdempotentRequestEnqueuesOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			out, err := idempotency.Do(ctx, dbscope.New(pool), user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
+			out, err := idempotency.Do(ctx, dbscope.New(app), user.ID, key, fp, func(ctx context.Context, tx pgx.Tx) (idempotency.Result, error) {
 				if _, err := queue.Enqueue(ctx, tx, queue.NewJob{Kind: "test.idem", Payload: map[string]any{"marker": m}}); err != nil {
 					return idempotency.Result{}, err
 				}

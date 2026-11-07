@@ -3,6 +3,7 @@ package receiptparse_test
 import (
 	"context"
 	"errors"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"io"
 	"log/slog"
 	"os"
@@ -28,11 +29,11 @@ import (
 // chainRig is the whole path on a scratch database: the api writes the upload and its
 // job in one transaction, a real worker claims the job, the handler runs, the queue
 // completes it. A scratch database because the worker claims every job of its kinds.
-// scratchURLs remembers the app-role URL of each chain rig's scratch database, for tests
+// scratchURLs remembers the worker-role URL of each chain rig's scratch database, for tests
 // that start other processes against it.
 var scratchURLs sync.Map
 
-func scratchAppURL(t *testing.T, r *rig) string {
+func scratchWorkerURL(t *testing.T, r *rig) string {
 	t.Helper()
 	v, ok := scratchURLs.Load(r)
 	if !ok {
@@ -56,8 +57,13 @@ func chainRig(t *testing.T) *rig {
 			t.Errorf("drop %s: %v", sc.Name, err)
 		}
 	})
-	r := newRigOn(t, teststack.NewOn(t, sc.Pool, teststack.WithReceiptConfig(receiptapi.Config{DailyQuota: 1000})))
-	scratchURLs.Store(r, sc.AppURL)
+	workerPool, err := pgxpool.New(ctx, sc.WorkerURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(workerPool.Close) // registered after the Drop above, so it runs before it
+	r := newRigOn(t, teststack.NewOn(t, sc.Pool, sc.Owner, teststack.WithReceiptConfig(receiptapi.Config{DailyQuota: 1000})), workerPool)
+	scratchURLs.Store(r, sc.WorkerURL)
 	t.Cleanup(func() { scratchURLs.Delete(r) })
 	return r
 }
@@ -74,7 +80,7 @@ func (r *rig) startWorkerCfg(t *testing.T, handlers map[string]worker.Handler, m
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	cfg := worker.Config{
-		Pool: r.s.Pool, Handlers: handlers, Concurrency: 4,
+		Pool: r.worker, Handlers: handlers, Concurrency: 4,
 		PollInterval: 10 * time.Millisecond, Lease: 5 * time.Second, ReapInterval: 100 * time.Millisecond,
 		ShutdownGrace: 2 * time.Second, Backoff: queue.Backoff{Base: time.Millisecond, Max: 5 * time.Millisecond},
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
