@@ -2,7 +2,7 @@
 
 Group expense splitting: photograph a receipt, an LLM itemizes it, friends claim their items, and balances are tracked and settled through a **simulated** payment provider.
 
-> **Status: in development. Milestones M0-M6 of 9 are done; mobile (M8), the real-model accuracy evaluation and the full README (M9) are not, and RLS (M7) is in progress (policies are on and tested; the overhead measurement is not done).** The full README (architecture, demo) is M9; this page is a working summary.
+> **Status: in development. Milestones M0-M7 of 9 are done; mobile (M8), the real-model accuracy evaluation and the full README (M9) are not.** The full README (architecture, demo) is M9; this page is a working summary.
 >
 > Built and tested (the evidence for each is in [docs/CLAIMS.md](docs/CLAIMS.md), the reasons in [docs/DESIGN.md](docs/DESIGN.md)):
 > - **Ledger:** Go API, OIDC auth (Dex), groups and join codes, expenses with claims, payer-only item edits with an optimistic version lock, finalize and void into an append-only double-entry ledger, group balances and suggested transfers, idempotency keys, an authorization (BOLA) suite.
