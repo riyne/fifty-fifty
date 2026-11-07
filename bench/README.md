@@ -140,3 +140,29 @@ Then it waits for every settlement to be final, lets late webhooks arrive, reads
 
 **Recorded run (M7.5, 2026-11-07 UTC, commit c5ee83b, clean tree). USED, for CLAIMS row 1 only.** Production build only: `go run ./bench/stress` with the Makefile's database URLs exported (a first start of the program, without them, refused to run and recorded nothing). Not `make bench-stress`: the negative-control build, which takes about 46 minutes, was deliberately not repeated (CLAIMS rows 2 and 21 are annotated as recorded before M7). `caffeinate -ims`, the machine otherwise lightly used (VS Code, a browser, Spotlight indexing and Docker Desktop; 1-minute load average 4.69 at the start). The run followed a green `make ci` on the same commit.
 - `bench/results/stress-production-20261107T225340Z.{json,txt}`: the production build, 3 runs of 80 / 99 / 88 s, all clean (no violation of any of the 11 invariants, no 5xx, nothing unresolved, no vacuity flag). The workload and the parameters are those of the M6.3 recording; what differs is the code under it (row-level security, the worker and system roles, the owner-connection checker; CLAIMS row 1 lists them). The operations completed in the 60 s workload were lower than in the M6.3 recording on a busier machine; that is not attributed to anything and is not a performance claim.
+
+## What row-level security and the identity seam cost (`bench/rls`, CLAIMS row 11)
+
+`caffeinate -ims make bench-rls` (about 8 minutes; `go run ./bench/rls --help` for the knobs; `--reps`, `--measure` and `--warmup` shrink it for a smoke run, which needs `--allow-dirty` and must not be committed). Needs a clean git tree and a quiet machine. Writes `bench/results/rls-<UTC timestamp>.{json,txt}`.
+
+**What is measured.** The same seeded database and the same closed loop of concurrent workers (8, each picking a random user and an operation, no think time), in three variants:
+- `baseline`: row-level security **disabled**, queries on the plain pool: what the api did before M7 (autocommit reads, a transaction for writes);
+- `identity_only`: row-level security **disabled**, queries through `internal/dbscope` (a read is BEGIN, `set_config`, the statement, COMMIT; a write is a transaction that starts with `set_config`);
+- `policies_on`: row-level security **enabled and forced** on the 14 tables, through `dbscope`.
+
+`identity_only` against `baseline` is the cost of the seam; `policies_on` against `identity_only` is the cost of evaluating the policies; `policies_on` against `baseline` is what M7 added in total. The variants are switched with `ALTER TABLE ... ENABLE/DISABLE ROW LEVEL SECURITY` run by the owner while the workers are idle; nothing in the product can do that.
+
+**The mix** (percent): list groups 10, list expenses 25 (the membership lookup and the 100-row listing), get one expense with its items 30, group balances 20 (a sum over the group's ledger entries), claim then unclaim 15 (two transactions: lock the expense row, check the item, add or remove the claim; the net effect on the data is nothing). The queries are the sqlc queries the handlers call, not hand-written look-alikes. Users belong to one group, or two for every fifth user.
+
+**Data** (per repetition, a fresh scratch database): 200 groups of 6 members, 1,200 users, 40,000 expenses (half finalized with a posting of two ledger entries, half claiming), 200,000 items, 100,000 claims, `ANALYZE` after seeding. Synthetic, bulk-loaded with SQL by the owner.
+
+**Procedure.** 6 repetitions, each on its own database, the three variants in a rotating order (all 6 permutations, one per repetition) so that an order effect or a warming cache cannot favor one variant; 3 s warm-up and 15 s timed per variant; the pool is opened at full size before the first variant so no variant pays for connecting. Throughput is completed operations per second over the timed phase; latency is nearest-rank p50 and p99 per operation, then the median over the repetitions, with the range for throughput. The ratios are computed per repetition (the variants of one repetition share a database and a minute) and then summarized.
+
+**Controls, enforced by the program (it stops and records the failure otherwise).**
+- Each variant reads the catalog: row-level security forced on 14 tables in `policies_on`, on none in the other two. A switch that did not take effect cannot be reported as a measurement.
+- Each variant counts the expenses an unguarded `SELECT count(*)` sees as a user: all of them with the policies off, only the user's groups with them on.
+- A fixed list of 300 questions (deterministic user and operation) is asked in every variant and the row counts compared; row-level security must not change what a legitimate query returns.
+- A failed operation fails the run. All three were shown to trigger by breaking the program on purpose (policies never enabled; a policy hiding rows a legitimate query needs).
+- Repetition 1 also records `EXPLAIN ANALYZE` for three queries with the policies on, to show how they are planned: the group list from `my_group_ids()` is a hashed subplan evaluated once per statement (`loops=1`), not once per row, which is what DESIGN "Row-level security (M7.4)" says.
+
+**Not claimed.** Anything about a real network (the workers and Postgres share one laptop, so a round trip costs a few tenths of a millisecond; with a network between the api and the database each extra round trip costs more, and the seam adds three to each autocommit read); other data sizes, other mixes, more workers than connections, or a Postgres on another host; the cost of the worker and webhook paths (not measured); anything about latency of the api over HTTP (this is the database layer only); a statement about RLS in general. The mix and the data are the author's choice.

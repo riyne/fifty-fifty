@@ -12,7 +12,7 @@ export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?s
 export SYSTEM_DATABASE_URL  ?= postgres://fifty_system:fifty@localhost:5433/fifty?sslmode=disable
 export WORKER_DATABASE_URL  ?= postgres://fifty_worker:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-redaction ci ci-format ci-vet ci-generate ci-test ci-vuln
+.PHONY: up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction ci ci-format ci-vet ci-generate ci-test ci-vuln
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -100,6 +100,14 @@ bench-settlement:
 bench-stress:
 	go run ./bench/stress
 	go run -tags unsafe_controls ./bench/stress
+
+# What row-level security and the identity seam cost (bench/README.md): the same seeded
+# database and closed-loop mix of the handlers' queries with RLS disabled on the plain pool,
+# disabled through the seam, and enabled through it; scratch databases; about 8 minutes.
+# Needs a clean git tree and a quiet machine; run as `caffeinate -ims make bench-rls`.
+# Writes bench/results/rls-*.{json,txt}.
+bench-rls:
+	go run ./bench/rls
 
 # Redaction recall on synthetic receipts, on ground-truth text and on Tesseract's reading of
 # rendered images (bench/README.md). Needs tesseract and a clean working tree; touches no
