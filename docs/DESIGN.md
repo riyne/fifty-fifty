@@ -1,6 +1,6 @@
 # Fifty Fifty: design
 
-Status: approved decisions as of 2026-11-06. **M0-M5 are done; M6 (receipt pipeline and item edits) is in progress: 6.1 (item edits and confirm) is built, 6.2 onward is not.** Update this file when a decision changes; don't let it drift from the code.
+Status: approved decisions as of 2026-11-07. **M0-M6 are done** (item edits and the receipt pipeline: upload, OCR, redaction, extraction behind an interface, review, recorded redaction recall). The real Anthropic API has never been called: every extraction test uses the mock LLM (`docs/LIVE_SMOKE.md` is the procedure for a first live check, skipped by decision). **M7 (RLS, optional), M8 (mobile) and M9 (accuracy eval, README, demo) are not started.** Update this file when a decision changes; don't let it drift from the code.
 
 How to read this file: sections 1-13 are the design; section 2 is the decision log, one row per decision or milestone step, newest last, and is the place to look up why something is the way it is (rows are named after the step that made them). Section 13 is the list of open items. Evidence for every claim is in `docs/CLAIMS.md`; benchmark method is in `bench/README.md`. For M6 read: sections 1, 4, 5, 6, 8, 9 and 13, the milestone row M6, and the decision-log rows "M2 scope decisions", "Expenses API", "Claims API", "Finalize", "M2 closed early; 2.8 and 2.9 deferred", "Mock LLM (M3.7)", "Worker runtime and periodic jobs (M3.5)", "Negative-control seams (M5.1)".
 
@@ -118,7 +118,7 @@ Repo layout. Built (as of M6.7; fourteen migrations, 00001-00014):
     cmd/worker/                      worker binary: `run` (M3.5) and `requeue` (M3.4)
     cmd/mockllm/                     mock Anthropic Messages API server for benchmarks (M3.7)
     cmd/mockpay/                     mock payment provider: idempotency keys, faults, signed webhooks (M4.3)
-    bench/queue/, bench/recovery/, bench/settlement/, bench/stress/   benchmark programs; bench/README.md has the methodology, bench/results/ the raw recorded runs
+    bench/queue/, bench/recovery/, bench/settlement/, bench/stress/, bench/redaction/   benchmark programs; bench/README.md has the methodology, bench/results/ the raw recorded runs
     cmd/benchworker/                 worker for the benchmark kind `mock.extract` only; the recovery test and benchmarks start and kill these
     internal/allocator/              pure share math: largest-remainder apportion, per-expense allocate
     internal/auth/                   OIDC verifier + middleware + first-login provisioning
@@ -166,7 +166,7 @@ Repo layout. Built (as of M6.7; fourteen migrations, 00001-00014):
 
 Planned, not built yet:
 
-    bench/{redaction,accuracy,rls}/
+    bench/{accuracy,rls}/
     test/    (rls suite)
     mobile/
 
@@ -261,7 +261,7 @@ Baseline (always built):
 - Append-only ledger enforced by the database; `audit_events` for authz-relevant actions.
 - Join codes: hashed at rest, expiring, revocable, rate-limited; brute-force and expiry tests.
 - Per-user rate limiting; daily receipt quota.
-- CI: gofmt, vet, generate check, tests, govulncheck (built in M5.8, first GitHub run pending); lint and secret scanning (not built). Structured logs never contain receipt text or tokens (from 6.7 a test plants PII in the receipt and checks the logs and `jobs.last_error`; extractor errors must not carry a response body or the OCR text).
+- CI: gofmt, vet, generate check, tests, govulncheck (built in M5.8, first GitHub run pending); lint and secret scanning (not built). Structured logs never contain receipt text or tokens. What checks it: the real-process receipt test (`test/e2e`) looks for every planted card number, email and phone in both worker logs, and the Anthropic client test plants a canary in the request and checks no error contains it (errors carry the HTTP status and the API's error type only). `jobs.last_error` is not asserted directly; it holds the same error text.
 - Parameterized queries only (sqlc); request size limits; input validation.
 
 Stretch (M7): Postgres RLS on core tables as defense in depth.
@@ -279,7 +279,7 @@ Every number in README/resume comes from a recorded run listed in `docs/CLAIMS.m
 3. **Crash recovery:** `kill -9` a worker mid-job over R trials; report time-to-recovery, lost jobs (expect 0), duplicate effects (expect 0). **Done: CLAIMS row 5.**
 4. **Retry behavior:** mock LLM with 429/5xx/malformed rates; success rate, attempts histogram, DLQ rate. **Done: CLAIMS row 18.**
 5. **Settlement fault injection (M4, step 4.8):** timeout-after-success, duplicate and out-of-order webhooks, crashes around the provider call; assert exactly-once posting (ledger postings per succeeded settlement, and provider charges per key from the mock's own counter); time to resolve `unknown`, which mostly reflects the reconcile schedule constants (placeholders) and must be reported as such. **Done: CLAIMS row 19.**
-6. **Redaction recall** on planted synthetic PII (M6). **Accuracy eval** with real LLM on ~50 synthetic receipts (M9): item-level match, total match, review-flag catch rate. Synthetic data flatters results; the README says so.
+6. **Redaction recall** on planted synthetic PII (M6, recorded: CLAIMS row 9). **Accuracy eval** with real LLM on ~50 synthetic receipts (M9): item-level match, total match, review-flag catch rate. Synthetic data flatters results; the README says so.
 7. **RLS overhead** (M7), with vs without.
 
 Test layers: unit (allocator property tests), integration against real Postgres, concurrency suite, BOLA suite, fault-injection tests. CI runs `make ci` (unit, integration, BOLA and database-invariant tests, plus the suite with the `unsafe_controls` tag); the stress smoke test and the negative controls (`make test-e2e`, `make test-controls`) and all benchmarks run locally (CI timing is too noisy to quote).
@@ -296,7 +296,7 @@ Actual hours are not recorded anywhere; re-baselining needs Ryan's own time log.
 | M3 | Queue: leases, fencing, backoff, DLQ, worker runtime, metrics, mock LLM, kill -9 recovery test and benchmark, throughput / latency / retry benchmarks, pruning. **Done (3.1-3.8d); `LISTEN/NOTIFY` measured and not built.** Results: CLAIMS rows 4, 5, 17, 18 | ~20 |
 | M4 | Settlement: idempotency, mock provider, async execution, reconciliation, webhook, watchdog, fault-injection tests and benchmark 5 (steps 4.1-4.8, decision log "M4 plan decisions"). **Done (4.1-4.8); benchmark 5 recorded 2026-11-01 (eb91381).** Results: CLAIMS rows 3 and 19 | ~20 |
 | M5 | Stress test (settle, retries and duplicate keys in the mix), negative controls (`unsafe_controls` seams plus the M4 settlement protections, reporting which layer caught each), the recorded benchmark and minimal CI. **Done (5.1-5.8, commits in the decision log "M5 plan decisions"); recorded 2026-11-05/06 at a72e779, results b4f9a64: CLAIMS rows 1, 2, 20 and 21; CI written (b47c6d2), first GitHub run pending (row 8).** | ~20 |
-| M6 | Item edits first, then the receipt pipeline, in the steps of decision log "M6 plan decisions" (6.1-6.10): **6.1 item edits and confirm: built (33d42b4)**; **6.2 edit seams, stress edit operation, version-check control: built (da71b03)**; **6.3 stress re-record: recorded (2766d9f)**; **6.4 pure pieces (quantity expansion, redaction, schema validation, reconciliation): built (38916ba)**; **6.5 synthetic receipt generator and mock-LLM fixture mode: built (7002327)**; **6.6 upload hardening, object store, quota, `POST .../receipts`: built (a15b489)**; **6.7 `receipt.parse` handler and the stuck-`parsing` sweep: built (e2bcb2d)**; **6.8 Anthropic client, `retry-after`, fault end-to-end and a kill test: built (a551bff)**; **6.9a Tesseract OCR, `cmd/worker` wiring, a real-process receipt test with a SIGKILL: built (9bb6963)**; **6.9b redaction recall benchmark, code: built (03d2575)**; **6.9c its recorded results (row 9): recorded (commit pending)**; 6.10 docs and a live smoke. Decisions Ryan still owes, asked when reached: an Anthropic API key and spend limit (6.10). Estimate not re-baselined | ~25 |
+| M6 | Item edits first, then the receipt pipeline, in the steps of decision log "M6 plan decisions" (6.1-6.10): **6.1 item edits and confirm: built (33d42b4)**; **6.2 edit seams, stress edit operation, version-check control: built (da71b03)**; **6.3 stress re-record: recorded (2766d9f)**; **6.4 pure pieces (quantity expansion, redaction, schema validation, reconciliation): built (38916ba)**; **6.5 synthetic receipt generator and mock-LLM fixture mode: built (7002327)**; **6.6 upload hardening, object store, quota, `POST .../receipts`: built (a15b489)**; **6.7 `receipt.parse` handler and the stuck-`parsing` sweep: built (e2bcb2d)**; **6.8 Anthropic client, `retry-after`, fault end-to-end and a kill test: built (a551bff)**; **6.9a Tesseract OCR, `cmd/worker` wiring, a real-process receipt test with a SIGKILL: built (9bb6963)**; **6.9b redaction recall benchmark, code: built (03d2575)**; **6.9c its recorded results (row 9): recorded (61db9b5)**; **6.10 closing docs pass: done; the optional live smoke was skipped by Ryan and is written up in `docs/LIVE_SMOKE.md`**. **M6 is done.** Estimate not re-baselined | ~25 |
 | M7 | RLS (cut first if late) | ~15 |
 | M8 | Mobile: Expo, OIDC PKCE, group view, add receipt (picker), claim items, balances/settle | ~25 |
 | M9 | Accuracy eval, README, architecture diagram, demo | ~15 |
@@ -318,9 +318,14 @@ Cut order if late: M7, then accuracy eval, then mobile polish.
 **Before going public (Ryan's call; the repo stays private until he decides)**
 - License: undecided.
 - CI was built in M5.8 (`make ci`, `.github/workflows/ci.yml`, decision log "Minimal CI (M5.8)") and has not been confirmed green on GitHub: CLAIMS row 8 stays `planned` until a green run is recorded there. Still open: pin the actions by commit SHA (or add Dependabot); golangci-lint (not installed, ask first) and secret scanning; whether `make test-e2e` and the stress smoke test belong in CI (they need a role that can create databases and `go` for goose, and a few minutes). If CI flakes on the runner, loosen `TestWorker_HeartbeatKeepsALongJobAlive` first (a 300 ms lease with a heartbeat every 100 ms leaves 200 ms of slack), then the other 300 ms-lease worker tests; M5.8 could not reproduce a local failure (6 runs of `internal/worker` with 16 CPU burners on 11 cores).
-- The full README (architecture diagram, demo) is M9. The root README is current as of M5.
+- The full README (architecture diagram, demo) is M9. The root README is current as of M6.
 
-**For M6**
+**Left over from M6** (all of M6 is built; these are what it left)
+- **Live smoke test against the real Anthropic API: skipped by decision (2026-11-07), procedure in `docs/LIVE_SMOKE.md`.** Until it is run, CLAIMS rows 27 and 28 and the whole extraction path are mock-only. Needs a key, a console spend limit and an hour.
+- **Email redaction under OCR noise is weak** (CLAIMS row 9: 89.19% on a clean render, 19.90% at the harshest level, from OCR inserting spaces into addresses). A pattern that tolerates `example. com` is a possible follow-up; changing a pattern after seeing its result means repeating the benchmark and keeping both results.
+- **Tesseract in CI is untested on the runner** (decision log "Tesseract OCR, worker wiring and the first real-process receipt test (M6.9a)": the order of response if the OCR test flakes is written there). CLAIMS row 8 stays `planned`.
+- A permanent extractor error such as a wrong API key is retried like any other, so it shows as every receipt ending in `needs_review` (`extractor_failed`) after four attempts; the log names the HTTP status. Splitting permanent from transient errors was not built.
+- Placeholder constants, not tuned: 4 parse attempts, the 15-minute and 5-minute sweep settings, the 6,000-character OCR cap, OCR and extractor timeouts of 30 s and 60 s, the upload rate limit (burst 5, one per 10 s) and quota (20 a day), Tesseract page segmentation mode 6 (chosen by looking at a few synthetic receipts).
 - Object storage for receipts: a filesystem directory behind `objstore.Store` (built in 6.6). No delete and no sweep of orphan blobs; identical images share one blob, so deletion needs reference counting and belongs with a retention policy. The directory must be shared by the api and the worker (`RECEIPT_DIR`), single host.
 - Upload does not apply the EXIF orientation (hardening drops the tag): the M8 client must send upright pixels (for example by re-encoding through the picker or `expo-image-manipulator`), or the server needs an orientation reader. Decided in 6.6 not to build one now: a hand-written EXIF parser over untrusted bytes is risk for a case the client can remove.
 - Item edits and confirm are built (6.1), and the `edit_lock` / `edit_version_check` controls and the stress edit operation are built (6.2) and recorded (6.3). The README's known-limits entry about uncorrectable prices is gone; the version-check limit stays until 6.3.
