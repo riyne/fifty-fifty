@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -24,7 +25,9 @@ import (
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
+	"github.com/riyne/fifty-fifty/internal/objstore"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
+	"github.com/riyne/fifty-fifty/internal/receiptapi"
 	"github.com/riyne/fifty-fifty/internal/settlements"
 	"github.com/riyne/fifty-fifty/internal/testutil"
 )
@@ -36,12 +39,20 @@ type Stack struct {
 	Server *httptest.Server
 	Issuer *authtest.Issuer
 	Pool   *pgxpool.Pool
+	// ReceiptDir is the directory of the stack's receipt object store (a fresh
+	// temporary directory, removed with the test).
+	ReceiptDir string
 }
 
 type config struct {
 	joinRate      rate.Limit
 	joinBurst     int
 	webhookSecret string
+	receipt       receiptapi.Config
+	receiptStore  objstore.Store
+	readTimeout   time.Duration
+	uploadRate    rate.Limit
+	uploadBurst   int
 }
 
 type Option func(*config)
@@ -49,6 +60,30 @@ type Option func(*config)
 // WithJoinLimit overrides the join-attempt rate limit (default: effectively unlimited).
 func WithJoinLimit(r rate.Limit, burst int) Option {
 	return func(c *config) { c.joinRate, c.joinBurst = r, burst }
+}
+
+// WithReceiptConfig overrides the receipt upload settings (daily quota, how many
+// uploads may decode at once, image limits).
+func WithReceiptConfig(c receiptapi.Config) Option {
+	return func(cfg *config) { cfg.receipt = c }
+}
+
+// WithReceiptStore replaces the receipt object store (default: a temporary directory),
+// for tests that need it to block or fail. Stack.ReceiptDir is then empty.
+func WithReceiptStore(s objstore.Store) Option {
+	return func(c *config) { c.receiptStore = s }
+}
+
+// WithServerReadTimeout sets the http.Server ReadTimeout of the stack (default: none), to
+// test routes that extend their own read deadline, as cmd/api's 15 s timeout requires
+// of the upload route.
+func WithServerReadTimeout(d time.Duration) Option {
+	return func(c *config) { c.readTimeout = d }
+}
+
+// WithUploadLimit overrides the per-user upload rate limit (default: effectively unlimited).
+func WithUploadLimit(r rate.Limit, burst int) Option {
+	return func(c *config) { c.uploadRate, c.uploadBurst = r, burst }
 }
 
 // WithWebhookSecret enables the payment webhook endpoint with this signing secret
@@ -68,7 +103,7 @@ func New(t testing.TB, opts ...Option) *Stack {
 // end-to-end tests use a scratch one).
 func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 	t.Helper()
-	cfg := config{joinRate: rate.Inf, joinBurst: 1_000_000}
+	cfg := config{joinRate: rate.Inf, joinBurst: 1_000_000, uploadRate: rate.Inf, uploadBurst: 1_000_000}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -77,12 +112,23 @@ func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 	if err != nil {
 		t.Fatalf("verifier: %v", err)
 	}
+	var receiptDir string
+	var store objstore.Store = cfg.receiptStore
+	if store == nil {
+		receiptDir = filepath.Join(t.TempDir(), "receipts") // created 0700 by NewFS
+		fsStore, err := objstore.NewFS(receiptDir)
+		if err != nil {
+			t.Fatalf("receipt store: %v", err)
+		}
+		store = fsStore
+	}
 	v1 := httpapi.NewV1(
 		auth.Middleware(verifier, db.New(pool)),
 		groups.NewHandler(pool, ratelimit.New(cfg.joinRate, cfg.joinBurst)),
 		expenses.NewHandler(pool),
 		balances.NewHandler(pool),
 		settlements.NewHandler(pool),
+		receiptapi.NewHandler(pool, store, ratelimit.New(cfg.uploadRate, cfg.uploadBurst), cfg.receipt),
 	)
 	var webhooks http.Handler
 	if cfg.webhookSecret != "" {
@@ -92,9 +138,11 @@ func NewOn(t testing.TB, pool *pgxpool.Pool, opts ...Option) *Stack {
 		}
 		webhooks = wh
 	}
-	srv := httptest.NewServer(httpapi.New(pool, v1, webhooks))
+	srv := httptest.NewUnstartedServer(httpapi.New(pool, v1, webhooks))
+	srv.Config.ReadTimeout = cfg.readTimeout
+	srv.Start()
 	t.Cleanup(srv.Close)
-	return &Stack{Server: srv, Issuer: iss, Pool: pool}
+	return &Stack{Server: srv, Issuer: iss, Pool: pool, ReceiptDir: receiptDir}
 }
 
 // Token mints a valid token for a brand-new user named name.

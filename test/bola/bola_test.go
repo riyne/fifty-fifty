@@ -20,16 +20,19 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 
+	"github.com/riyne/fifty-fifty/internal/receipts/synth"
 	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
@@ -207,7 +210,7 @@ func (f *fixture) firstItem(t *testing.T, a actor, group, expense string) string
 func (f *fixture) state(t *testing.T) string {
 	t.Helper()
 	q := func(sql string) int { return f.s.QueryInt(t, sql, f.groupA, f.groupB) }
-	return fmt.Sprintf("codes=%d revoked=%d uses=%d members=%d audit=%d expenses=%d items=%d claims=%d finalized=%d ledger_tx=%d ledger_entries=%d settlements=%d settlement_jobs=%d versions=%d item_cents=%d tax_tip=%d",
+	return fmt.Sprintf("codes=%d revoked=%d uses=%d members=%d audit=%d expenses=%d items=%d claims=%d finalized=%d ledger_tx=%d ledger_entries=%d settlements=%d settlement_jobs=%d versions=%d item_cents=%d tax_tip=%d receipts=%d quota=%d",
 		q(`SELECT count(*) FROM join_codes WHERE group_id IN ($1, $2)`),
 		q(`SELECT count(revoked_at) FROM join_codes WHERE group_id IN ($1, $2)`),
 		q(`SELECT coalesce(sum(uses), 0) FROM join_codes WHERE group_id IN ($1, $2)`),
@@ -224,7 +227,38 @@ func (f *fixture) state(t *testing.T) string {
 		q(`SELECT coalesce(sum(version), 0) FROM expenses WHERE group_id IN ($1, $2)`),
 		q(`SELECT coalesce(sum(price_minor), 0) FROM expense_items i JOIN expenses e ON e.id = i.expense_id WHERE e.group_id IN ($1, $2)`),
 		q(`SELECT coalesce(sum(tax_minor + tip_minor), 0) FROM expenses WHERE group_id IN ($1, $2)`),
+		q(`SELECT count(*) FROM receipts WHERE group_id IN ($1, $2)`),
+		q(`SELECT coalesce(sum(used), 0) FROM receipt_quota WHERE user_id IN (SELECT user_id FROM memberships WHERE group_id IN ($1, $2))`),
 	)
+}
+
+// uploadContentType and uploadBody are a valid receipt upload: one multipart file
+// part holding a rendered synthetic receipt, with a fixed boundary so the content type
+// can be a constant.
+const uploadContentType = "multipart/form-data; boundary=bolaboundary"
+
+var (
+	uploadOnce sync.Once
+	uploadForm string
+)
+
+func uploadBody(*fixture) string {
+	uploadOnce.Do(func() {
+		img, err := synth.Generate(1).Render(synth.RenderOptions{})
+		if err != nil {
+			panic(err)
+		}
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		if err := mw.SetBoundary("bolaboundary"); err != nil {
+			panic(err)
+		}
+		w, _ := mw.CreateFormFile("file", "receipt.png")
+		w.Write(img)
+		mw.Close()
+		uploadForm = buf.String()
+	})
+	return uploadForm
 }
 
 // scenario is one request shape tried as each actor.
@@ -241,6 +275,8 @@ type scenario struct {
 	bodyFor func(f *fixture, a actor) string
 	// idempotent adds a fresh Idempotency-Key header to every request.
 	idempotent bool
+	// contentType, if set, is sent as the Content-Type header (default: none).
+	contentType string
 	// prepare runs before each actor's request (e.g. to mint a fresh code to revoke).
 	prepare func(t *testing.T, f *fixture) string // returns the path to use; overrides path if non-nil
 	want    map[actor]int
@@ -291,6 +327,13 @@ func scenarios() []scenario {
 			name: "create expense", opID: "POST /v1/groups/{id}/expenses", method: "POST", path: groupPath("/expenses"),
 			body: expenseBody, idempotent: true,
 			want: map[actor]int{anon: 401, outsider: 404, member: 201, owner: 201},
+		},
+		{
+			// Any member may upload a receipt (the uploader becomes the payer of the new
+			// expense); a non-member is refused with 404 before the body or key is looked at.
+			name: "upload receipt", opID: "POST /v1/groups/{id}/receipts", method: "POST", path: groupPath("/receipts"),
+			bodyFn: uploadBody, contentType: uploadContentType, idempotent: true,
+			want: map[actor]int{anon: 401, outsider: 404, member: 202, owner: 202},
 		},
 		{
 			name: "read balances", opID: "GET /v1/groups/{id}/balances", method: "GET", path: groupPath("/balances"),
@@ -589,6 +632,9 @@ func TestMatrix(t *testing.T) {
 				var headers []string
 				if sc.idempotent {
 					headers = []string{"Idempotency-Key", uuid.NewString()}
+				}
+				if sc.contentType != "" {
+					headers = append(headers, "Content-Type", sc.contentType)
 				}
 				r := f.s.Do(t, f.tokens[a], sc.method, path, body, headers...)
 				if r.Status != want {

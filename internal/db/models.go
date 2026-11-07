@@ -123,6 +123,25 @@ type Membership struct {
 	JoinedAt time.Time
 }
 
+type Receipt struct {
+	ID          uuid.UUID
+	ExpenseID   uuid.UUID
+	GroupID     uuid.UUID
+	UploaderID  uuid.UUID
+	ObjectKey   string
+	ContentType string
+	SizeBytes   int32
+	WidthPx     int32
+	HeightPx    int32
+	CreatedAt   time.Time
+}
+
+type ReceiptQuotum struct {
+	UserID uuid.UUID
+	Day    pgtype.Date
+	Used   int32
+}
+
 type Settlement struct {
 	ID                  uuid.UUID
 	GroupID             uuid.UUID

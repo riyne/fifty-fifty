@@ -259,6 +259,70 @@ paths:
                     items: { $ref: "#/components/schemas/ExpenseSummary" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/groups/{id}/receipts:
+    parameters:
+      - { $ref: "#/components/parameters/GroupId" }
+    post:
+      summary: Upload a receipt photo (any member). Creates an expense in status `parsing`. Requires Idempotency-Key.
+      description: >
+        Send `multipart/form-data` with one `file` part (a JPEG or PNG; the bytes decide, the part's
+        declared type and file name are ignored) and optionally one `description` part (1-200
+        characters, default `Receipt`). Any other part, or a second file or description, is a 400. The image is checked and re-encoded before it is stored: at most 10 MiB
+        uploaded, 100 to 10000 pixels on each side, at most 25 million pixels, and at most 20 MiB
+        after re-encoding. Re-encoding removes EXIF (including GPS position), comments, profiles and
+        anything appended after the image; PNG transparency is flattened onto white. The EXIF
+        orientation tag is dropped without being applied, so send upright pixels. A caller who is not
+        in the group gets 404 before the key or the body is looked at.
+        The expense is created with no items, payer = the caller, in status `parsing`; the parse
+        job that fills in the items is added in a later step, so for now it stays `parsing`.
+        Each caller gets 20 uploads per UTC day (a cost cap; 429 `quota_exceeded` with a Retry-After
+        until the reset), and a per-user rate limit (429 `rate_limited`). Uploads over the quota
+        or the rate limit are not stored under the key, so the same key may be retried later.
+        Responses below 500 that were produced by the operation are stored under the key for 24 hours
+        and replayed (Idempotent-Replayed: true); the same key with a different image or description
+        is 422; a replay consumes no quota. When too many uploads are being processed at once the
+        answer is 503 `busy` with Retry-After. Available only when the server has a receipt directory
+        configured (otherwise this route does not exist).
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+                description: { type: string, minLength: 1, maxLength: 200, description: Trimmed before validation. }
+      responses:
+        "202":
+          description: Accepted. The receipt is stored and the expense is waiting to be parsed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReceiptUpload" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413":
+          description: The upload, or the image after re-encoding, is over the size limit (code `too_large`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "415":
+          description: The request is not multipart/form-data (code `unsupported_media_type`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/KeyReuse" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503":
+          description: Too many uploads are being processed (code `busy`). Retry-After says when to try again.
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /v1/groups/{id}/expenses/{expenseId}:
     get:
       summary: One expense with its items and who claimed each (any member). 404 if the caller is not in the group, the expense does not exist, or it belongs to another group (indistinguishable by design).
@@ -774,6 +838,18 @@ components:
           type: array
           description: Ids of the members who claimed this item, sorted.
           items: { type: string, format: uuid }
+    ReceiptUpload:
+      type: object
+      required: [expense_id, receipt_id, status, version, content_type, width_px, height_px, size_bytes]
+      properties:
+        expense_id: { type: string, format: uuid, description: "Read it with GET /v1/groups/{id}/expenses/{expenseId}." }
+        receipt_id: { type: string, format: uuid }
+        status: { type: string, enum: [parsing] }
+        version: { type: integer }
+        content_type: { type: string, enum: [image/jpeg, image/png], description: Of the stored, re-encoded image. }
+        width_px: { type: integer }
+        height_px: { type: integer }
+        size_bytes: { type: integer, description: Of the stored, re-encoded image. }
     Expense:
       type: object
       required: [id, group_id, payer_id, description, status, version, currency, tax_minor, tip_minor, subtotal_minor, total_minor, created_at, finalized_at, voided_at, items]

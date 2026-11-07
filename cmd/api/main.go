@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -21,7 +22,9 @@ import (
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
+	"github.com/riyne/fifty-fifty/internal/objstore"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
+	"github.com/riyne/fifty-fifty/internal/receiptapi"
 	"github.com/riyne/fifty-fifty/internal/settlements"
 )
 
@@ -74,7 +77,27 @@ func run() error {
 	// so per api process (see internal/ratelimit).
 	joinLimiter := ratelimit.New(rate.Every(6*time.Second), 10)
 
-	v1 := httpapi.NewV1(auth.Middleware(verifier, db.New(pool)), groups.NewHandler(pool, joinLimiter), expenses.NewHandler(pool), balances.NewHandler(pool), settlements.NewHandler(pool))
+	// Receipt upload is mounted only when RECEIPT_DIR names a directory for the images
+	// (created with mode 0700 if missing; the worker that parses them must see the same
+	// directory). Uploads: a burst of 5, then one every 10 seconds, per user; the daily
+	// quota (RECEIPT_DAILY_QUOTA, default 20) is the cost cap.
+	var receiptHandler *receiptapi.Handler
+	if dir := os.Getenv("RECEIPT_DIR"); dir != "" {
+		store, err := objstore.NewFS(dir)
+		if err != nil {
+			return fmt.Errorf("receipt store: %w", err)
+		}
+		quota := receiptapi.DefaultDailyQuota
+		if v := os.Getenv("RECEIPT_DAILY_QUOTA"); v != "" {
+			if quota, err = strconv.Atoi(v); err != nil || quota < 1 || quota > 10000 {
+				return errors.New("RECEIPT_DAILY_QUOTA must be an integer from 1 to 10000")
+			}
+		}
+		receiptHandler = receiptapi.NewHandler(pool, store, ratelimit.New(rate.Every(10*time.Second), 5), receiptapi.Config{DailyQuota: quota})
+		slog.Info("receipt upload enabled", "dir", dir, "daily_quota", quota)
+	}
+
+	v1 := httpapi.NewV1(auth.Middleware(verifier, db.New(pool)), groups.NewHandler(pool, joinLimiter), expenses.NewHandler(pool), balances.NewHandler(pool), settlements.NewHandler(pool), receiptHandler)
 
 	// Payment webhooks are accepted only when a signing secret is configured; without
 	// one the route does not exist (404), never "accept anything".

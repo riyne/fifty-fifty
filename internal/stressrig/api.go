@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,7 +18,9 @@ import (
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
+	"github.com/riyne/fifty-fifty/internal/objstore"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
+	"github.com/riyne/fifty-fifty/internal/receiptapi"
 	"github.com/riyne/fifty-fifty/internal/settlements"
 )
 
@@ -54,12 +57,27 @@ func StartAPI(ctx context.Context, pool *pgxpool.Pool, webhookSecret string) (*A
 		a.Close()
 		return nil, fmt.Errorf("verifier: %w", err)
 	}
+	// Uploads are mounted as in cmd/api, over a private temporary directory that Close
+	// removes; the stress workload does not use them.
+	receiptDir, err := os.MkdirTemp("", "stressrig-receipts-")
+	if err != nil {
+		a.Close()
+		return nil, fmt.Errorf("receipt dir: %w", err)
+	}
+	a.closeFn = append(a.closeFn, func() { _ = os.RemoveAll(receiptDir) })
+	store, err := objstore.NewFS(receiptDir)
+	if err != nil {
+		a.Close()
+		return nil, fmt.Errorf("receipt store: %w", err)
+	}
+	receiptHandler := receiptapi.NewHandler(pool, store, ratelimit.New(rate.Inf, 1_000_000), receiptapi.Config{})
 	v1 := httpapi.NewV1(
 		auth.Middleware(verifier, db.New(pool)),
 		groups.NewHandler(pool, ratelimit.New(rate.Inf, 1_000_000)),
 		expenses.NewHandler(pool),
 		balances.NewHandler(pool),
 		settlements.NewHandler(pool),
+		receiptHandler,
 	)
 	var webhooks http.Handler
 	if webhookSecret != "" {
@@ -95,6 +113,10 @@ func (a *API) Close() {
 	if a.srv != nil {
 		a.srv.Close()
 	}
+	for _, fn := range a.closeFn {
+		fn()
+	}
+	a.closeFn = nil
 	a.rigT.run()
 }
 

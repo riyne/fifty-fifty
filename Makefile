@@ -35,6 +35,9 @@ generate: ## regenerate sqlc code from migrations/ and internal/db/queries/
 # Dev defaults for the local Dex from deploy/. The api binary requires these to be set.
 export OIDC_ISSUER    ?= http://localhost:5556/dex
 export OIDC_CLIENT_ID ?= fifty-fifty
+# Receipt images (upload is mounted only when this is set). Outside the repo, so nothing
+# uploaded in development can be committed; created with mode 0700 on first use.
+export RECEIPT_DIR ?= $(HOME)/.fifty-fifty-receipts
 
 run-api:
 	go run ./cmd/api

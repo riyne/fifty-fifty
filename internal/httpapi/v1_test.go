@@ -3,11 +3,23 @@ package httpapi_test
 import (
 	"bytes"
 	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	"github.com/riyne/fifty-fifty/internal/auth/authtest"
+	"github.com/riyne/fifty-fifty/internal/balances"
+	"github.com/riyne/fifty-fifty/internal/expenses"
+	"github.com/riyne/fifty-fifty/internal/groups"
+	"github.com/riyne/fifty-fifty/internal/httpapi"
+	"github.com/riyne/fifty-fifty/internal/objstore"
+	"github.com/riyne/fifty-fifty/internal/ratelimit"
+	"github.com/riyne/fifty-fifty/internal/receiptapi"
+	"github.com/riyne/fifty-fifty/internal/settlements"
 	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
@@ -39,6 +51,7 @@ func TestV1_RequiresValidToken(t *testing.T) {
 	paths := []struct{ method, path string }{
 		{"GET", "/v1/me"}, {"GET", "/v1/groups"}, {"POST", "/v1/groups"}, {"POST", "/v1/join"},
 		{"GET", "/v1/groups/00000000-0000-0000-0000-000000000000"}, {"GET", "/v1/no-such-route"},
+		{"POST", "/v1/groups/00000000-0000-0000-0000-000000000000/receipts"},
 	}
 	for name, tok := range bad {
 		for _, p := range paths {
@@ -210,5 +223,40 @@ func TestGetGroup_NonMemberIsIndistinguishableFromMissing(t *testing.T) {
 	s.Do(t, mallory, "GET", "/v1/groups", "").JSON(t, &listed)
 	if len(listed.Groups) != 0 {
 		t.Fatalf("mallory sees groups: %+v", listed.Groups)
+	}
+}
+
+// Without a receipt handler (no receipt directory configured) the upload route does not
+// exist: 404, never an upload that goes nowhere. With one, the route is mounted.
+func TestNewV1_ReceiptRouteExistsOnlyWithAHandler(t *testing.T) {
+	pass := func(h http.Handler) http.Handler { return h }
+	req := func(v1 http.Handler) int {
+		w := httptest.NewRecorder()
+		v1.ServeHTTP(w, httptest.NewRequest("POST", "/v1/groups/00000000-0000-0000-0000-000000000000/receipts", nil))
+		return w.Code
+	}
+	without := httpapi.NewV1(pass, groups.NewHandler(nil, nil), expenses.NewHandler(nil), balances.NewHandler(nil), settlements.NewHandler(nil), nil)
+	if got := req(without); got != http.StatusNotFound {
+		t.Errorf("without a receipt handler: %d, want 404", got)
+	}
+	store, err := objstore.NewFS(filepath.Join(t.TempDir(), "r"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	with := httpapi.NewV1(pass, groups.NewHandler(nil, nil), expenses.NewHandler(nil), balances.NewHandler(nil), settlements.NewHandler(nil),
+		receiptapi.NewHandler(nil, store, ratelimit.New(rate.Inf, 1), receiptapi.Config{}))
+	// With a handler the route is mounted: the request reaches it. It has no database
+	// here, so reaching it may panic (recovered); only "no such route" is a failure.
+	mounted := func() (m bool) {
+		defer func() {
+			if recover() != nil {
+				m = true
+			}
+		}()
+		got := req(with)
+		return got != http.StatusNotFound && got != http.StatusMethodNotAllowed
+	}()
+	if !mounted {
+		t.Error("with a receipt handler the route is not mounted")
 	}
 }

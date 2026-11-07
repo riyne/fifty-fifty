@@ -12,6 +12,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
 	"github.com/riyne/fifty-fifty/internal/httpx"
+	"github.com/riyne/fifty-fifty/internal/receiptapi"
 	"github.com/riyne/fifty-fifty/internal/settlements"
 )
 
@@ -46,14 +47,19 @@ func New(db Pinger, v1 http.Handler, webhooks http.Handler) http.Handler {
 }
 
 // NewV1 builds the authenticated API. authn wraps the whole mux, so a route
-// added here cannot accidentally be served without authentication.
-func NewV1(authn func(http.Handler) http.Handler, g *groups.Handler, e *expenses.Handler, b *balances.Handler, st *settlements.Handler) http.Handler {
+// added here cannot accidentally be served without authentication. rc may be nil:
+// receipt upload needs an object store, and a deployment without one has no upload
+// route (404), never an upload that goes nowhere.
+func NewV1(authn func(http.Handler) http.Handler, g *groups.Handler, e *expenses.Handler, b *balances.Handler, st *settlements.Handler, rc *receiptapi.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/me", me)
 	g.Register(mux)
 	e.Register(mux)
 	b.Register(mux)
 	st.Register(mux)
+	if rc != nil {
+		rc.Register(mux)
+	}
 	return authn(mux)
 }
 
