@@ -1,0 +1,612 @@
+{
+  "started_at": "2026-11-07T04:46:40.195388Z",
+  "parameters": {
+    "first_ref": 1,
+    "receipts_per_variant": 1000,
+    "ocr_processes_in_parallel": 4,
+    "variants": [
+      "ground-truth-text",
+      "ocr-clean",
+      "ocr-mild",
+      "ocr-moderate",
+      "ocr-harsh"
+    ]
+  },
+  "environment": {
+    "machine": "Apple M3 Pro",
+    "cpus": 11,
+    "memory_bytes": "19327352832",
+    "os": "Darwin 25.6.0 arm64",
+    "go_version": "go1.27.3",
+    "tesseract_version": "tesseract 5.5.4",
+    "tesseract_page_segmentation_mode": 6,
+    "load_average_at_start": "21:46  up 79 days, 17:50, 1 user, load averages: 1.88 3.57 4.49",
+    "commit": "03d25751ba9f4420817f09f786344c5ed1a1c60e",
+    "working_tree_dirty": false,
+    "database": "not used (this benchmark touches no database)"
+  },
+  "duration_seconds": 242.625386167,
+  "variants": [
+    {
+      "variant": "ground-truth-text",
+      "description": "the ground-truth text of the receipt, as a perfect reader would produce it",
+      "receipts_scored": 1000,
+      "ocr_failures": 0,
+      "per_kind": {
+        "card": {
+          "planted": 515,
+          "leaked": 0,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 515,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 0,
+          "recall": 1,
+          "recall_wilson95_low": 0.9925960834171218,
+          "recall_wilson95_high": 1,
+          "placeholders_inserted": 515
+        },
+        "email": {
+          "planted": 407,
+          "leaked": 0,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 407,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 0,
+          "recall": 1,
+          "recall_wilson95_low": 0.99064977791736,
+          "recall_wilson95_high": 1,
+          "placeholders_inserted": 407
+        },
+        "phone": {
+          "planted": 892,
+          "leaked": 0,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 892,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 0,
+          "recall": 1,
+          "recall_wilson95_low": 0.995711898748141,
+          "recall_wilson95_high": 1,
+          "placeholders_inserted": 892
+        }
+      },
+      "overall": {
+        "planted": 1814,
+        "leaked": 0,
+        "lost_by_ocr_not_in_text": 0,
+        "read_exactly": 1814,
+        "leaked_when_read_exactly": 0,
+        "leaked_when_garbled_by_ocr": 0,
+        "recall": 1,
+        "recall_wilson95_low": 0.9978868020296665,
+        "recall_wilson95_high": 1,
+        "placeholders_inserted": 1814
+      },
+      "leaked_examples_first_10": null
+    },
+    {
+      "variant": "ocr-clean",
+      "description": "the receipt rendered as an image (skew 0.0 degrees, Gaussian pixel noise sigma 0 gray levels), read by Tesseract",
+      "receipts_scored": 1000,
+      "ocr_failures": 0,
+      "per_kind": {
+        "card": {
+          "planted": 515,
+          "leaked": 3,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 512,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 3,
+          "recall": 0.9941747572815534,
+          "recall_wilson95_low": 0.9830149021368091,
+          "recall_wilson95_high": 0.9980169550657441,
+          "placeholders_inserted": 512
+        },
+        "email": {
+          "planted": 407,
+          "leaked": 44,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 132,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 44,
+          "recall": 0.8918918918918919,
+          "recall_wilson95_low": 0.8579789413191907,
+          "recall_wilson95_high": 0.9184762900214427,
+          "placeholders_inserted": 400
+        },
+        "phone": {
+          "planted": 892,
+          "leaked": 24,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 868,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 24,
+          "recall": 0.9730941704035875,
+          "recall_wilson95_low": 0.9602772516213014,
+          "recall_wilson95_high": 0.9818537377771639,
+          "placeholders_inserted": 868
+        }
+      },
+      "overall": {
+        "planted": 1814,
+        "leaked": 71,
+        "lost_by_ocr_not_in_text": 0,
+        "read_exactly": 1512,
+        "leaked_when_read_exactly": 0,
+        "leaked_when_garbled_by_ocr": 71,
+        "recall": 0.9608599779492834,
+        "recall_wilson95_low": 0.9509182705349025,
+        "recall_wilson95_high": 0.9688539086236435,
+        "placeholders_inserted": 1780
+      },
+      "leaked_examples_first_10": [
+        {
+          "ref": 1,
+          "kind": "phone",
+          "planted_value": "+1 212 555 0118",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Customer +1 212 555 Q118"
+        },
+        {
+          "ref": 36,
+          "kind": "email",
+          "planted_value": "chris.o88@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "chris [EMAIL]"
+        },
+        {
+          "ref": 49,
+          "kind": "email",
+          "planted_value": "alex.k6@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "alex. [EMAIL]"
+        },
+        {
+          "ref": 61,
+          "kind": "email",
+          "planted_value": "chris.o99@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "chris [EMAIL]"
+        },
+        {
+          "ref": 62,
+          "kind": "email",
+          "planted_value": "chris.o48@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "chris [EMAIL]"
+        },
+        {
+          "ref": 78,
+          "kind": "phone",
+          "planted_value": "+1 415 555 0195",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Customer +1 415 555 @195"
+        },
+        {
+          "ref": 88,
+          "kind": "phone",
+          "planted_value": "+1 415 555 0131",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Customer +1 415 555 Q131"
+        },
+        {
+          "ref": 144,
+          "kind": "phone",
+          "planted_value": "+1 416 555 0151",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Customer +1 416 555 Q151"
+        },
+        {
+          "ref": 163,
+          "kind": "email",
+          "planted_value": "alex.k34@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "alex. [EMAIL]"
+        },
+        {
+          "ref": 190,
+          "kind": "phone",
+          "planted_value": "+1 212 555 0117",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Tel +1 212 555 Q117"
+        }
+      ]
+    },
+    {
+      "variant": "ocr-mild",
+      "description": "the receipt rendered as an image (skew 1.5 degrees, Gaussian pixel noise sigma 10 gray levels), read by Tesseract",
+      "receipts_scored": 1000,
+      "ocr_failures": 0,
+      "per_kind": {
+        "card": {
+          "planted": 515,
+          "leaked": 14,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 485,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 14,
+          "recall": 0.9728155339805825,
+          "recall_wilson95_low": 0.9548907400301265,
+          "recall_wilson95_high": 0.983738954385676,
+          "placeholders_inserted": 501
+        },
+        "email": {
+          "planted": 407,
+          "leaked": 52,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 269,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 52,
+          "recall": 0.8722358722358723,
+          "recall_wilson95_low": 0.8362883731460327,
+          "recall_wilson95_high": 0.9012223951806506,
+          "placeholders_inserted": 383
+        },
+        "phone": {
+          "planted": 892,
+          "leaked": 32,
+          "lost_by_ocr_not_in_text": 4,
+          "read_exactly": 819,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 32,
+          "recall": 0.9641255605381166,
+          "recall_wilson95_low": 0.9497953466579065,
+          "recall_wilson95_high": 0.9744753396240002,
+          "placeholders_inserted": 856
+        }
+      },
+      "overall": {
+        "planted": 1814,
+        "leaked": 98,
+        "lost_by_ocr_not_in_text": 4,
+        "read_exactly": 1573,
+        "leaked_when_read_exactly": 0,
+        "leaked_when_garbled_by_ocr": 98,
+        "recall": 0.9459757442116868,
+        "recall_wilson95_low": 0.9345985351388314,
+        "recall_wilson95_high": 0.9554680832095702,
+        "placeholders_inserted": 1740
+      },
+      "leaked_examples_first_10": [
+        {
+          "ref": 3,
+          "kind": "phone",
+          "planted_value": "+1 250 555 0129",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Tel +1 25@ 555 0129"
+        },
+        {
+          "ref": 35,
+          "kind": "email",
+          "planted_value": "chris.o98@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "chris [EMAIL]"
+        },
+        {
+          "ref": 43,
+          "kind": "email",
+          "planted_value": "chris.o66@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "chris [EMAIL]"
+        },
+        {
+          "ref": 44,
+          "kind": "email",
+          "planted_value": "r.singh36@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "r.singh36@example. org"
+        },
+        {
+          "ref": 45,
+          "kind": "phone",
+          "planted_value": "+1 604 555 0151",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Tel +1 604 555 @151"
+        },
+        {
+          "ref": 55,
+          "kind": "email",
+          "planted_value": "dana.w30@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "dana.w3@@example.org"
+        },
+        {
+          "ref": 59,
+          "kind": "phone",
+          "planted_value": "+1 250 555 0198",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Tel +1 25@ 555 0198"
+        },
+        {
+          "ref": 61,
+          "kind": "email",
+          "planted_value": "chris.o99@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "chris.o99@example. com"
+        },
+        {
+          "ref": 65,
+          "kind": "email",
+          "planted_value": "dana.w0@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "dana.w@@example.org"
+        },
+        {
+          "ref": 67,
+          "kind": "phone",
+          "planted_value": "+1 250 555 0162",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Tel +1 25@ 555 0162"
+        }
+      ]
+    },
+    {
+      "variant": "ocr-moderate",
+      "description": "the receipt rendered as an image (skew 3.0 degrees, Gaussian pixel noise sigma 25 gray levels), read by Tesseract",
+      "receipts_scored": 1000,
+      "ocr_failures": 0,
+      "per_kind": {
+        "card": {
+          "planted": 515,
+          "leaked": 22,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 384,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 22,
+          "recall": 0.9572815533980582,
+          "recall_wilson95_low": 0.9361691913130167,
+          "recall_wilson95_high": 0.9716225665306032,
+          "placeholders_inserted": 492
+        },
+        "email": {
+          "planted": 407,
+          "leaked": 110,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 210,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 110,
+          "recall": 0.7297297297297297,
+          "recall_wilson95_low": 0.6845851412633326,
+          "recall_wilson95_high": 0.770578270212211,
+          "placeholders_inserted": 348
+        },
+        "phone": {
+          "planted": 892,
+          "leaked": 44,
+          "lost_by_ocr_not_in_text": 8,
+          "read_exactly": 706,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 44,
+          "recall": 0.9506726457399103,
+          "recall_wilson95_low": 0.9344285259015835,
+          "recall_wilson95_high": 0.9630517057054852,
+          "placeholders_inserted": 843
+        }
+      },
+      "overall": {
+        "planted": 1814,
+        "leaked": 176,
+        "lost_by_ocr_not_in_text": 8,
+        "read_exactly": 1300,
+        "leaked_when_read_exactly": 0,
+        "leaked_when_garbled_by_ocr": 176,
+        "recall": 0.9029768467475193,
+        "recall_wilson95_low": 0.8884921653994129,
+        "recall_wilson95_high": 0.9157583883863494,
+        "placeholders_inserted": 1683
+      },
+      "leaked_examples_first_10": [
+        {
+          "ref": 6,
+          "kind": "card",
+          "planted_value": "4807 9414 6023 7277",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "CARD 4807 9414 6923 (217"
+        },
+        {
+          "ref": 13,
+          "kind": "phone",
+          "planted_value": "+1 212 555 0161",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Tel +1 212 555 @161"
+        },
+        {
+          "ref": 26,
+          "kind": "email",
+          "planted_value": "jane.doe22@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "jane. [EMAIL]"
+        },
+        {
+          "ref": 29,
+          "kind": "phone",
+          "planted_value": "+1 212 555 0139",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Tel +1 212 555 @139"
+        },
+        {
+          "ref": 36,
+          "kind": "email",
+          "planted_value": "chris.o88@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "chris. [EMAIL]"
+        },
+        {
+          "ref": 43,
+          "kind": "email",
+          "planted_value": "chris.o66@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "chris [EMAIL]"
+        },
+        {
+          "ref": 44,
+          "kind": "email",
+          "planted_value": "r.singh36@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "r.Singh36@example. org"
+        },
+        {
+          "ref": 60,
+          "kind": "email",
+          "planted_value": "alex.k70@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "alex. k7@@example.com"
+        },
+        {
+          "ref": 61,
+          "kind": "email",
+          "planted_value": "chris.o99@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "chris [EMAIL]"
+        },
+        {
+          "ref": 68,
+          "kind": "phone",
+          "planted_value": "+1 415 555 0112",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Tel +1 415 555 @112"
+        }
+      ]
+    },
+    {
+      "variant": "ocr-harsh",
+      "description": "the receipt rendered as an image (skew 5.0 degrees, Gaussian pixel noise sigma 40 gray levels), read by Tesseract",
+      "receipts_scored": 1000,
+      "ocr_failures": 0,
+      "per_kind": {
+        "card": {
+          "planted": 515,
+          "leaked": 97,
+          "lost_by_ocr_not_in_text": 0,
+          "read_exactly": 179,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 97,
+          "recall": 0.8116504854368932,
+          "recall_wilson95_low": 0.775620797302186,
+          "recall_wilson95_high": 0.8430653051772239,
+          "placeholders_inserted": 414
+        },
+        "email": {
+          "planted": 407,
+          "leaked": 326,
+          "lost_by_ocr_not_in_text": 14,
+          "read_exactly": 12,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 326,
+          "recall": 0.19901719901719903,
+          "recall_wilson95_low": 0.16312185812042013,
+          "recall_wilson95_high": 0.24054105197846648,
+          "placeholders_inserted": 56
+        },
+        "phone": {
+          "planted": 892,
+          "leaked": 72,
+          "lost_by_ocr_not_in_text": 12,
+          "read_exactly": 363,
+          "leaked_when_read_exactly": 0,
+          "leaked_when_garbled_by_ocr": 72,
+          "recall": 0.9192825112107623,
+          "recall_wilson95_low": 0.8995564236950498,
+          "recall_wilson95_high": 0.935412747004064,
+          "placeholders_inserted": 806
+        }
+      },
+      "overall": {
+        "planted": 1814,
+        "leaked": 495,
+        "lost_by_ocr_not_in_text": 26,
+        "read_exactly": 554,
+        "leaked_when_read_exactly": 0,
+        "leaked_when_garbled_by_ocr": 495,
+        "recall": 0.727122381477398,
+        "recall_wilson95_low": 0.7061602046962122,
+        "recall_wilson95_high": 0.7471246491474731,
+        "placeholders_inserted": 1276
+      },
+      "leaked_examples_first_10": [
+        {
+          "ref": 1,
+          "kind": "email",
+          "planted_value": "r.singh40@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "T+Singh4@@examp le. com : :"
+        },
+        {
+          "ref": 3,
+          "kind": "phone",
+          "planted_value": "+1 250 555 0129",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": ": Tel. +1 250 555 Q129"
+        },
+        {
+          "ref": 4,
+          "kind": "card",
+          "planted_value": "4206 9454 1901 0414",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "CARD 4296 9454 1901 @414 oe"
+        },
+        {
+          "ref": 4,
+          "kind": "email",
+          "planted_value": "dana.w31@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "‘dana.w31Gexampe. org :"
+        },
+        {
+          "ref": 5,
+          "kind": "email",
+          "planted_value": "alex.k10@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "alex. k10@example. org"
+        },
+        {
+          "ref": 6,
+          "kind": "card",
+          "planted_value": "4807 9414 6023 7277",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "SAND 4807 9414 G095 a57)"
+        },
+        {
+          "ref": 9,
+          "kind": "email",
+          "planted_value": "m.tremblay26@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "ms tremblay26@example. com"
+        },
+        {
+          "ref": 12,
+          "kind": "email",
+          "planted_value": "dana.w61@example.com",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "dana.w61@example. com"
+        },
+        {
+          "ref": 15,
+          "kind": "email",
+          "planted_value": "jane.doe41@example.org",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Jane. doe41@example, org ee"
+        },
+        {
+          "ref": 16,
+          "kind": "phone",
+          "planted_value": "(778) 555-0112",
+          "read_exactly_by_ocr": false,
+          "redacted_text_line_with_the_leak": "Tel 78) 555-0112"
+        }
+      ]
+    }
+  ],
+  "leak_rule_digit_run": 6,
+  "leak_rule_email_run_chars": 5,
+  "leak_rule_anchor_min": 4,
+  "statements": [
+    "Synthetic data only: receipts, planted card numbers, phone numbers and email addresses are generated by internal/receipts/synth, by the same author as the patterns being measured.",
+    "A planted value 'leaks' under the rule stated in leak_rule_*: at least digit_run consecutive digits of a card or phone number, or email_run consecutive characters of an email's local part, still readable in the redacted line of the OCR text that is aligned with the line the value was printed on. Weaker than 'no trace': an email's domain, shorter digit runs and anything around the values are not counted. A value of which fewer than 4 digits or characters survive OCR anywhere is reported as lost by OCR, and counts as not leaked.",
+    "The synthetic phone numbers are all in the fictional 555-01xx block, so numbers on one receipt share digits; that is why a value is judged against the line it was printed on, found by aligning the OCR lines with the ground-truth lines, and not against the whole text.",
+    "Go Mono, the font the receipts are drawn in, has a slashed zero, which Tesseract often reads as @, Q or G. That makes digits harder to read than in a typical receipt font and is a property of this synthetic data, not of receipts in general.",
+    "Names and street addresses are not redacted by design and are not part of the planted values, so recall says nothing about them.",
+    "The formats planted are the ones the patterns were written and tested against (6 phone layouts, 4 card layouts, plain email addresses). Spelled-out forms, digits as words and other layouts are known gaps pinned in internal/receipts/redact_test.go and are not in this sample.",
+    "OCR runs on rendered text in one monospace font, upright or with small skew and Gaussian noise, which is far easier than a photograph. The OCR variants say what Tesseract does to this synthetic noise, not to real photos."
+  ]
+}

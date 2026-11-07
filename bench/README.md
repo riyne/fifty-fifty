@@ -86,7 +86,12 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 - The rendered images are one monospace font on a white page, upright or with small skew and Gaussian noise: far easier than a photograph (no perspective, shadows, creases, thermal paper fade, different fonts). The font has a slashed zero, which Tesseract often reads as `@`, `Q` or `G`: that makes the digits of phone and card numbers harder to read than in a typical receipt font, and is a property of this data, not of receipts in general.
 - The extractor then sees the redacted text, and a value that was only partly redacted can still reach the model. Recall here is about the redaction, not about whether the model could identify a person.
 
-**Recorded runs.** None yet: row 9 stays `planned` until a recording is committed (code commit first, results in their own commit).
+**Recorded runs (M6.9c, 2026-11-07 UTC, commit 03d2575, clean tree, `caffeinate -ims make bench-redaction`, 243 s, 1-minute load average 1.88 at the start). USED.**
+- `bench/results/redaction-20261107T044640Z.{json,txt}`: 1,000 receipts, five variants, no OCR failures. CLAIMS row 9. The previous step's doc-only edits were set aside (`git stash`) while it ran so the recorded tree is clean; the code is the commit named.
+- Overall recall: ground-truth text 100% (1,814 of 1,814), clean render 96.09%, mild 94.60%, moderate 90.30%, harsh 72.71%. Per kind in the result file. Emails are the weakest (89.19% on the clean render, 19.90% at the harshest level); cards fall next at the harshest level (81.17%); phones hold best (91.93%).
+- Every leak in every variant is of a value OCR had garbled before the redaction saw it ("leaked: intact" is 0 throughout): the patterns missed no value they were given whole, which on this data is not surprising, since the layouts are the ones they were written for. What leaks are `0` read as `@`/`Q`, an email split by a space (`example. com`, or a space after the first name, which leaves the first name behind), and a dropped or merged digit.
+- Observation not investigated: the mild variant reads more values exactly as printed (1,573) than the clean one (1,512), most of the difference in emails (269 against 132). Plausibly Tesseract's binarization behaves differently on the noise-free image; nothing was done about it, and it is recorded because a reader may notice it.
+- The first smoke runs (150-200 receipts, not recorded) suggested phones would be the most robust and cards next; at the moderate level the recording has cards (95.73%) and phones (95.07%) within each other's intervals, so that ordering is not established.
 
 ## Ledger stress and negative controls (`bench/stress`, CLAIMS rows 1 and 2)
 
