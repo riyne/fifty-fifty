@@ -18,6 +18,7 @@ Group expense splitting: photograph a receipt, an LLM itemizes it, friends claim
 > Not built: a live call to the real model (none has ever been made), an Android app or any UI automation, lint and secret scanning.
 
 - Synthetic data only. No real money moves anywhere; the payment provider is a mock.
+- How it fits together (processes, database setup and roles, tables, the queue, locking, idempotency, the ledger): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Every number or capability claimed about this project must appear in [docs/CLAIMS.md](docs/CLAIMS.md) with its evidence. Benchmark method and raw results: [bench/README.md](bench/README.md).
 
 ## Run locally
