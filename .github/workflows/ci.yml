@@ -39,8 +39,10 @@ jobs:
           --health-timeout 3s
           --health-retries 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      # Actions are pinned to a commit SHA, not a tag, so a moved tag cannot change what
+      # runs. The comment names the release; Dependabot (.github/dependabot.yml) bumps both.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       # The OCR tests run the real tesseract program (REQUIRE_TESSERACT=1 in `make ci`
