@@ -1,4 +1,8 @@
-# One false positive in the whole history (gitleaks 8.30.1, 95 commits, 2026-11-08):
+# The only finding in the history is one false positive, in two places (gitleaks 8.30.1, 2026-11-08).
+# First place:
 # `secret` in TestHardenImage_StripsEverythingThatIsNotAPixel is a marker string the test
 # plants in a fake EXIF segment to check that re-encoding strips it. Not a credential.
 a15b489c54fd989cc350a96ee47d933d0bfd58a2:internal/receipts/image_test.go:generic-api-key:87
+# The same marker was quoted in the DESIGN.md decision-log row for M10.4 in commit f40f4b1
+# (pushed; history is not rewritten for a false positive). The row was reworded afterwards.
+f40f4b168c47f9c38a0d6df6a9a2b1b35f2d4a64:docs/DESIGN.md:generic-api-key:123
