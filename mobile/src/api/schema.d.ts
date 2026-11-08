@@ -1511,11 +1511,21 @@ export interface components {
                 display_name: string;
                 /**
                  * Format: int64
-                 * @description Positive: the group owes them. Negative: they owe the group.
+                 * @description The ledger's balance. Positive: the group owes them. Negative: they owe the group. Does not include money in open settlements.
                  */
                 balance_minor: number;
+                /**
+                 * Format: int64
+                 * @description Money this member is sending in open (pending or unknown) settlements: asked of the payment provider, not yet in the ledger.
+                 */
+                reserved_out_minor: number;
+                /**
+                 * Format: int64
+                 * @description Money this member is to receive in open (pending or unknown) settlements.
+                 */
+                reserved_in_minor: number;
             }[];
-            /** @description Payments that would bring every balance to zero. Suggestions only; the count is reduced, not minimized. */
+            /** @description What can be settled right now: payments that would bring balances to zero, limited to what the open settlements have not already reserved (a sender can send at most what they owe less `reserved_out_minor`, a payee can receive at most what they are owed less `reserved_in_minor`), so create-settlement accepts each one at the moment of the read. Suggestions only; the count is reduced, not minimized. */
             suggested_transfers: {
                 /**
                  * Format: uuid

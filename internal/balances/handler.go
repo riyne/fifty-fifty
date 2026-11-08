@@ -31,6 +31,11 @@ type balanceJSON struct {
 	MemberID     uuid.UUID `json:"member_id"`
 	DisplayName  string    `json:"display_name"`
 	BalanceMinor int64     `json:"balance_minor"` // positive: the group owes them; negative: they owe the group
+	// Money in open settlements (pending or unknown), which is not in the ledger yet: what this
+	// member is sending and what they are to receive. balance_minor is the ledger's and does not
+	// include it; the suggested transfers are net of it.
+	ReservedOutMinor int64 `json:"reserved_out_minor"`
+	ReservedInMinor  int64 `json:"reserved_in_minor"`
 }
 
 type transferJSON struct {
@@ -40,8 +45,10 @@ type transferJSON struct {
 }
 
 type response struct {
-	Currency           string         `json:"currency"`
-	Balances           []balanceJSON  `json:"balances"`
+	Currency string        `json:"currency"`
+	Balances []balanceJSON `json:"balances"`
+	// What can be settled right now: net of the money open settlements have reserved, so each one is
+	// a payment create-settlement accepts at this moment.
 	SuggestedTransfers []transferJSON `json:"suggested_transfers"`
 }
 
@@ -72,11 +79,16 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	}
 	out := response{Currency: g.Currency, Balances: make([]balanceJSON, len(rows)), SuggestedTransfers: []transferJSON{}}
 	in := make([]ledger.Balance, len(rows))
+	reserved := make(map[uuid.UUID]ledger.Reserved, len(rows))
 	for i, row := range rows {
-		out.Balances[i] = balanceJSON{MemberID: row.MemberID, DisplayName: row.DisplayName, BalanceMinor: row.BalanceMinor}
+		out.Balances[i] = balanceJSON{
+			MemberID: row.MemberID, DisplayName: row.DisplayName, BalanceMinor: row.BalanceMinor,
+			ReservedOutMinor: row.ReservedOutMinor, ReservedInMinor: row.ReservedInMinor,
+		}
 		in[i] = ledger.Balance{MemberID: row.MemberID, Amount: row.BalanceMinor}
+		reserved[row.MemberID] = ledger.Reserved{Out: row.ReservedOutMinor, In: row.ReservedInMinor}
 	}
-	transfers, err := ledger.SuggestTransfers(in)
+	transfers, err := ledger.SuggestTransfersAvailable(in, reserved)
 	if err != nil {
 		// The database enforces that every posting sums to zero, so this means the
 		// ledger itself is inconsistent. Fail loudly rather than show wrong money.

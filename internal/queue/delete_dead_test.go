@@ -179,11 +179,17 @@ func TestDeleteDead_DryRunMatchesTheRealRunAndDeletesNothing(t *testing.T) {
 	diedAgo(t, pool, all[0], 72*time.Hour)
 	diedAgo(t, pool, all[1], 30*time.Hour)
 
-	for name, p := range map[string]queue.DeleteDeadParams{
-		"by kind":      {Kind: kind},
-		"kind and age": {Kind: kind, OlderThan: 24 * time.Hour},
-		"by ids":       {IDs: []uuid.UUID{all[0], all[3]}},
+	// In this order, not a map's: "by ids" runs for real and deletes two of the jobs, so the
+	// cases after it would find them gone.
+	for _, c := range []struct {
+		name string
+		p    queue.DeleteDeadParams
+	}{
+		{"by kind", queue.DeleteDeadParams{Kind: kind}},
+		{"kind and age", queue.DeleteDeadParams{Kind: kind, OlderThan: 24 * time.Hour}},
+		{"by ids", queue.DeleteDeadParams{IDs: []uuid.UUID{all[0], all[3]}}},
 	} {
+		name, p := c.name, c.p
 		dry := p
 		dry.DryRun = true
 		before, err := queue.DeleteDead(ctx, pool, dry)

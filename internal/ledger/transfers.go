@@ -24,9 +24,30 @@ type Transfer struct {
 }
 
 var (
-	ErrNotBalanced = errors.New("ledger: balances do not sum to zero")
-	ErrDuplicate   = errors.New("ledger: duplicate member id")
+	ErrNotBalanced         = errors.New("ledger: balances do not sum to zero")
+	ErrDuplicate           = errors.New("ledger: duplicate member id")
+	ErrNegativeReservation = errors.New("ledger: a reservation is negative")
 )
+
+// withCapacity returns xs with each amount reduced by reserved(id), dropping those that reach
+// zero or below.
+func withCapacity(xs []Balance, reserved func(uuid.UUID) int64) []Balance {
+	out := xs[:0]
+	for _, x := range xs {
+		if left := x.Amount - reserved(x.MemberID); left > 0 {
+			out = append(out, Balance{MemberID: x.MemberID, Amount: left})
+		}
+	}
+	return out
+}
+
+// Reserved is the money a member has tied up in open settlements (pending or unknown: asked
+// of the payment provider, not yet in the ledger): what they are sending, and what they are
+// to receive. It is what settlements.Available subtracts when a settlement is created.
+type Reserved struct {
+	Out int64 // the member is sending this much
+	In  int64 // the member is to receive this much
+}
 
 // SuggestTransfers turns balances into a short list of payments that would bring
 // every balance to zero.
@@ -44,6 +65,21 @@ var (
 // Ties (equal amounts) go to the lowest member id, and the result does not depend
 // on the order of the input. These are suggestions only: nothing is posted.
 func SuggestTransfers(balances []Balance) ([]Transfer, error) {
+	return SuggestTransfersAvailable(balances, nil)
+}
+
+// SuggestTransfersAvailable is SuggestTransfers for what can be settled RIGHT NOW: the
+// payments that create-settlement would accept, given the money already reserved by open
+// settlements. A member can send at most what they owe less what they are already sending
+// (-balance - Out), and receive at most what they are owed less what they are already to
+// receive (balance - In), the rule settlements.Available applies; a member with nothing left
+// on their side is not matched. So every transfer returned fits both members' capacity, the
+// transfers of one sender together fit theirs, and doing them all leaves nothing further to
+// suggest. The balances are still checked to sum to zero (that is the ledger's own invariant,
+// not affected by reservations); what cannot be matched, because the other side has no
+// capacity left, is simply not suggested. reserved may be nil (nothing reserved), and a
+// member missing from it has nothing reserved. A negative reservation is an error.
+func SuggestTransfersAvailable(balances []Balance, reserved map[uuid.UUID]Reserved) ([]Transfer, error) {
 	var sum int64
 	creditors := make([]Balance, 0, len(balances))
 	debtors := make([]Balance, 0, len(balances))
@@ -57,6 +93,9 @@ func SuggestTransfers(balances []Balance) ([]Transfer, error) {
 			return nil, ErrOverflow
 		}
 		sum += b.Amount
+		if r := reserved[b.MemberID]; r.Out < 0 || r.In < 0 {
+			return nil, ErrNegativeReservation
+		}
 		switch {
 		case b.Amount > 0:
 			creditors = append(creditors, b)
@@ -70,6 +109,11 @@ func SuggestTransfers(balances []Balance) ([]Transfer, error) {
 	if sum != 0 {
 		return nil, ErrNotBalanced
 	}
+	// What each side can still move: debtors can send what they owe less what they are already
+	// sending; creditors can receive what they are owed less what they are already to receive.
+	// Someone with nothing left drops out. (With no reservations this changes nothing.)
+	debtors = withCapacity(debtors, func(id uuid.UUID) int64 { return reserved[id].Out })
+	creditors = withCapacity(creditors, func(id uuid.UUID) int64 { return reserved[id].In })
 
 	// Index of the largest remaining amount; the lowest id wins a tie.
 	largest := func(xs []Balance) int {
@@ -84,7 +128,10 @@ func SuggestTransfers(balances []Balance) ([]Transfer, error) {
 	}
 
 	var out []Transfer
-	for len(creditors) > 0 { // debtors empties at the same moment: the balances sum to zero
+	// With nothing reserved debtors empties at the same moment as creditors (the balances sum
+	// to zero); with reservations one side can run out first, and what is left of the other
+	// side cannot be settled right now.
+	for len(creditors) > 0 && len(debtors) > 0 {
 		c, d := largest(creditors), largest(debtors)
 		amount := min(creditors[c].Amount, debtors[d].Amount)
 		out = append(out, Transfer{From: debtors[d].MemberID, To: creditors[c].MemberID, Amount: amount})

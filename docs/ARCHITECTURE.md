@@ -322,7 +322,7 @@ Everything is an `int64` of minor units (cents), one currency per group (CAD or 
   - `void`: the exact negation of the finalize posting (`reverses_id` points at it). Nothing is ever edited or deleted.
   - `settlement` on a successful payment: the sender's balance rises toward zero, the payee's falls.
 - **Shares** come from `internal/allocator`: each item is split evenly among its claimants, tax and tip are prorated by each member's claimed subtotal, and leftover cents go to the largest remainder with ties broken by member id, so the shares always add up exactly. `internal/ledger` turns shares into entries.
-- **Suggested transfers** (`internal/ledger/transfers.go`) are computed at read time by a greedy pass over balances. They reduce the number of payments but do not minimize it, and nothing is posted by suggesting.
+- **Suggested transfers** (`internal/ledger/transfers.go`) are computed at read time by a greedy pass over balances, limited to what can be settled right now: net of the money open (pending or unknown) settlements have already reserved, by the same rule create-settlement applies (M10.20). They reduce the number of payments but do not minimize it, and nothing is posted by suggesting.
 
 ```mermaid
 flowchart TD

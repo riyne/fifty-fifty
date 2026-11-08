@@ -960,14 +960,21 @@ components:
           description: One entry per current member, in the order they joined.
           items:
             type: object
-            required: [member_id, display_name, balance_minor]
+            required: [member_id, display_name, balance_minor, reserved_out_minor, reserved_in_minor]
             properties:
               member_id: { type: string, format: uuid }
               display_name: { type: string }
-              balance_minor: { type: integer, format: int64, description: "Positive: the group owes them. Negative: they owe the group." }
+              balance_minor: { type: integer, format: int64, description: "The ledger's balance. Positive: the group owes them. Negative: they owe the group. Does not include money in open settlements." }
+              reserved_out_minor: { type: integer, format: int64, minimum: 0, description: "Money this member is sending in open (pending or unknown) settlements: asked of the payment provider, not yet in the ledger." }
+              reserved_in_minor: { type: integer, format: int64, minimum: 0, description: "Money this member is to receive in open (pending or unknown) settlements." }
         suggested_transfers:
           type: array
-          description: Payments that would bring every balance to zero. Suggestions only; the count is reduced, not minimized.
+          description: >
+            What can be settled right now: payments that would bring balances to zero, limited to what
+            the open settlements have not already reserved (a sender can send at most what they owe less
+            `reserved_out_minor`, a payee can receive at most what they are owed less `reserved_in_minor`),
+            so create-settlement accepts each one at the moment of the read. Suggestions only; the count
+            is reduced, not minimized.
           items:
             type: object
             required: [from_member_id, to_member_id, amount_minor]
