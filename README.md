@@ -24,6 +24,8 @@ Group expense splitting: photograph a receipt, an LLM itemizes it, friends claim
 
 Needs Go 1.27+ and Docker. Everything below is dev-only with throwaway credentials.
 
+    make demo            # the whole system on a fresh throwaway database, walked through as alice, bob and carol (needs Docker, Tesseract, port 8080 free; mock LLM and mock payment provider)
+    make demo-keep       # the same, then leave it running for the iOS app until Ctrl-C
     make up              # Postgres (localhost:5433) and Dex (localhost:5556)
     make migrate-up      # apply migrations
     make test            # unit + integration tests (integration tests need the database above)

@@ -14,7 +14,7 @@ export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?s
 export SYSTEM_DATABASE_URL  ?= postgres://fifty_system:fifty@localhost:5433/fifty?sslmode=disable
 export WORKER_DATABASE_URL  ?= postgres://fifty_worker:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: mobile-check mobile-generate up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction ci ci-format ci-vet ci-generate ci-test ci-vuln
+.PHONY: demo demo-keep mobile-check mobile-generate up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction ci ci-format ci-vet ci-generate ci-test ci-vuln
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -116,6 +116,17 @@ bench-rls:
 # database. Writes bench/results/redaction-*.{json,txt}.
 bench-redaction:
 	go run ./bench/redaction
+
+# The demo (cmd/demo): the whole system on a fresh throwaway database (created and dropped
+# by the program, your development database is not touched), driven over HTTP as alice,
+# bob and carol. Mock LLM and mock payment provider, real Tesseract, real Dex tokens.
+# Needs Docker, Tesseract and port 8080 free. `demo-keep` leaves the stack running for the
+# iOS app until Ctrl-C.
+demo: up
+	go run ./cmd/demo
+
+demo-keep: up
+	go run ./cmd/demo --keep
 
 # CI. .github/workflows/ci.yml starts Postgres, migrates, then runs `make ci`, so every
 # gate can be run on this machine first (needs `make up && make migrate-up`).
