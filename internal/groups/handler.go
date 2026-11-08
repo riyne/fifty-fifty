@@ -117,16 +117,29 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	user, _ := auth.UserFrom(r.Context())
-	rows, err := h.scope.Reader(user.ID).ListGroupsForUser(r.Context(), user.ID)
+	page, err := httpx.ParsePage(r)
+	if err != nil {
+		httpx.WriteBadPage(w)
+		return
+	}
+	afterID, afterAt, fetch := page.QueryArgs()
+	rows, err := h.scope.Reader(user.ID).ListGroupsForUser(r.Context(), db.ListGroupsForUserParams{
+		UserID: user.ID, AfterID: afterID, AfterCreatedAt: afterAt, PageSize: fetch,
+	})
 	if err != nil {
 		h.internalError(w, "list groups", err)
 		return
 	}
+	rows, next := httpx.Trim(rows, page.Limit, func(g db.ListGroupsForUserRow) (time.Time, uuid.UUID) { return g.CreatedAt, g.ID })
 	out := make([]groupJSON, 0, len(rows))
 	for _, g := range rows {
 		out = append(out, groupJSON{ID: g.ID, Name: g.Name, Currency: g.Currency, Role: g.Role, CreatedAt: g.CreatedAt})
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"groups": out})
+	resp := map[string]any{"groups": out}
+	if next != "" {
+		resp["next_cursor"] = next
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {

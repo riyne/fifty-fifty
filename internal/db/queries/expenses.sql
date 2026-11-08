@@ -58,8 +58,11 @@ LEFT JOIN LATERAL (
     FROM expense_items i WHERE i.expense_id = e.id
 ) s ON true
 WHERE e.group_id = sqlc.arg(group_id)
+  AND (sqlc.narg(after_id)::uuid IS NULL
+       OR e.created_at < sqlc.narg(after_created_at)::timestamptz
+       OR (e.created_at = sqlc.narg(after_created_at)::timestamptz AND e.id > sqlc.narg(after_id)::uuid))
 ORDER BY e.created_at DESC, e.id
-LIMIT 100;
+LIMIT sqlc.arg(page_size)::int;
 
 -- LockExpenseForClaim is the first statement of every claim and unclaim: it
 -- takes FOR SHARE on the expense row, authorizes the caller (membership join,

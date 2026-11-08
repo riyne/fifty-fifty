@@ -142,17 +142,22 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Groups the caller belongs to (newest first, at most 100). */
+        /** Groups the caller belongs to, newest first, one page at a time (default and largest page 100). */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description How many items to return, 1 to 100. Default 100. Anything else is 400. */
+                    limit?: components["parameters"]["PageLimit"];
+                    /** @description Where the page starts: the `next_cursor` of the previous page, passed back unchanged. It is opaque; a cursor this server did not make is 400. It only says where to start, so a borrowed or forged one cannot show anything the caller could not already list. */
+                    cursor?: components["parameters"]["PageCursor"];
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                /** @description Groups. */
+                /** @description One page of groups. `next_cursor` is present when there are more. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -160,9 +165,12 @@ export interface paths {
                     content: {
                         "application/json": {
                             groups: components["schemas"]["Group"][];
+                            /** @description Present when there is another page; pass it back as `cursor`. Absent on the last page. */
+                            next_cursor?: string;
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
             };
         };
@@ -265,10 +273,15 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** List the group's join codes (owner only). Metadata only, never the code. */
+        /** List the group's join codes (owner only), newest first, one page at a time. Metadata only, never the code. */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description How many items to return, 1 to 100. Default 100. Anything else is 400. */
+                    limit?: components["parameters"]["PageLimit"];
+                    /** @description Where the page starts: the `next_cursor` of the previous page, passed back unchanged. It is opaque; a cursor this server did not make is 400. It only says where to start, so a borrowed or forged one cannot show anything the caller could not already list. */
+                    cursor?: components["parameters"]["PageCursor"];
+                };
                 header?: never;
                 path: {
                     id: components["parameters"]["GroupId"];
@@ -277,7 +290,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Join codes, newest first, at most 100. */
+                /** @description One page of join codes (default and largest page 100). `next_cursor` is present when there are more. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -285,9 +298,12 @@ export interface paths {
                     content: {
                         "application/json": {
                             join_codes: components["schemas"]["JoinCode"][];
+                            /** @description Present when there is another page; pass it back as `cursor`. Absent on the last page. */
+                            next_cursor?: string;
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
@@ -432,10 +448,15 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** The group's expenses, newest first (any member). */
+        /** The group's expenses, newest first, one page at a time (any member). */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description How many items to return, 1 to 100. Default 100. Anything else is 400. */
+                    limit?: components["parameters"]["PageLimit"];
+                    /** @description Where the page starts: the `next_cursor` of the previous page, passed back unchanged. It is opaque; a cursor this server did not make is 400. It only says where to start, so a borrowed or forged one cannot show anything the caller could not already list. */
+                    cursor?: components["parameters"]["PageCursor"];
+                };
                 header?: never;
                 path: {
                     id: components["parameters"]["GroupId"];
@@ -444,7 +465,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description At most 100 expenses (no pagination yet). */
+                /** @description One page of expenses (default and largest page 100). `next_cursor` is present when there are more. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -452,9 +473,12 @@ export interface paths {
                     content: {
                         "application/json": {
                             expenses: components["schemas"]["ExpenseSummary"][];
+                            /** @description Present when there is another page; pass it back as `cursor`. Absent on the last page. */
+                            next_cursor?: string;
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 404: components["responses"]["NotFound"];
             };
@@ -1044,12 +1068,17 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the group's settlements, newest first, at most 100 (any member).
+         * List the group's settlements, newest first, one page at a time (any member).
          * @description 404 if the caller is not in the group (or it does not exist).
          */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description How many items to return, 1 to 100. Default 100. Anything else is 400. */
+                    limit?: components["parameters"]["PageLimit"];
+                    /** @description Where the page starts: the `next_cursor` of the previous page, passed back unchanged. It is opaque; a cursor this server did not make is 400. It only says where to start, so a borrowed or forged one cannot show anything the caller could not already list. */
+                    cursor?: components["parameters"]["PageCursor"];
+                };
                 header?: never;
                 path: {
                     id: components["parameters"]["GroupId"];
@@ -1058,7 +1087,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Settlements. */
+                /** @description One page of settlements (default and largest page 100). `next_cursor` is present when there are more. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1066,9 +1095,12 @@ export interface paths {
                     content: {
                         "application/json": {
                             settlements: components["schemas"]["Settlement"][];
+                            /** @description Present when there is another page; pass it back as `cursor`. Absent on the last page. */
+                            next_cursor?: string;
                         };
                     };
                 };
+                400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
                 404: components["responses"]["NotFound"];
             };
@@ -1650,6 +1682,10 @@ export interface components {
         };
     };
     parameters: {
+        /** @description How many items to return, 1 to 100. Default 100. Anything else is 400. */
+        PageLimit: number;
+        /** @description Where the page starts: the `next_cursor` of the previous page, passed back unchanged. It is opaque; a cursor this server did not make is 400. It only says where to start, so a borrowed or forged one cannot show anything the caller could not already list. */
+        PageCursor: string;
         GroupId: string;
         /** @description 1-255 visible ASCII characters, e.g. a UUID. Scoped per user; kept 24 hours. */
         IdempotencyKey: string;

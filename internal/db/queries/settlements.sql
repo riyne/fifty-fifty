@@ -81,8 +81,11 @@ FROM settlements s
 JOIN groups g ON g.id = s.group_id
 JOIN memberships m ON m.group_id = s.group_id AND m.user_id = sqlc.arg(user_id)
 WHERE s.group_id = sqlc.arg(group_id)
+  AND (sqlc.narg(after_id)::uuid IS NULL
+       OR s.created_at < sqlc.narg(after_created_at)::timestamptz
+       OR (s.created_at = sqlc.narg(after_created_at)::timestamptz AND s.id > sqlc.narg(after_id)::uuid))
 ORDER BY s.created_at DESC, s.id
-LIMIT 100;
+LIMIT sqlc.arg(page_size)::int;
 
 -- GetSettlementForExecution is for the worker (settlement.execute and, later,
 -- reconcile): it has no caller to authorize, it is given a job. It reads the current

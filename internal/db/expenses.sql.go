@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addClaim = `-- name: AddClaim :execrows
@@ -471,13 +472,19 @@ LEFT JOIN LATERAL (
     FROM expense_items i WHERE i.expense_id = e.id
 ) s ON true
 WHERE e.group_id = $2
+  AND ($3::uuid IS NULL
+       OR e.created_at < $4::timestamptz
+       OR (e.created_at = $4::timestamptz AND e.id > $3::uuid))
 ORDER BY e.created_at DESC, e.id
-LIMIT 100
+LIMIT $5::int
 `
 
 type ListExpensesForMemberParams struct {
-	UserID  uuid.UUID
-	GroupID uuid.UUID
+	UserID         uuid.UUID
+	GroupID        uuid.UUID
+	AfterID        pgtype.UUID
+	AfterCreatedAt *time.Time
+	PageSize       int32
 }
 
 type ListExpensesForMemberRow struct {
@@ -496,7 +503,13 @@ type ListExpensesForMemberRow struct {
 // ListExpensesForMember: same membership join as GetExpenseForMember, so a
 // non-member gets an empty list from the query itself.
 func (q *Queries) ListExpensesForMember(ctx context.Context, arg ListExpensesForMemberParams) ([]ListExpensesForMemberRow, error) {
-	rows, err := q.db.Query(ctx, listExpensesForMember, arg.UserID, arg.GroupID)
+	rows, err := q.db.Query(ctx, listExpensesForMember,
+		arg.UserID,
+		arg.GroupID,
+		arg.AfterID,
+		arg.AfterCreatedAt,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}

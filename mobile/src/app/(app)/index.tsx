@@ -4,14 +4,22 @@ import { Button, FlatList, Pressable, StyleSheet, Text, View } from "react-nativ
 
 import { unwrap } from "../../api/client";
 import { api } from "../../api/instance";
+import { collectPages } from "../../api/pages";
 import { session } from "../../auth";
 import { useLoad } from "../../hooks/useLoad";
 import { LoadGate } from "../../ui/LoadGate";
 
 export default function Groups() {
   const { state, reload } = useLoad(async () => {
-    const [groups, me] = await Promise.all([unwrap(api.GET("/v1/groups")), unwrap(api.GET("/v1/me"))]);
-    return { groups: groups.groups, me };
+    const [groups, me] = await Promise.all([
+      // every page: a user in more than 100 groups would otherwise lose the rest
+      collectPages(async (cursor) => {
+        const r = await unwrap(api.GET("/v1/groups", { params: { query: { cursor } } }));
+        return { items: r.groups, next: r.next_cursor };
+      }),
+      unwrap(api.GET("/v1/me")),
+    ]);
+    return { groups, me };
   });
 
   // Runs when the screen is first shown and every time it comes back into view (after creating

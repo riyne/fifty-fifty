@@ -5,6 +5,7 @@ import { ActivityIndicator, Button, Pressable, RefreshControl, ScrollView, Style
 import { unwrap } from "../../../../api/client";
 import { describeError } from "../../../../api/errors";
 import { api } from "../../../../api/instance";
+import { collectPages } from "../../../../api/pages";
 import { statusLabel } from "../../../../api/expenses";
 import { formatMoney } from "../../../../api/money";
 import { balanceSentence, transferSentence } from "../../../../api/sentences";
@@ -22,11 +23,18 @@ export default function GroupScreen() {
     const [group, balances, expenses, settlements, me] = await Promise.all([
       unwrap(api.GET("/v1/groups/{id}", path)),
       unwrap(api.GET("/v1/groups/{id}/balances", path)),
-      unwrap(api.GET("/v1/groups/{id}/expenses", path)),
-      unwrap(api.GET("/v1/groups/{id}/settlements", path)),
+      // every page of each list (100 per page), so nothing past the first 100 is lost
+      collectPages(async (cursor) => {
+        const r = await unwrap(api.GET("/v1/groups/{id}/expenses", { params: { path: { id }, query: { cursor } } }));
+        return { items: r.expenses, next: r.next_cursor };
+      }),
+      collectPages(async (cursor) => {
+        const r = await unwrap(api.GET("/v1/groups/{id}/settlements", { params: { path: { id }, query: { cursor } } }));
+        return { items: r.settlements, next: r.next_cursor };
+      }),
       unwrap(api.GET("/v1/me")),
     ]);
-    return { group, balances, expenses: expenses.expenses, settlements: settlements.settlements, me };
+    return { group, balances, expenses, settlements, me };
   });
 
   useFocusEffect(

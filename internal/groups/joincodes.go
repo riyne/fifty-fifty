@@ -138,11 +138,20 @@ func (h *Handler) listJoinCodes(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	rows, err := h.scope.Reader(user.ID).ListJoinCodes(r.Context(), groupID)
+	page, err := httpx.ParsePage(r)
+	if err != nil {
+		httpx.WriteBadPage(w)
+		return
+	}
+	afterID, afterAt, fetch := page.QueryArgs()
+	rows, err := h.scope.Reader(user.ID).ListJoinCodes(r.Context(), db.ListJoinCodesParams{
+		GroupID: groupID, AfterID: afterID, AfterCreatedAt: afterAt, PageSize: fetch,
+	})
 	if err != nil {
 		h.internalError(w, "list join codes", err)
 		return
 	}
+	rows, next := httpx.Trim(rows, page.Limit, func(c db.ListJoinCodesRow) (time.Time, uuid.UUID) { return c.CreatedAt, c.ID })
 	out := make([]joinCodeJSON, 0, len(rows))
 	for _, c := range rows {
 		out = append(out, joinCodeJSON{
@@ -150,7 +159,11 @@ func (h *Handler) listJoinCodes(w http.ResponseWriter, r *http.Request) {
 			RevokedAt: c.RevokedAt, CreatedAt: c.CreatedAt, Status: c.Status,
 		})
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"join_codes": out})
+	resp := map[string]any{"join_codes": out}
+	if next != "" {
+		resp["next_cursor"] = next
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) revokeJoinCode(w http.ResponseWriter, r *http.Request) {

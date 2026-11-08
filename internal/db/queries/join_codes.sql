@@ -19,9 +19,12 @@ SELECT id, max_uses, uses, expires_at, revoked_at, created_at,
             ELSE 'active'
         END)::text AS status
 FROM join_codes
-WHERE group_id = $1
+WHERE group_id = sqlc.arg(group_id)
+  AND (sqlc.narg(after_id)::uuid IS NULL
+       OR created_at < sqlc.narg(after_created_at)::timestamptz
+       OR (created_at = sqlc.narg(after_created_at)::timestamptz AND id > sqlc.narg(after_id)::uuid))
 ORDER BY created_at DESC, id
-LIMIT 100;
+LIMIT sqlc.arg(page_size)::int;
 
 -- Scoped by group_id as well as id, so a code id from another group matches nothing.
 -- name: RevokeJoinCode :execrows

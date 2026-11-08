@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addMembership = `-- name: AddMembership :exec
@@ -93,9 +94,19 @@ SELECT g.id, g.name, g.currency, g.created_at, m.role
 FROM groups g
 JOIN memberships m ON m.group_id = g.id
 WHERE m.user_id = $1
+  AND ($2::uuid IS NULL
+       OR g.created_at < $3::timestamptz
+       OR (g.created_at = $3::timestamptz AND g.id > $2::uuid))
 ORDER BY g.created_at DESC, g.id
-LIMIT 100
+LIMIT $4::int
 `
+
+type ListGroupsForUserParams struct {
+	UserID         uuid.UUID
+	AfterID        pgtype.UUID
+	AfterCreatedAt *time.Time
+	PageSize       int32
+}
 
 type ListGroupsForUserRow struct {
 	ID        uuid.UUID
@@ -105,8 +116,17 @@ type ListGroupsForUserRow struct {
 	Role      string
 }
 
-func (q *Queries) ListGroupsForUser(ctx context.Context, userID uuid.UUID) ([]ListGroupsForUserRow, error) {
-	rows, err := q.db.Query(ctx, listGroupsForUser, userID)
+// One page, newest first. Keyset pagination: after_created_at and after_id are the last
+// row of the previous page (both NULL for the first page); page_size is one more than the
+// page the caller wants, so that it can tell whether another page exists. The cursor only
+// moves the position inside rows the membership join already allows.
+func (q *Queries) ListGroupsForUser(ctx context.Context, arg ListGroupsForUserParams) ([]ListGroupsForUserRow, error) {
+	rows, err := q.db.Query(ctx, listGroupsForUser,
+		arg.UserID,
+		arg.AfterID,
+		arg.AfterCreatedAt,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}

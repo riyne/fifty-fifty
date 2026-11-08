@@ -248,13 +248,19 @@ FROM settlements s
 JOIN groups g ON g.id = s.group_id
 JOIN memberships m ON m.group_id = s.group_id AND m.user_id = $1
 WHERE s.group_id = $2
+  AND ($3::uuid IS NULL
+       OR s.created_at < $4::timestamptz
+       OR (s.created_at = $4::timestamptz AND s.id > $3::uuid))
 ORDER BY s.created_at DESC, s.id
-LIMIT 100
+LIMIT $5::int
 `
 
 type ListSettlementsForMemberParams struct {
-	UserID  uuid.UUID
-	GroupID uuid.UUID
+	UserID         uuid.UUID
+	GroupID        uuid.UUID
+	AfterID        pgtype.UUID
+	AfterCreatedAt *time.Time
+	PageSize       int32
 }
 
 type ListSettlementsForMemberRow struct {
@@ -272,7 +278,13 @@ type ListSettlementsForMemberRow struct {
 }
 
 func (q *Queries) ListSettlementsForMember(ctx context.Context, arg ListSettlementsForMemberParams) ([]ListSettlementsForMemberRow, error) {
-	rows, err := q.db.Query(ctx, listSettlementsForMember, arg.UserID, arg.GroupID)
+	rows, err := q.db.Query(ctx, listSettlementsForMember,
+		arg.UserID,
+		arg.GroupID,
+		arg.AfterID,
+		arg.AfterCreatedAt,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}

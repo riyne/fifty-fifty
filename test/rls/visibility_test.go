@@ -172,8 +172,14 @@ func TestHandlerQueriesWithoutTheirMembershipCheckFindNothingElsewhere(t *testin
 	}{
 		{"ListMembers", func() (int, error) { r, err := q.ListMembers(ctx, w.A.id); return len(r), err },
 			func() (int, error) { r, err := q.ListMembers(ctx, w.B.id); return len(r), err }},
-		{"ListJoinCodes", func() (int, error) { r, err := q.ListJoinCodes(ctx, w.A.id); return len(r), err },
-			func() (int, error) { r, err := q.ListJoinCodes(ctx, w.B.id); return len(r), err }},
+		{"ListJoinCodes", func() (int, error) {
+			r, err := q.ListJoinCodes(ctx, db.ListJoinCodesParams{GroupID: w.A.id, PageSize: 100})
+			return len(r), err
+		},
+			func() (int, error) {
+				r, err := q.ListJoinCodes(ctx, db.ListJoinCodesParams{GroupID: w.B.id, PageSize: 100})
+				return len(r), err
+			}},
 		{"ListExpenseItems", func() (int, error) { r, err := q.ListExpenseItems(ctx, w.A.exp1); return len(r), err },
 			func() (int, error) { r, err := q.ListExpenseItems(ctx, w.B.exp1); return len(r), err }},
 	} {

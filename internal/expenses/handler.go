@@ -296,11 +296,20 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		h.internalError(w, "get group", err)
 		return
 	}
-	rows, err := h.scope.Reader(user.ID).ListExpensesForMember(r.Context(), db.ListExpensesForMemberParams{UserID: user.ID, GroupID: groupID})
+	page, err := httpx.ParsePage(r)
+	if err != nil {
+		httpx.WriteBadPage(w)
+		return
+	}
+	afterID, afterAt, fetch := page.QueryArgs()
+	rows, err := h.scope.Reader(user.ID).ListExpensesForMember(r.Context(), db.ListExpensesForMemberParams{
+		UserID: user.ID, GroupID: groupID, AfterID: afterID, AfterCreatedAt: afterAt, PageSize: fetch,
+	})
 	if err != nil {
 		h.internalError(w, "list expenses", err)
 		return
 	}
+	rows, next := httpx.Trim(rows, page.Limit, func(e db.ListExpensesForMemberRow) (time.Time, uuid.UUID) { return e.CreatedAt, e.ID })
 	out := make([]summaryJSON, 0, len(rows))
 	for _, e := range rows {
 		out = append(out, summaryJSON{
@@ -309,7 +318,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: e.CreatedAt,
 		})
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"expenses": out})
+	resp := map[string]any{"expenses": out}
+	if next != "" {
+		resp["next_cursor"] = next
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {

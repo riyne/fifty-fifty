@@ -383,14 +383,14 @@ func (w *world) do(ctx context.Context, a access, op string, user uuid.UUID, r *
 	g := groups[r.IntN(len(groups))]
 	switch op {
 	case "list_groups":
-		rows, err := a.read(user).ListGroupsForUser(ctx, user)
+		rows, err := a.read(user).ListGroupsForUser(ctx, db.ListGroupsForUserParams{UserID: user, PageSize: 100})
 		return len(rows), err
 	case "list_expenses":
 		q := a.read(user)
 		if _, err := q.GetGroupForMember(ctx, db.GetGroupForMemberParams{ID: g, UserID: user}); err != nil {
 			return 0, err
 		}
-		rows, err := q.ListExpensesForMember(ctx, db.ListExpensesForMemberParams{UserID: user, GroupID: g})
+		rows, err := q.ListExpensesForMember(ctx, db.ListExpensesForMemberParams{UserID: user, GroupID: g, PageSize: 100})
 		return len(rows), err
 	case "get_expense":
 		ex := w.groupExp[g]

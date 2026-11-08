@@ -57,10 +57,13 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/groups:
     get:
-      summary: Groups the caller belongs to (newest first, at most 100).
+      summary: Groups the caller belongs to, newest first, one page at a time (default and largest page 100).
+      parameters:
+        - { $ref: "#/components/parameters/PageLimit" }
+        - { $ref: "#/components/parameters/PageCursor" }
       responses:
         "200":
-          description: Groups.
+          description: One page of groups. `next_cursor` is present when there are more.
           content:
             application/json:
               schema:
@@ -70,6 +73,10 @@ paths:
                   groups:
                     type: array
                     items: { $ref: "#/components/schemas/Group" }
+                  next_cursor:
+                    type: string
+                    description: Present when there is another page; pass it back as `cursor`. Absent on the last page.
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
     post:
       summary: Create a group. The caller becomes its owner.
@@ -148,10 +155,13 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "503": { $ref: "#/components/responses/Busy" }
     get:
-      summary: List the group's join codes (owner only). Metadata only, never the code.
+      summary: List the group's join codes (owner only), newest first, one page at a time. Metadata only, never the code.
+      parameters:
+        - { $ref: "#/components/parameters/PageLimit" }
+        - { $ref: "#/components/parameters/PageCursor" }
       responses:
         "200":
-          description: Join codes, newest first, at most 100.
+          description: One page of join codes (default and largest page 100). `next_cursor` is present when there are more.
           content:
             application/json:
               schema:
@@ -161,6 +171,10 @@ paths:
                   join_codes:
                     type: array
                     items: { $ref: "#/components/schemas/JoinCode" }
+                  next_cursor:
+                    type: string
+                    description: Present when there is another page; pass it back as `cursor`. Absent on the last page.
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
@@ -248,10 +262,13 @@ paths:
         "422": { $ref: "#/components/responses/KeyReuse" }
         "503": { $ref: "#/components/responses/Busy" }
     get:
-      summary: The group's expenses, newest first (any member).
+      summary: The group's expenses, newest first, one page at a time (any member).
+      parameters:
+        - { $ref: "#/components/parameters/PageLimit" }
+        - { $ref: "#/components/parameters/PageCursor" }
       responses:
         "200":
-          description: At most 100 expenses (no pagination yet).
+          description: One page of expenses (default and largest page 100). `next_cursor` is present when there are more.
           content:
             application/json:
               schema:
@@ -261,6 +278,10 @@ paths:
                   expenses:
                     type: array
                     items: { $ref: "#/components/schemas/ExpenseSummary" }
+                  next_cursor:
+                    type: string
+                    description: Present when there is another page; pass it back as `cursor`. Absent on the last page.
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v1/groups/{id}/receipts:
@@ -657,11 +678,14 @@ paths:
         "422": { $ref: "#/components/responses/KeyReuse" }
         "503": { $ref: "#/components/responses/Busy" }
     get:
-      summary: List the group's settlements, newest first, at most 100 (any member).
+      summary: List the group's settlements, newest first, one page at a time (any member).
       description: 404 if the caller is not in the group (or it does not exist).
+      parameters:
+        - { $ref: "#/components/parameters/PageLimit" }
+        - { $ref: "#/components/parameters/PageCursor" }
       responses:
         "200":
-          description: Settlements.
+          description: One page of settlements (default and largest page 100). `next_cursor` is present when there are more.
           content:
             application/json:
               schema:
@@ -671,6 +695,10 @@ paths:
                   settlements:
                     type: array
                     items: { $ref: "#/components/schemas/Settlement" }
+                  next_cursor:
+                    type: string
+                    description: Present when there is another page; pass it back as `cursor`. Absent on the last page.
+        "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
   /v1/groups/{id}/settlements/{settlementId}:
@@ -793,6 +821,21 @@ paths:
         "503": { $ref: "#/components/responses/Busy" }
 components:
   parameters:
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      description: How many items to return, 1 to 100. Default 100. Anything else is 400.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 100 }
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      description: >
+        Where the page starts: the `next_cursor` of the previous page, passed back unchanged. It is
+        opaque; a cursor this server did not make is 400. It only says where to start, so a borrowed
+        or forged one cannot show anything the caller could not already list.
+      schema: { type: string }
     GroupId:
       { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     IdempotencyKey:

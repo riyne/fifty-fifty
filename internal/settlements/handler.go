@@ -237,11 +237,20 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		internalError(w, "get group", err)
 		return
 	}
-	rows, err := h.scope.Reader(user.ID).ListSettlementsForMember(r.Context(), db.ListSettlementsForMemberParams{UserID: user.ID, GroupID: groupID})
+	page, err := httpx.ParsePage(r)
+	if err != nil {
+		httpx.WriteBadPage(w)
+		return
+	}
+	afterID, afterAt, fetch := page.QueryArgs()
+	rows, err := h.scope.Reader(user.ID).ListSettlementsForMember(r.Context(), db.ListSettlementsForMemberParams{
+		UserID: user.ID, GroupID: groupID, AfterID: afterID, AfterCreatedAt: afterAt, PageSize: fetch,
+	})
 	if err != nil {
 		internalError(w, "list settlements", err)
 		return
 	}
+	rows, next := httpx.Trim(rows, page.Limit, func(s db.ListSettlementsForMemberRow) (time.Time, uuid.UUID) { return s.CreatedAt, s.ID })
 	out := make([]settlementJSON, len(rows))
 	for i, s := range rows {
 		out[i] = render(db.Settlement{
@@ -250,7 +259,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: s.CreatedAt, ResolvedAt: s.ResolvedAt,
 		}, s.Currency)
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"settlements": out})
+	resp := map[string]any{"settlements": out}
+	if next != "" {
+		resp["next_cursor"] = next
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {

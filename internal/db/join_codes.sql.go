@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createJoinCode = `-- name: CreateJoinCode :one
@@ -107,9 +108,19 @@ SELECT id, max_uses, uses, expires_at, revoked_at, created_at,
         END)::text AS status
 FROM join_codes
 WHERE group_id = $1
+  AND ($2::uuid IS NULL
+       OR created_at < $3::timestamptz
+       OR (created_at = $3::timestamptz AND id > $2::uuid))
 ORDER BY created_at DESC, id
-LIMIT 100
+LIMIT $4::int
 `
+
+type ListJoinCodesParams struct {
+	GroupID        uuid.UUID
+	AfterID        pgtype.UUID
+	AfterCreatedAt *time.Time
+	PageSize       int32
+}
 
 type ListJoinCodesRow struct {
 	ID        uuid.UUID
@@ -122,8 +133,13 @@ type ListJoinCodesRow struct {
 }
 
 // Status is computed by the database so it uses the same clock as redemption.
-func (q *Queries) ListJoinCodes(ctx context.Context, groupID uuid.UUID) ([]ListJoinCodesRow, error) {
-	rows, err := q.db.Query(ctx, listJoinCodes, groupID)
+func (q *Queries) ListJoinCodes(ctx context.Context, arg ListJoinCodesParams) ([]ListJoinCodesRow, error) {
+	rows, err := q.db.Query(ctx, listJoinCodes,
+		arg.GroupID,
+		arg.AfterID,
+		arg.AfterCreatedAt,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
