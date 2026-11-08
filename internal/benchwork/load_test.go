@@ -27,7 +27,7 @@ func loadParams(t *testing.T) benchwork.LoadParams {
 
 func runCount(t *testing.T, run string) (n int) {
 	t.Helper()
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t) // the queue and the bench schema are the worker role's (00017)
 	err := pool.QueryRow(context.Background(), `SELECT count(*) FROM jobs WHERE kind = $1 AND payload->>'run' = $2`, benchwork.Kind, run).Scan(&n)
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func runCount(t *testing.T, run string) (n int) {
 // benchRows counts all rows in the bench tables, to show a run cleans up after itself.
 func benchRows(t *testing.T) (n int) {
 	t.Helper()
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t) // fifty_app has no privilege on the bench schema (00017)
 	err := pool.QueryRow(context.Background(), `SELECT (SELECT count(*) FROM bench.effects) + (SELECT count(*) FROM bench.attempts)`).Scan(&n)
 	if err != nil {
 		t.Fatal(err)

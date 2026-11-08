@@ -65,7 +65,10 @@ func TestStats_CountsEachStateOnce(t *testing.T) {
 	if s.Ready != 2 || s.Delayed != 1 || s.Running != 1 || s.Expired != 1 || s.Dead != 1 {
 		t.Errorf("stats = %+v; want ready 2, delayed 1, running 1, expired 1, dead 1", s)
 	}
-	if s.OldestReadyAge < 120*time.Second || s.OldestReadyAge > 130*time.Second {
+	// The job's run_at comes from this machine's clock and the age from the database's, which
+	// can differ by milliseconds (the Docker VM): a bound of exactly 120 s failed at 119.99 s.
+	// What matters is that the older job (120 s) is reported, not the 30 s one.
+	if s.OldestReadyAge < 100*time.Second || s.OldestReadyAge > 140*time.Second {
 		t.Errorf("oldest ready age = %v, want about 120s (the older of the two due jobs, not the 30 s one)", s.OldestReadyAge)
 	}
 }
