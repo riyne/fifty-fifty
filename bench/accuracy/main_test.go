@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -257,5 +260,58 @@ func TestChooseOut_OnlyAnExplicitCleanRealRunWritesIntoTheRepository(t *testing.
 		if d, err := chooseOut(args[0].(bool), args[1].(string), args[2].(bool), args[3].(bool), args[4].(bool)); err == nil {
 			t.Errorf("--record %s must be refused, got %q", name, d)
 		}
+	}
+}
+
+// analyze reads a recording and must reproduce the counts the harness itself printed:
+// here a model that drops every quantity (accepted, because the arithmetic still holds)
+// and one that moves a price and back-solves another (accepted too).
+func TestAnalyze_SplitsWrongParsesByKindAndDecision(t *testing.T) {
+	p := params5()
+	p.N = 6
+	// Only the even references are damaged, so some answers are right and must not be
+	// counted as wrong.
+	dropQuantities := &fakeModel{t: t, damage: func(a *ans, ref int) {
+		if ref%2 != 0 {
+			return
+		}
+		for i := range a.Items {
+			a.Items[i].Quantity = 0
+		}
+	}}
+	recs, err := evaluate(context.Background(), p, dropQuantities, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tl := summarize(recs)
+	if tl.AcceptedWrong == 0 || tl.AcceptedCorrect == 0 {
+		t.Fatalf("the test needs both wrong and right answers: %+v", tl)
+	}
+	rep := report{Env: env{Commit: "test"}, Records: recs}
+	f := filepath.Join(t.TempDir(), "rec.json")
+	b, _ := json.Marshal(rep)
+	if err := os.WriteFile(f, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := analyze(f, &out); err != nil {
+		t.Fatal(err)
+	}
+	// Every wrong parse is quantity-only and accepted, none flagged.
+	line := ""
+	for _, l := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(l, "ground-truth-text") {
+			line = l
+		}
+	}
+	want := fmt.Sprintf("%-18s %6d | %10d / %-10d | %10d / %-10d | %10d / %-10d", "ground-truth-text", tl.AcceptedWrong, tl.AcceptedWrong, 0, 0, 0, 0, 0)
+	if line != want {
+		t.Errorf("analysis row\n got: %q\nwant: %q\nfull output:\n%s", line, want, out.String())
+	}
+	if n := strings.Count(out.String(), ": quantity_only"); n != tl.AcceptedWrong {
+		t.Errorf("silent error lines = %d, want %d", n, tl.AcceptedWrong)
+	}
+	if err := analyze(filepath.Join(t.TempDir(), "missing.json"), &out); err == nil {
+		t.Error("a missing file must be an error")
 	}
 }

@@ -163,7 +163,11 @@ func run() error {
 		recording  = flag.Bool("record", false, "write the result into bench/results (a recording: real service, clean working tree, never with --allow-dirty or --out)")
 		allowDirty = flag.Bool("allow-dirty", false, "run with uncommitted changes (first looks and smoke runs only; do not commit the output)")
 	)
+	analyzePath := flag.String("analyze", "", "read a recorded .json and print the wrong parses by kind (no calls, no spend), then exit")
 	flag.Parse()
+	if *analyzePath != "" {
+		return analyze(*analyzePath, os.Stdout)
+	}
 	if *n < 1 || *n > 1000 || *first < 0 || *workers < 1 || *workers > 16 || *attempts < 1 || *attempts > 10 {
 		return errors.New("--receipts must be 1-1000, --from >= 0, --workers 1-16, --attempts 1-10")
 	}

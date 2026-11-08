@@ -277,3 +277,41 @@ func nearestRank(sorted []int64, p float64) int64 {
 	i := int(math.Ceil(p*float64(len(sorted)))) - 1
 	return sorted[max(0, min(i, len(sorted)-1))]
 }
+
+// What kind of wrong a parse is. Not every wrong parse hurts the same:
+//
+//   - quantity_only: every line's total, and the tax and the tip, are right; only how many
+//     units a line is differs (a quantity digit that OCR dropped or misread: "5 Salmon
+//     Nigiri 174.25" read as one unit). The expense total and each line's price are right;
+//     what is lost is claiming one unit at a time.
+//   - amounts: a line total, the tax or the tip is wrong, or a line is missing or invented:
+//     somebody would be charged the wrong amount.
+//   - unparsed: the answer was not valid for the schema, so nothing was read.
+const (
+	kindQuantityOnly = "quantity_only"
+	kindAmounts      = "amounts"
+	kindUnparsed     = "unparsed"
+)
+
+// classify says what kind of wrong a parse is. It is meant for parses that are not
+// amounts-exact; for one that is, the answer is meaningless.
+func classify(truth synth.Receipt, raw []byte) string {
+	ex, err := receipts.ParseExtraction(raw)
+	if err != nil {
+		return kindUnparsed
+	}
+	if ex.TaxMinor != truth.TaxMinor || ex.TipMinor != truth.TipMinor || len(ex.Lines) != len(truth.Lines) {
+		return kindAmounts
+	}
+	want, got := map[string]int{}, map[string]int{}
+	for _, l := range truth.Lines {
+		want[strconv.FormatInt(l.TotalMinor, 10)]++
+	}
+	for _, l := range ex.Lines {
+		got[strconv.FormatInt(l.LineTotalMinor, 10)]++
+	}
+	if intersect(want, got) == len(truth.Lines) {
+		return kindQuantityOnly
+	}
+	return kindAmounts
+}

@@ -200,3 +200,52 @@ func TestNearestRank(t *testing.T) {
 		t.Errorf("%d %d", nearestRank(s, 0.5), nearestRank(s, 0.99))
 	}
 }
+
+func TestClassify_WhatKindOfWrong(t *testing.T) {
+	r := receiptWith(t, func(r synth.Receipt) bool { return hasQuantity(r) && r.TaxMinor > 0 && len(r.Lines) >= 3 })
+	cases := []struct {
+		name   string
+		damage func(a *ans)
+		want   string
+	}{
+		{"a quantity dropped, the line total kept", func(a *ans) {
+			for i := range a.Items {
+				if a.Items[i].Quantity > 1 {
+					a.Items[i].Quantity = 0
+					return
+				}
+			}
+		}, kindQuantityOnly},
+		{"a quantity changed, the line total kept", func(a *ans) {
+			for i := range a.Items {
+				if a.Items[i].Quantity > 1 {
+					a.Items[i].Quantity++
+					return
+				}
+			}
+		}, kindQuantityOnly},
+		{"a line total wrong", func(a *ans) { a.Items[0].LineTotal += 100 }, kindAmounts},
+		{"two line totals wrong by opposite amounts (sum kept)", func(a *ans) { a.Items[0].LineTotal += 100; a.Items[1].LineTotal -= 100 }, kindAmounts},
+		{"tax wrong", func(a *ans) { a.Tax++ }, kindAmounts},
+		{"an item missing", func(a *ans) { a.Items = a.Items[1:] }, kindAmounts},
+		{"an item invented", func(a *ans) { a.Items = append(a.Items, ansItem{Description: "Ghost", LineTotal: 100}) }, kindAmounts},
+		{"a line split in two with the same total", func(a *ans) {
+			it := a.Items[0]
+			a.Items[0].LineTotal = it.LineTotal / 2
+			a.Items = append(a.Items, ansItem{Description: it.Description, LineTotal: it.LineTotal - it.LineTotal/2})
+		}, kindAmounts},
+	}
+	for _, c := range cases {
+		a := truthAnswer(r)
+		c.damage(&a)
+		if got := classify(r, marshal(t, a)); got != c.want {
+			t.Errorf("%s: classified %q, want %q", c.name, got, c.want)
+		}
+	}
+	if got := classify(r, []byte("I cannot read this")); got != kindUnparsed {
+		t.Errorf("not json: %q", got)
+	}
+	if got := classify(r, nil); got != kindUnparsed {
+		t.Errorf("no answer: %q", got)
+	}
+}
