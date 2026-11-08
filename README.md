@@ -101,6 +101,23 @@ A receipt is read by Tesseract, stripped of card numbers, emails and phone numbe
 ### The iOS app
 A React Native (Expo) client for the whole flow against the unchanged api: sign in, groups and join codes, expenses with claim, finalize and void, add a receipt from the photo library, review and confirm, and a simulated settlement followed to a final state. Typed from `api/openapi.yaml` with a drift check, and its pure logic has Jest tests. **Run by hand on the iOS Simulator only**: no Android, no physical device, no camera, no automated UI tests, not in CI. CLAIMS row 12.
 
+<table>
+  <tr>
+    <td align="center"><img src="docs/img/ios-1-group.png" width="200" alt="Group screen: members with their balances, the expenses, and a suggested transfer with a Pay (simulated) button"></td>
+    <td align="center"><img src="docs/img/ios-2-expense.png" width="200" alt="A finalized expense with each item and who claimed it; quantity lines split into units"></td>
+    <td align="center"><img src="docs/img/ios-3-receipt-parsed.png" width="200" alt="A newly uploaded receipt turned into claimable items, with subtotal, tax, tip and total"></td>
+    <td align="center"><img src="docs/img/ios-4-settled.png" width="200" alt="A settlement that succeeded, with a banner saying it is simulated and no real money moves"></td>
+  </tr>
+  <tr>
+    <td align="center">Balances and a suggested transfer</td>
+    <td align="center">A finalized expense and its claims</td>
+    <td align="center">A receipt read into items</td>
+    <td align="center">A simulated settlement</td>
+  </tr>
+</table>
+
+Screenshots from the iOS Simulator against `make demo-keep`: synthetic data, the mock LLM (the receipt in the third is a synthetic one from `cmd/receiptgen`), and a simulated settlement.
+
 ## Decisions worth a look
 
 - **A Postgres queue, not Kafka, SQS or River.** Transactional enqueue with no extra infrastructure, and the mechanism is the point. The cost is stated: it will not carry very high job rates, and workers poll.
@@ -158,4 +175,4 @@ Kubernetes, Terraform and autoscaling; multi-currency; envelope encryption of re
 - [docs/CLAIMS.md](docs/CLAIMS.md): every claim, its evidence, its method, and what must not be claimed.
 - [bench/README.md](bench/README.md): how each benchmark works and what it does not show.
 
-Built with Claude Code. License: not yet chosen (the repository is private).
+License: not yet chosen (the repository is private).
