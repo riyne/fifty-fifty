@@ -119,6 +119,47 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (int64
 	return result.RowsAffected(), nil
 }
 
+const deleteDeadJobs = `-- name: DeleteDeadJobs :many
+DELETE FROM jobs
+WHERE state = 'dead'
+  AND (cardinality($1::uuid[]) = 0 OR id = ANY($1::uuid[]))
+  AND ($2::text = '' OR kind = $2::text)
+  AND ($3::float8 <= 0
+       OR finished_at <= now() - make_interval(secs => $3::float8))
+RETURNING id
+`
+
+type DeleteDeadJobsParams struct {
+	Ids              []uuid.UUID
+	Kind             string
+	OlderThanSeconds float64
+}
+
+// DeleteDeadJobs permanently removes dead-lettered jobs matching every filter given (an empty
+// ids array, an empty kind and a zero age mean "no filter"; the caller refuses a call with no
+// filter at all). It touches only dead jobs, and the state is re-checked on the locked row, so a
+// job that a concurrent requeue has just moved back to queued is not deleted. finished_at is
+// when the job died; an age filter never matches a job without one.
+func (q *Queries) DeleteDeadJobs(ctx context.Context, arg DeleteDeadJobsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, deleteDeadJobs, arg.Ids, arg.Kind, arg.OlderThanSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteFinishedJobs = `-- name: DeleteFinishedJobs :execrows
 DELETE FROM jobs
 WHERE id IN (
@@ -307,6 +348,45 @@ func (q *Queries) InsertPeriodicJob(ctx context.Context, arg InsertPeriodicJobPa
 	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const listDeadJobsToDelete = `-- name: ListDeadJobsToDelete :many
+SELECT id
+FROM jobs
+WHERE state = 'dead'
+  AND (cardinality($1::uuid[]) = 0 OR id = ANY($1::uuid[]))
+  AND ($2::text = '' OR kind = $2::text)
+  AND ($3::float8 <= 0
+       OR finished_at <= now() - make_interval(secs => $3::float8))
+ORDER BY id
+`
+
+type ListDeadJobsToDeleteParams struct {
+	Ids              []uuid.UUID
+	Kind             string
+	OlderThanSeconds float64
+}
+
+// ListDeadJobsToDelete is the dry run of DeleteDeadJobs: the same filters, nothing changed. A
+// test keeps the two in step.
+func (q *Queries) ListDeadJobsToDelete(ctx context.Context, arg ListDeadJobsToDeleteParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listDeadJobsToDelete, arg.Ids, arg.Kind, arg.OlderThanSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const queueStats = `-- name: QueueStats :many

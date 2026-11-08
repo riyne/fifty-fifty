@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,111 @@ func TestParseRequeue(t *testing.T) {
 		var out bytes.Buffer
 		if _, err := parseRequeue(args, &out); !errors.Is(err, errUsage) {
 			t.Errorf("%s: err = %v, want usage error", name, err)
+		}
+	}
+}
+
+func TestParseDeleteDead(t *testing.T) {
+	id := uuid.NewString()
+	ok := map[string]struct {
+		args   []string
+		kind   string
+		nIDs   int
+		age    time.Duration
+		dryRun bool
+	}{
+		"kind":             {[]string{"--kind", "k"}, "k", 0, 0, false},
+		"an id":            {[]string{"--id", id}, "", 1, 0, false},
+		"an age":           {[]string{"--older-than", "720h"}, "", 0, 720 * time.Hour, false},
+		"kind and age":     {[]string{"--kind", "k", "--older-than", "24h"}, "k", 0, 24 * time.Hour, false},
+		"a dry run":        {[]string{"--dry-run", "--kind", "k"}, "k", 0, 0, true},
+		"all of them":      {[]string{"--kind", "k", "--id", id, "--older-than", "1h", "--dry-run"}, "k", 1, time.Hour, true},
+		"age with seconds": {[]string{"--older-than", "90s"}, "", 0, 90 * time.Second, false},
+	}
+	for name, c := range ok {
+		p, err := parseDeleteDead(c.args, &bytes.Buffer{})
+		if err != nil || p.Kind != c.kind || len(p.IDs) != c.nIDs || p.OlderThan != c.age || p.DryRun != c.dryRun {
+			t.Errorf("%s: %+v, %v", name, p, err)
+		}
+	}
+	// No form deletes everything: with no filter, however it is spelled, it is a usage error.
+	bad := map[string][]string{
+		"nothing":                 {},
+		"only a dry run":          {"--dry-run"},
+		"a zero age":              {"--older-than", "0s"},
+		"a negative age":          {"--older-than", "-1h"},
+		"not a duration":          {"--older-than", "a while"},
+		"not a uuid":              {"--id", "nope"},
+		"a stray argument":        {"--kind", "k", "everything"},
+		"an all flag that is not": {"--all"},
+	}
+	for name, args := range bad {
+		var out bytes.Buffer
+		if _, err := parseDeleteDead(args, &out); !errors.Is(err, errUsage) {
+			t.Errorf("%s: err = %v, want a usage error", name, err)
+		}
+	}
+}
+
+func TestDeleteDead_DryRunPrintsAndDeletesNothingThenTheRealRunDeletes(t *testing.T) {
+	pool := testutil.WorkerPool(t)
+	ctx := context.Background()
+	kind := "test.cli.delete-dead." + uuid.NewString()
+
+	for range 2 {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := queue.Enqueue(ctx, tx, queue.NewJob{Kind: kind, MaxAttempts: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+		c, err := queue.ClaimJobs(ctx, pool, queue.ClaimParams{Kinds: []string{kind}, Limit: 1, Lease: time.Minute})
+		if err != nil || len(c) != 1 || c[0].ID != id {
+			t.Fatal(c, err)
+		}
+		if st, err := queue.Fail(ctx, pool, c[0], queue.FailParams{Error: "x"}); err != nil || st != queue.StateDead {
+			t.Fatal(st, err)
+		}
+	}
+	count := func() (n int) {
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE kind = $1`, kind).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	lines := func(out *bytes.Buffer) []string { return strings.Fields(out.String()) }
+
+	var out bytes.Buffer
+	if err := deleteDead(ctx, pool, queue.DeleteDeadParams{Kind: kind, DryRun: true}, &out); err != nil {
+		t.Fatal(err)
+	}
+	dry := lines(&out)
+	if len(dry) != 2 || count() != 2 {
+		t.Fatalf("dry run printed %v and left %d jobs, want 2 ids and 2 jobs", dry, count())
+	}
+
+	out.Reset()
+	if err := deleteDead(ctx, pool, queue.DeleteDeadParams{Kind: kind}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := lines(&out); !slices.Equal(got, dry) || count() != 0 {
+		t.Errorf("the real run printed %v and left %d jobs, want %v and none", got, count(), dry)
+	}
+}
+
+// A delete-dead with no filter is refused before any database is needed: nothing in this test
+// has DATABASE_URL, so reaching the connection would be a different error.
+func TestRun_DeleteDeadWithoutAFilterIsAUsageError(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	var out bytes.Buffer
+	for _, args := range [][]string{{"delete-dead"}, {"delete-dead", "--dry-run"}, {"delete-dead", "--older-than", "0s"}} {
+		if err := run(context.Background(), args, &out, &out); !errors.Is(err, errUsage) {
+			t.Errorf("%v: err = %v, want a usage error", args, err)
 		}
 	}
 }

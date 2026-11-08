@@ -352,6 +352,7 @@ stateDiagram-v2
     running --> queued : Fail, retry after jittered backoff
     running --> dead : Fail on the last attempt, or lease expired on the last attempt
     dead --> queued : operator requeue command
+    dead --> [*] : operator delete-dead command (the row is deleted)
     succeeded --> [*] : pruned after 7 days
 ```
 

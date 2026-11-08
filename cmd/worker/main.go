@@ -3,6 +3,8 @@
 //	worker run [flags]             claim and run jobs until SIGINT/SIGTERM; --metrics-addr serves /metrics
 //	worker requeue --kind K        give every dead job of kind K a fresh set of attempts
 //	worker requeue --id ID [--id ID ...]   the same for specific jobs
+//	worker delete-dead [--kind K] [--id ID ...] [--older-than D] [--dry-run]
+//	                               delete dead-lettered jobs for good (needs at least one filter)
 package main
 
 import (
@@ -36,6 +38,7 @@ const usage = `usage:
   worker run [--concurrency N] [--lease D] [--poll D] [--grace D] [--metrics-addr HOST:PORT]
   worker requeue --kind KIND
   worker requeue --id JOB_ID [--id JOB_ID ...]
+  worker delete-dead [--kind KIND] [--id JOB_ID ...] [--older-than DURATION] [--dry-run]
 
 run claims jobs and runs their handlers until SIGINT or SIGTERM, then lets the
 jobs in flight finish (up to --grace). Defaults: 4 jobs at once, 30s lease, 1s
@@ -45,6 +48,15 @@ poll, 20s grace. --metrics-addr (off by default) serves Prometheus metrics at
 
 requeue moves dead-lettered jobs back to the queue with a fresh set of attempts
 (their last_error is kept). It needs --kind or --id; there is no "all".
+
+delete-dead removes dead-lettered jobs for good, so the dead-letter queue does not only grow. It
+needs at least one of --kind, --id or --older-than (a Go duration such as 720h, measured from
+when the job died); there is no "all", and a job must match every filter given. It touches only
+dead jobs, and never one that a requeue has just revived. Run it with --dry-run first: that
+prints the ids it would delete and deletes nothing. Deleting a dead job does not undo what it
+was about (a receipt still waiting to be read, a settlement still pending: the sweep and the
+watchdog deal with those), and its last_error goes with it; read it first, or requeue instead.
+Both commands print one job id per line on stdout.
 Needs DATABASE_URL, which must name the fifty_worker role (migration 00015), not the
 application role fifty_app. If PAYMENTS_URL (the base URL of the payment provider, for
 example http://127.0.0.1:8090) is set, the worker also runs settlement.execute and
@@ -72,20 +84,24 @@ func main() {
 var errUsage = errors.New("usage")
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	if len(args) == 0 || (args[0] != "requeue" && args[0] != "run") {
+	if len(args) == 0 || (args[0] != "requeue" && args[0] != "run" && args[0] != "delete-dead") {
 		fmt.Fprintln(stderr, usage)
 		return errUsage
 	}
 	// Parse before connecting, so a typo does not need a database.
 	var (
 		reqParams   queue.RequeueParams
+		delParams   queue.DeleteDeadParams
 		runCfg      worker.Config
 		metricsAddr string
 		err         error
 	)
-	if args[0] == "requeue" {
+	switch args[0] {
+	case "requeue":
 		reqParams, err = parseRequeue(args[1:], stderr)
-	} else {
+	case "delete-dead":
+		delParams, err = parseDeleteDead(args[1:], stderr)
+	default:
 		runCfg, metricsAddr, err = parseRun(args[1:], stderr)
 	}
 	if err != nil {
@@ -101,8 +117,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	}
 	defer pool.Close()
 
-	if args[0] == "requeue" {
+	switch args[0] {
+	case "requeue":
 		return requeue(ctx, pool, reqParams, stdout)
+	case "delete-dead":
+		return deleteDead(ctx, pool, delParams, stdout)
 	}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -298,5 +317,42 @@ func requeue(ctx context.Context, pool *pgxpool.Pool, p queue.RequeueParams, std
 		fmt.Fprintln(stdout, id)
 	}
 	slog.Info("requeued dead jobs", "count", len(ids), "kind", p.Kind, "ids_requested", len(p.IDs))
+	return nil
+}
+
+func parseDeleteDead(args []string, stderr io.Writer) (queue.DeleteDeadParams, error) {
+	var ids idList
+	fs := flag.NewFlagSet("delete-dead", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	kind := fs.String("kind", "", "delete the dead jobs of this kind")
+	fs.Var(&ids, "id", "delete this dead job (repeatable)")
+	olderThan := fs.Duration("older-than", 0, "delete the dead jobs that died at least this long ago (for example 720h)")
+	dryRun := fs.Bool("dry-run", false, "print the ids that would be deleted and delete nothing")
+	if err := fs.Parse(args); err != nil {
+		return queue.DeleteDeadParams{}, errUsage
+	}
+	// No filter, or a negative age, is a usage error: there is no form that deletes everything.
+	if fs.NArg() != 0 || *olderThan < 0 || (*kind == "" && len(ids) == 0 && *olderThan == 0) {
+		fmt.Fprintln(stderr, usage)
+		return queue.DeleteDeadParams{}, errUsage
+	}
+	return queue.DeleteDeadParams{IDs: ids, Kind: *kind, OlderThan: *olderThan, DryRun: *dryRun}, nil
+}
+
+// deleteDead prints one deleted (or, with --dry-run, would-be-deleted) job id per line on
+// stdout; the count goes to the log.
+func deleteDead(ctx context.Context, pool *pgxpool.Pool, p queue.DeleteDeadParams, stdout io.Writer) error {
+	ids, err := queue.DeleteDead(ctx, pool, p)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		fmt.Fprintln(stdout, id)
+	}
+	msg := "deleted dead jobs"
+	if p.DryRun {
+		msg = "dry run: would delete dead jobs (nothing was deleted)"
+	}
+	slog.Info(msg, "count", len(ids), "kind", p.Kind, "ids_requested", len(p.IDs), "older_than", p.OlderThan.String())
 	return nil
 }

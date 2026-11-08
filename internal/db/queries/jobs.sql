@@ -138,6 +138,32 @@ WHERE state = 'dead'
   AND (sqlc.arg('kind')::text = '' OR kind = sqlc.arg('kind')::text)
 RETURNING id;
 
+-- DeleteDeadJobs permanently removes dead-lettered jobs matching every filter given (an empty
+-- ids array, an empty kind and a zero age mean "no filter"; the caller refuses a call with no
+-- filter at all). It touches only dead jobs, and the state is re-checked on the locked row, so a
+-- job that a concurrent requeue has just moved back to queued is not deleted. finished_at is
+-- when the job died; an age filter never matches a job without one.
+-- name: DeleteDeadJobs :many
+DELETE FROM jobs
+WHERE state = 'dead'
+  AND (cardinality(sqlc.arg('ids')::uuid[]) = 0 OR id = ANY(sqlc.arg('ids')::uuid[]))
+  AND (sqlc.arg('kind')::text = '' OR kind = sqlc.arg('kind')::text)
+  AND (sqlc.arg('older_than_seconds')::float8 <= 0
+       OR finished_at <= now() - make_interval(secs => sqlc.arg('older_than_seconds')::float8))
+RETURNING id;
+
+-- ListDeadJobsToDelete is the dry run of DeleteDeadJobs: the same filters, nothing changed. A
+-- test keeps the two in step.
+-- name: ListDeadJobsToDelete :many
+SELECT id
+FROM jobs
+WHERE state = 'dead'
+  AND (cardinality(sqlc.arg('ids')::uuid[]) = 0 OR id = ANY(sqlc.arg('ids')::uuid[]))
+  AND (sqlc.arg('kind')::text = '' OR kind = sqlc.arg('kind')::text)
+  AND (sqlc.arg('older_than_seconds')::float8 <= 0
+       OR finished_at <= now() - make_interval(secs => sqlc.arg('older_than_seconds')::float8))
+ORDER BY id;
+
 -- InsertPeriodicJob enqueues the job for the current period, unless one exists.
 -- The period number is computed here, on the database clock, so workers whose own
 -- clocks disagree still agree on which period it is: floor(epoch / every). The
