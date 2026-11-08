@@ -13,6 +13,14 @@
     "scheme": "fiftyfifty",
     "platforms": [
       "ios"
-    ]
+    ],
+    "plugins": [
+      "expo-router",
+      ["expo-secure-store", { "faceIDPermission": false }],
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }

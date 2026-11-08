@@ -17,18 +17,20 @@ function json(status: number, body: unknown, headers: Record<string, string> = {
 function setup(answer: (request: Request) => Response | Promise<Response>, token: string | null = "tok-1") {
   const seen: Request[] = [];
   let unauthorized = 0;
+  const unauthorizedTokens: (string | null)[] = [];
   const api = createApi({
     baseUrl: BASE,
     getToken: () => token,
-    onUnauthorized: () => {
+    onUnauthorized: (sent) => {
       unauthorized++;
+      unauthorizedTokens.push(sent);
     },
     fetch: async (request) => {
       seen.push(request.clone());
       return answer(request);
     },
   });
-  return { api, seen, unauthorizedCalls: () => unauthorized };
+  return { api, seen, unauthorizedCalls: () => unauthorized, unauthorizedTokens };
 }
 
 describe("request shape", () => {
@@ -147,6 +149,15 @@ describe("401", () => {
     const { api, unauthorizedCalls } = setup(() => json(401, { code: "unauthorized", message: "invalid token" }));
     await expect(unwrap(api.GET("/v1/me"))).rejects.toMatchObject({ status: 401, code: "unauthorized" });
     expect(unauthorizedCalls()).toBe(1);
+  });
+
+  it("tells it which token the failed request carried (null when it carried none)", async () => {
+    const withToken = setup(() => json(401, { code: "unauthorized", message: "invalid token" }), "tok-old");
+    await expect(unwrap(withToken.api.GET("/v1/me"))).rejects.toBeInstanceOf(ApiError);
+    expect(withToken.unauthorizedTokens).toEqual(["tok-old"]);
+    const without = setup(() => json(401, { code: "unauthorized", message: "missing token" }), null);
+    await expect(unwrap(without.api.GET("/v1/me"))).rejects.toBeInstanceOf(ApiError);
+    expect(without.unauthorizedTokens).toEqual([null]);
   });
 
   it("does not call it for other statuses", async () => {

@@ -7,8 +7,12 @@ export interface ApiOptions {
   baseUrl: string;
   /** The ID token to send as the bearer, or null when logged out. Called for every request. */
   getToken: () => Promise<string | null> | string | null;
-  /** Called when the api answers 401 (missing, invalid or expired token); the app goes back to login. */
-  onUnauthorized?: () => void;
+  /**
+   * Called when the api answers 401 (missing, invalid or expired token); the app goes back to
+   * login. It gets the token that the failed request carried (null if it carried none), so a
+   * late 401 for an old request cannot end a newer login.
+   */
+  onUnauthorized?: (sentToken: string | null) => void;
   /** For tests. Defaults to the global fetch. */
   fetch?: (request: Request) => Promise<Response>;
 }
@@ -27,8 +31,10 @@ export function createApi(options: ApiOptions) {
       if (token) request.headers.set("Authorization", `Bearer ${token}`);
       return request;
     },
-    onResponse({ response }) {
-      if (response.status === 401) options.onUnauthorized?.();
+    onResponse({ request, response }) {
+      if (response.status !== 401) return;
+      const header = request.headers.get("authorization");
+      options.onUnauthorized?.(header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : null);
     },
   });
   return client;

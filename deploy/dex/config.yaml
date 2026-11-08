@@ -22,8 +22,12 @@ staticClients:
     name: Fifty Fifty
     public: true # public client: Auth Code + PKCE, no secret
     redirectURIs:
-      # Placeholder. Real redirect URIs are set when the login flow is built (M1.2 / M8).
+      # scripts/dev-token.sh (a dev login with curl; it only reads the code from the redirect,
+      # the api has no such route).
       - http://localhost:8080/callback
+      # The mobile app (M8.2): the scheme in mobile/app.json and the path from
+      # mobile/src/auth/oidc.ts. A public client must match a registered URI exactly.
+      - fiftyfifty://auth
 
 staticPasswords:
   - email: alice@example.com
