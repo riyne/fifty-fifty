@@ -1,6 +1,6 @@
 # Architecture
 
-How the system fits together, written so that you can come back after months and rebuild the picture. Diagrams are [Mermaid](https://mermaid.js.org/), which GitHub renders in the browser. Facts here were read from the code and the live database as of commit `4775996` (M9.1); `docs/DESIGN.md` has the reasons behind each decision (section 2 is the decision log), `docs/CLAIMS.md` what is proven. If this file and the code disagree, the code wins: fix this file.
+How the system fits together, written so that you can come back after months and rebuild the picture. Diagrams are [Mermaid](https://mermaid.js.org/), which GitHub renders in the browser. Facts here were read from the code and the live database as of commit `4775996` (M9.1) and rechecked at `4cade92` (M9.4b: the schema, the roles and the flows are unchanged since, and the guard test passes); `docs/DESIGN.md` has the reasons behind each decision (section 2 is the decision log), `docs/CLAIMS.md` what is proven. If this file and the code disagree, the code wins: fix this file.
 
 Contents: [1 The processes](#1-the-processes) · [2 The database](#2-the-database) · [3 One request, end to end](#3-one-request-end-to-end) · [4 Money and the ledger](#4-money-and-the-ledger) · [5 The job queue](#5-the-job-queue) · [6 The receipt pipeline](#6-the-receipt-pipeline) · [7 Settlement](#7-settlement-simulated) · [8 Reading guide: the four things to be able to explain](#8-reading-guide-the-four-things-to-be-able-to-explain) · [9 Running it](#9-running-it)
 

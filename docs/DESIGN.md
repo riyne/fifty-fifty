@@ -1,8 +1,8 @@
 # Fifty Fifty: design
 
-Status: approved decisions as of 2026-11-07. **M0-M8 are done** (ledger, queue, settlement, item edits, the receipt pipeline, row-level security, and an iOS Simulator client run by hand); **M9 (accuracy eval, full README, architecture diagram, demo) is not started.** The real Anthropic API was called for the first time on 2026-11-08 (M9.3: two six-call smoke runs through `bench/accuracy`, see the decision-log row "M9.3b"); every extraction test, the demo and the mobile runs still use the mock LLM. Update this file when a decision changes; don't let it drift from the code.
+Status: approved decisions as of 2026-11-08. **M0-M9 are done** (ledger, queue, settlement, item edits, the receipt pipeline, row-level security, an iOS Simulator client run by hand, and in M9 a one-command demo, the architecture document, the accuracy evaluation with a real model, and the full README). What is left is optional and listed in section 13. The real Anthropic API was called for the first time on 2026-11-08 (M9.3: two six-call smoke runs through `bench/accuracy`, see the decision-log row "M9.3b"); every extraction test, the demo and the mobile runs still use the mock LLM. Update this file when a decision changes; don't let it drift from the code.
 
-How to read this file: sections 1-13 are the design; section 2 is the decision log, one row per decision or milestone step, newest last, and is the place to look up why something is the way it is (rows are named after the step that made them). Section 13 is the list of open items. Evidence for every claim is in `docs/CLAIMS.md`; benchmark method is in `bench/README.md`. **Reading list for M9** (accuracy eval, README, demo): sections 1, 8, 10 and 13; `docs/CLAIMS.md` (what may and may not be claimed; the README is built from it); `docs/LIVE_SMOKE.md` (the first live check, which needs Ryan's API key); `bench/README.md`; and the decision-log rows "Parse job and sweep (M6.7)", "Anthropic client and retry-after (M6.8)", "Tesseract OCR, worker wiring and the first real-process receipt test (M6.9a)", "Add a receipt (M8.5a)" and "Settle (M8.6)" (what the demo needs running).
+How to read this file: sections 1-13 are the design; section 2 is the decision log, one row per decision or milestone step, newest last, and is the place to look up why something is the way it is (rows are named after the step that made them). Section 13 is the list of open items. Evidence for every claim is in `docs/CLAIMS.md`; benchmark method is in `bench/README.md`. **Reading list for M9** (written before M9; M9 is done, and the list is still the quickest way in): sections 1, 8, 10 and 13; `docs/CLAIMS.md` (what may and may not be claimed; the README is built from it); `docs/LIVE_SMOKE.md` (the first live check, which needs Ryan's API key); `bench/README.md`; and the decision-log rows "Parse job and sweep (M6.7)", "Anthropic client and retry-after (M6.8)", "Tesseract OCR, worker wiring and the first real-process receipt test (M6.9a)", "Add a receipt (M8.5a)" and "Settle (M8.6)" (what the demo needs running).
 
 **One line:** photograph a receipt, an LLM itemizes it, friends claim their items, and the app tracks net balances and records settlements through a simulated payment provider.
 
@@ -134,7 +134,7 @@ Mobile app (`mobile/`, Expo) talks only to `api` and Dex (system browser for log
 
 As built through M8, compose runs only `postgres` and `dex`; `api`, `worker`, `mockllm` and `mockpay` run on the host (`make run-api`, `go run ./cmd/worker run`, `go run ./cmd/mockllm`, `go run ./cmd/mockpay`), `tesseract` is a program installed on the host (`brew install tesseract`), and the mobile client is built and served from the host by Expo (`npx expo run:ios` in `mobile/`). Containerizing the rest is not built and is not needed for the milestones that remain.
 
-Repo layout. Built (as of M8; sixteen migrations, 00001-00016):
+Repo layout. Built (as of M9; sixteen migrations, 00001-00016):
 
     api/openapi.yaml                 the spec; test/bola reads it to check authz coverage
     cmd/api/                         HTTP server entrypoint
@@ -142,7 +142,7 @@ Repo layout. Built (as of M8; sixteen migrations, 00001-00016):
     cmd/mockllm/                     mock Anthropic Messages API server for benchmarks (M3.7)
     cmd/mockpay/                     mock payment provider: idempotency keys, faults, signed webhooks (M4.3)
     cmd/demo/                        `make demo`: the whole system on a throwaway database, driven over HTTP as three people (M9.1); a development tool
-    bench/queue/, bench/recovery/, bench/settlement/, bench/stress/, bench/redaction/, bench/rls/   benchmark programs; bench/README.md has the methodology, bench/results/ the raw recorded runs
+    bench/queue/, bench/recovery/, bench/settlement/, bench/stress/, bench/redaction/, bench/rls/, bench/accuracy/   benchmark programs; bench/README.md has the methodology, bench/results/ the raw recorded runs
     cmd/benchworker/                 worker for the benchmark kind `mock.extract` only; the recovery test and benchmarks start and kill these
     internal/allocator/              pure share math: largest-remainder apportion, per-expense allocate
     internal/auth/                   OIDC verifier + middleware + first-login provisioning
@@ -194,9 +194,7 @@ Repo layout. Built (as of M8; sixteen migrations, 00001-00016):
 
 `mobile/` (Expo client, M8): `src/api/` the generated types, the typed client and the pure, Jest-tested logic (errors, idempotency keys, money, the review edit builder, expense rules, wording of balances and settlements); `src/auth/` PKCE login, the session and the Keychain store; `src/app/` the expo-router screens (signed-in ones under `(app)/`); `src/hooks/` loading and polling; `src/receipts/` photo preparation; `src/ui/` shared components; `make mobile-check`.
 
-Planned, not built yet:
-
-    bench/accuracy/
+Added in M9: `cmd/demo` (`make demo`), `bench/accuracy` (`make bench-accuracy`, and `--analyze` on a recording), `docs/ARCHITECTURE.md` (the diagrams and a reading guide; `test/dbinvariants` has a guard that fails if a table or migration is missing from it) and `docs/img/` (the README's screenshots). Nothing in the layout is planned and unbuilt.
 
 ## 4. Domain model (conceptual)
 
@@ -327,7 +325,7 @@ Actual hours are not recorded anywhere; re-baselining needs Ryan's own time log.
 | M6 | Item edits first, then the receipt pipeline (steps 6.1-6.10; decision log "M6 plan decisions" and the rows after it, each with its commit). **Done.** The optional live smoke was skipped by Ryan (`docs/LIVE_SMOKE.md`). Estimate not re-baselined | ~25 |
 | M7 | RLS (cut first if late; not cut, Ryan decided 2026-11-07). Steps 7.0-7.7; decision log "M7 plan decisions" and the rows after it. **Done.** The estimate of 15 h was low (actual hours are not recorded): the refactor of handler database access and the test fixtures was most of the work | ~15 |
 | M8 | Mobile: Expo, OIDC PKCE, groups, expenses and claims, add and review a receipt, simulated settlement. iOS Simulator only, run by hand. Steps 8.0-8.7; decision log "M8 plan decisions" and the rows after it. **Done** | ~25 |
-| M9 | Accuracy eval, README, architecture diagram, demo | ~15 |
+| M9 | Accuracy eval, README, architecture diagram, demo. **Done** (9.1 `make demo`; 9.2 `docs/ARCHITECTURE.md`; 9.3 the accuracy harness, the first real API calls and the recording, CLAIMS row 10; 9.4 the full README and screenshots; 9.5 this closing audit). The decision log rows "M9 plan and demo (M9.1)" to "README screenshots (M9.4b)" have the detail and the commits. The estimate was not re-baselined | ~15 |
 
 Cut order if late: M7, then accuracy eval, then mobile polish.
 
@@ -341,6 +339,15 @@ Cut order if late: M7, then accuracy eval, then mobile polish.
 - Defensibility: the author must be able to explain and rewrite the queue, locking, idempotency and ledger code. Read every diff; be ready to say the project was built with Claude Code.
 
 ## 13. Open items
+
+**Scheduled next (optional; Ryan un-tabled these on 2026-11-07, Android excepted; each is asked about before it starts; recommended order, cheapest and most useful first)**
+1. **Accuracy follow-up** (below, "Accuracy follow-ups"): a prompt that stops the model back-solving unreadable prices, measured on fresh receipts with both prompts and both recordings kept. About 8 US cents and 3 minutes per run.
+2. **CI hygiene:** pin the actions by commit SHA; add golangci-lint and secret scanning (ask before installing either; the secret scan is also step 2 of the go-public list below).
+3. **Email redaction pattern that tolerates OCR spacing** ("Left over from M6"): change the pattern, repeat `make bench-redaction` (about 4 minutes), keep both results.
+4. **A mobile job in CI** (typecheck, the drift check, Jest); it changes `ci.yml` and CLAIMS row 8, so ask first.
+5. **The identity-seam optimization** (hardening backlog): batch a read into one round trip, then re-record `bench/rls` and keep both recordings. The riskiest of these: it changes the code every read goes through.
+6. **Token refresh, then an automated UI test or PKCE test** (Maestro or Detox, neither installed). Last; first to cut.
+Not scheduled and not wanted: Android. Going public needs the license decision and the steps in "Before going public".
 
 **Before going public (Ryan's call; the repo stays private until he decides)**
 - License: undecided. **Steps to go public (drafted 2026-11-07, Ryan decides when; nothing here is done):** (1) choose a license and add `LICENSE` (MIT or Apache-2.0 are the usual picks; Apache-2.0 adds a patent grant); (2) scan the whole git history, not just the tree, for secrets and for things that should not be public (a scanner such as gitleaks; ask before installing), and confirm `CLAUDE.md` was never committed (`git log --all -- CLAUDE.md`); (3) read `bench/results/` and the docs for local paths, usernames and machine details you do not want public; (4) say in the README that the credentials in `deploy/` and the Makefile are throwaway development values; (5) decide whether the README says the project was built with Claude Code (DESIGN section 12 says to be ready to say so; recommended: one plain sentence); (6) pin the CI actions and have a green run on the commit that will be public; (7) on GitHub: description and topics, turn on secret scanning, Dependabot alerts and private vulnerability reporting (free on public repos), optionally branch protection on `main`; (8) clone the repo fresh into an empty directory and run `make demo` from the README alone; (9) flip visibility in the repository settings (Ryan only), then add the link to the resume. Revisit the CLAIMS "must not be made" list against the final README before step 9.
@@ -397,6 +404,7 @@ Cut order if late: M7, then accuracy eval, then mobile polish.
 - sqlc maps `ledger_transactions.txid xid8` to `pgtype.Uint64`; no query selects it. If one ever needs to, check the scan.
 
 **Tests, development database and measurement notes**
+- **A worker (or an api) left running against the development database breaks the test suite**, and not by failing loudly: at the end of M9 `make ci` failed `test/bola` `TestMatrix` ("was refused but changed state": audit rows, item totals and expense versions moved during a refused request) and `receiptapi` `TestUpload_CreatesAParsingExpenseAndStoresTheImage` (its `parsing` expense was parsed under it), because a `worker run` started the evening before for the iOS app, with its mock LLM and mock payment provider, was claiming the jobs the tests create. Both passed once those three processes were stopped (the full `make ci` passed, 5 min 36 s). Before a test or CI run, check `ps` for a `worker`, `mockllm` or `mockpay` and `lsof -iTCP:8080` for an api; stop what is not needed. The demo is safe (it runs on its own scratch database).
 - Tests skip without `TEST_DATABASE_URL` (and the owner-role ones without `TEST_OWNER_DATABASE_URL`) unless `REQUIRE_DATABASE=1`, which CI sets. By hand, export both in the same shell command and confirm with `-v` that tests ran. `make test`, `make test-unsafe` and `make ci` set them; `make test-controls` and `make test-e2e` need `E2E=1`.
 - The integration-test database is shared and the tests never clean it (`make reset` does), and `httptest` issuer URLs are random local ports that get reused, so tests create their own identities and compare counts against a baseline taken after setup.
 - A test or benchmark process that is killed mid-run (an interrupted `go test`, a Ctrl-C) can leave a scratch database `fifty_e2e_<hex>` in the cluster; `DROP DATABASE ... WITH (FORCE)` removes it (one was left by a hung run during M7.4).

@@ -1,19 +1,19 @@
 # Live smoke test against the real Anthropic API (optional, not done)
 
-Status: **not run.** Ryan decided to skip it at the end of M6 (2026-11-07) and keep this procedure for later. Until it is run, nothing in this project says anything about how the real API or a real model behaves: every receipt test uses a mock LLM (`internal/mockllm`), which never reads its prompt. CLAIMS rows 27 and 28 say so.
+Status: **the stack procedure below was not run; its first step was done another way** (M9.3, 2026-11-08: six calls through `bench/accuracy`, then the 250-call recording, CLAIMS rows 27 and 10). Ryan decided to skip this procedure at the end of M6 (2026-11-07) and keep it for later; it remains an optional check of the worker wiring against the real API. Every receipt test, the demo and the mobile runs still use the mock LLM (`internal/mockllm`), which never reads its prompt.
 
 > **Update (M9.3):** the first look at the real API no longer needs the whole stack. `go run ./bench/accuracy --from 1 --receipts 3 --variants ground-truth-text,ocr-clean --allow-dirty --confirm-calls 6` sends 6 requests through the same `internal/anthropic` client and the same validator the worker uses, and answers most of what this procedure asks (is the request accepted, is the answer in the expected shape, token counts, a 429's `retry-after`). Use that first; it costs six calls. The procedure below, through the api and a worker, additionally exercises the worker wiring and is optional. **The first run of that command (2026-11-08) was refused with HTTP 400 because the client sent `temperature: 0`, which Claude Haiku 5.5 does not accept; the field was removed (DESIGN "M9.3b").**
 
 ## What it is for
 
-One small, supervised check that the pipeline works against the real service, run once before relying on the extractor for anything (the M9 accuracy eval, CLAIMS row 10, or the demo). It can find things the mock cannot:
+One small, supervised check that the pipeline works against the real service, run once before relying on the extractor for anything (the accuracy eval, CLAIMS row 10, or the demo). It can find things the mock cannot:
 
 - the request is accepted (model name, `max_tokens`, `temperature`, headers, `anthropic-version`);
 - the model answers in the shape `receipts.ParseExtraction` accepts, or adds prose, fences, extra fields or a different number format (the strict validator would send those receipts to `needs_review`, which is a finding about the prompt, not a bug);
 - 429s carry a `retry-after` and the worker waits for it;
 - token counts and cost per receipt are what the plan assumed.
 
-It is **not** an accuracy evaluation. A handful of receipts says nothing about item-level accuracy; that is M9 (about 50 synthetic receipts, with the review-flag catch rate).
+It is **not** an accuracy evaluation. A handful of receipts says nothing about item-level accuracy; that is `bench/accuracy` (M9.3, CLAIMS row 10: 50 synthetic receipts in each of five variants, with the review-flag catch rate).
 
 ## Before you start
 
@@ -62,7 +62,7 @@ Then upload the other nine. For each, compare the expense with the receipt's `NN
 
 ## Recording the result
 
-If you run it, add a dated row to the DESIGN decision log ("Live smoke (date)") with: commit, model, number of receipts, outcomes by reason, token totals, what broke or surprised, what was changed (a prompt change is a code change with its own commit). Say plainly that it is a smoke test. Do not add accuracy numbers to CLAIMS from it; at most, once it has run, CLAIMS row 27 can say the client was exercised against the real API on that date, with what was seen. Row 10 (accuracy) stays `planned` until the M9 evaluation.
+If you run it, add a dated row to the DESIGN decision log ("Live smoke (date)") with: commit, model, number of receipts, outcomes by reason, token totals, what broke or surprised, what was changed (a prompt change is a code change with its own commit). Say plainly that it is a smoke test. Do not add accuracy numbers to CLAIMS from it; at most, CLAIMS row 27 can say the client was exercised against the real API on that date, with what was seen. Accuracy is row 10 (recorded in M9.3 by `bench/accuracy`, not by this procedure).
 
 ## Afterwards
 
