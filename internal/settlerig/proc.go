@@ -126,7 +126,7 @@ func FreeAddr() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer ln.Close()
+	defer ln.Close() //nolint:errcheck // a listener opened only to learn a free port
 	return ln.Addr().String(), nil
 }
 

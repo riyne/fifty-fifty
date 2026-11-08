@@ -25,7 +25,7 @@ func TestUserHandlersHoldNoPool(t *testing.T) {
 	for _, h := range handlers {
 		t.Run(h.dir, func(t *testing.T) {
 			fset := token.NewFileSet()
-			pkgs, err := parser.ParseDir(fset, h.dir, func(fi fs.FileInfo) bool {
+			pkgs, err := parser.ParseDir(fset, h.dir, func(fi fs.FileInfo) bool { //nolint:staticcheck // ParseDir ignores build tags; these handler packages have no tagged files, and the alternative (go/packages) is a heavy dependency for a source-shape check
 				return !strings.HasSuffix(fi.Name(), "_test.go")
 			}, 0)
 			if err != nil {

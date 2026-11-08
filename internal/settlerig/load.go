@@ -142,7 +142,7 @@ func RunLoad(ctx context.Context, p LoadParams) (LoadResult, error) {
 	}
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
-	defer srv.Close()
+	defer srv.Close() //nolint:errcheck // shutting the load server down at the end of the run
 
 	flags := append([]string{"--seed", strconv.FormatUint(p.Seed, 10), "--timeout-hold", p.TimeoutHold.String()}, p.Mix.Mock...)
 	if p.Mix.Webhooks {

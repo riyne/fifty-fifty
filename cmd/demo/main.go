@@ -104,7 +104,7 @@ func run(ctx context.Context, keep, kill bool) (err error) {
 	_, port, _ := net.SplitHostPort(apiAddr)
 	for _, a := range []string{"127.0.0.1:" + port, "[::1]:" + port} {
 		if c, err := net.DialTimeout("tcp", a, time.Second); err == nil {
-			c.Close()
+			c.Close() //nolint:errcheck // probe connection, closed at once
 			return fmt.Errorf("something is already listening on %s (is `make run-api` running? stop it first)", a)
 		}
 	}
@@ -568,8 +568,8 @@ func (d *demo) upload(p *person, group string, png []byte) (string, error) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	w, _ := mw.CreateFormFile("file", "receipt.png")
-	w.Write(png)
-	mw.Close()
+	w.Write(png) //nolint:errcheck // writes into an in-memory buffer; cannot fail
+	mw.Close()   //nolint:errcheck // writes the closing boundary into an in-memory buffer; cannot fail
 	req, err := http.NewRequestWithContext(d.ctx, "POST", d.base+"/v1/groups/"+group+"/receipts", &buf)
 	if err != nil {
 		return "", err

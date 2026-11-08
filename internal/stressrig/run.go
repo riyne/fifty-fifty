@@ -295,7 +295,7 @@ func Run(ctx context.Context, p Params) (Result, error) {
 			return res, err
 		}
 		_, err = conn.Exec(ctx, `DROP INDEX ledger_transactions_one_settlement_posting`)
-		conn.Close(ctx)
+		conn.Close(ctx) //nolint:errcheck // the Exec error above is the one that matters
 		if err != nil {
 			return res, fmt.Errorf("drop posting index: %w", err)
 		}

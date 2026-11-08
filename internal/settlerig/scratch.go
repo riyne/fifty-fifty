@@ -99,7 +99,7 @@ func NewScratch(ctx context.Context, ownerURL, appURL string) (*Scratch, error) 
 	if err != nil {
 		return nil, fmt.Errorf("connect as owner: %w", err)
 	}
-	defer admin.Close(ctx)
+	defer admin.Close(ctx) //nolint:errcheck // admin connection; the statements that matter are checked
 	if _, err := admin.Exec(ctx, `CREATE DATABASE `+pgx.Identifier{s.Name}.Sanitize()); err != nil {
 		return nil, fmt.Errorf("create database: %w", err)
 	}
@@ -137,7 +137,7 @@ func (s *Scratch) Drop(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer admin.Close(ctx)
+	defer admin.Close(ctx) //nolint:errcheck // admin connection; the statements that matter are checked
 	_, err = admin.Exec(ctx, `DROP DATABASE IF EXISTS `+pgx.Identifier{s.Name}.Sanitize()+` WITH (FORCE)`)
 	return err
 }

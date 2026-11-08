@@ -139,11 +139,11 @@ func (s *FS) Put(ctx context.Context, data []byte) (string, error) {
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName) //nolint:errcheck // best effort; see above
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck // already failing; the write error is the one returned
 		return "", fmt.Errorf("objstore: write: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
+		tmp.Close() //nolint:errcheck // already failing; the sync error is the one returned
 		return "", fmt.Errorf("objstore: sync: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
@@ -175,7 +175,7 @@ func (s *FS) Get(ctx context.Context, key string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("objstore: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck // read-only handle
 	// One byte past the maximum tells "exactly the limit" from "larger".
 	b, err := io.ReadAll(io.LimitReader(f, MaxObjectBytes+1))
 	if err != nil {
@@ -197,7 +197,7 @@ func syncDir(dir string) error {
 	if err != nil {
 		return err
 	}
-	defer d.Close()
+	defer d.Close() //nolint:errcheck // read-only directory handle; Sync is checked above
 	// Some file systems (certain network and container mounts) refuse fsync on a
 	// directory with EINVAL; the rename is still atomic there, only its durability
 	// across a power cut is not guaranteed.

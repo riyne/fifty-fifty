@@ -1,0 +1,40 @@
+# golangci-lint v2, pinned in tools/go.mod (M10.5). A deliberately small set: the checks that
+# find real bugs, not style. `make ci-lint` runs it for both builds (the unsafe_controls
+# build has code the production build does not).
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    staticcheck:
+      # SA (bug-finding) checks only. The ST (style) and QF (quick-fix rewrite) checks are
+      # opinions about taste, not about defects, and are left out on purpose.
+      checks: ["all", "-ST*", "-QF*"]
+    errcheck:
+      # Calls whose error there is nothing useful to do with: a write to stderr or to an
+      # HTTP response that has already failed, and the removal of a temporary directory.
+      # Close is NOT excluded for files: a Close on a file that was written can lose data,
+      # so each unchecked file Close carries its own `//nolint:errcheck // reason`.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - os.RemoveAll
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+  exclusions:
+    rules:
+      # Tests write into recorders and buffers and close handles they are done with; a
+      # failure there fails the test through the assertions that follow.
+      - path: _test\.go
+        linters:
+          - errcheck

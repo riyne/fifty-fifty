@@ -171,7 +171,6 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	img, err := receipts.HardenImage(data, h.cfg.Limits)
-	data = nil // let the raw upload go before the rest of the work
 	switch {
 	case errors.Is(err, receipts.ErrTooLarge):
 		httpx.WriteError(w, http.StatusRequestEntityTooLarge, "too_large", err.Error())

@@ -4,7 +4,8 @@ name: ci
 # `make generate` leaves no diff, the tests against a real Postgres and a real tesseract with
 # skips for a missing database or a missing tesseract turned into failures, the whole suite again with the unsafe_controls tag and nothing
 # disabled, and govulncheck. Not here: the end-to-end and stress tests, the negative controls
-# and the benchmarks (real processes, minutes, timing) and lint (not built). A second job,
+# and the benchmarks (real processes, minutes, timing). Lint (golangci-lint, pinned in
+# tools/go.mod) is part of `make ci`. A second job,
 # `secrets`, scans the git history with gitleaks (not part of `make ci`).
 # The same gates run on a developer machine with `make up && make migrate-up && make ci`.
 

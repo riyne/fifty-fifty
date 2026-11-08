@@ -14,7 +14,7 @@ export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?s
 export SYSTEM_DATABASE_URL  ?= postgres://fifty_system:fifty@localhost:5433/fifty?sslmode=disable
 export WORKER_DATABASE_URL  ?= postgres://fifty_worker:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: demo demo-keep mobile-check mobile-generate up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction bench-accuracy ci ci-format ci-vet ci-generate ci-test ci-vuln
+.PHONY: demo demo-keep mobile-check mobile-generate up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction bench-accuracy ci ci-format ci-vet ci-lint ci-generate ci-test ci-vuln
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -140,8 +140,8 @@ bench-accuracy:
 # CI. .github/workflows/ci.yml starts Postgres, migrates, then runs `make ci`, so every
 # gate can be run on this machine first (needs `make up && make migrate-up`).
 # Not in CI: the end-to-end and stress tests, make test-controls and the benchmarks (real
-# processes, minutes, timing); lint (not built); the secret scan is its own CI job, not part of make ci.
-ci: ci-format ci-vet ci-generate ci-test ci-vuln
+# processes, minutes, timing); the secret scan is its own CI job, not part of make ci.
+ci: ci-format ci-vet ci-lint ci-generate ci-test ci-vuln
 
 ci-format:
 	@bad="$$(gofmt -l .)"; if [ -n "$$bad" ]; then echo "not gofmt-formatted:"; echo "$$bad"; exit 1; fi
@@ -150,6 +150,12 @@ ci-format:
 ci-vet:
 	go vet ./...
 	go vet -tags unsafe_controls ./...
+
+# golangci-lint (pinned in tools/go.mod, set in .golangci.yml: errcheck, govet, ineffassign,
+# staticcheck's SA checks, unused), for both builds.
+ci-lint:
+	go tool -modfile=tools/go.mod golangci-lint run ./...
+	go tool -modfile=tools/go.mod golangci-lint run --build-tags unsafe_controls ./...
 
 # Generated sqlc code must be what the migrations and queries produce.
 ci-generate:

@@ -18,8 +18,6 @@ type writeCase struct {
 	args func(g grp, other uuid.UUID) []any
 }
 
-func args(v ...any) func(grp, uuid.UUID) []any { return func(grp, uuid.UUID) []any { return v } }
-
 var inserts = []writeCase{
 	{"expenses", func(g grp, _ uuid.UUID) string {
 		return `INSERT INTO expenses (group_id, payer_id, description, status) VALUES ($1, $2, 'x', 'claiming')`

@@ -59,7 +59,6 @@ type world struct {
 	expense, expense2 uuid.UUID // claiming expenses in g; expense has item1 and item2
 	item1, item2      uuid.UUID
 	expenseH, itemH   uuid.UUID // an expense in group h
-	nextPosition      int
 }
 
 func newWorld(t *testing.T) *world {

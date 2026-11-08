@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
@@ -253,7 +252,6 @@ func collect(ctx context.Context, pool *pgxpool.Pool, run, victim string, killAt
 type proc struct {
 	id   string
 	cmd  *exec.Cmd
-	once sync.Once
 	done chan struct{}
 	err  error
 }

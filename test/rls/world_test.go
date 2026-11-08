@@ -55,7 +55,6 @@ type world struct {
 var (
 	mainOnce sync.Once
 	mainW    *world
-	mainErr  error
 )
 
 // TestMain drops the shared scratch database at the end.

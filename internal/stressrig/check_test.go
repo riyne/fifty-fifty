@@ -33,8 +33,6 @@ type world struct {
 	payerTok, aTok, bTok string
 }
 
-func (w *world) path(format string, args ...any) string { return fmt.Sprintf(format, args...) }
-
 func newWorld(t *testing.T) *world {
 	t.Helper()
 	s := teststack.New(t)
