@@ -49,7 +49,7 @@ Status values: `planned` (do not use anywhere), `built` (exists, verified by tes
 - Encryption at rest of receipts (envelope encryption was cut from scope).
 - Kubernetes, Terraform, autoscaling (README extension path only, not built).
 - Vision-model extraction, Flutter, Swift/iOS-native, multi-currency, push notifications.
-- "Tested on iOS/Android" for any platform not actually run. Real-camera capture is untested (simulators only).
+- "Tested on Android", on a physical device, or with the camera: none was run. The iOS client was run by hand on the simulator only (row 12). "Automated UI tests" and a "tested login flow" are also not claimable (row 6 stays `planned`).
 - That row-level security makes the system "secure", "tenant-isolated" or "multi-tenant safe": it limits the user-request path to the caller's groups (row 11) and nothing else. The worker, the payment webhook and first-login run as other roles that see everything their grants allow; the identity is a setting that code running as the application role can set to anyone; the table owner and superusers bypass it; `jobs` is outside it. An RLS overhead figure other than the recorded one in row 11, and that one only for its mix, data and machine at the database layer: not "RLS costs X%" in general, and never the policies' cost without the seam's beside it.
 - Mutation-testing counts or "N mutations caught" figures. During M2 each lock, check and authorization condition was broken on purpose and a test confirmed failing, but with throwaway scripts that are not in the repo, so the counts cannot be reproduced. The reproducible evidence is the tests themselves (rows 7, 13-16).
 - Accuracy numbers from synthetic receipts presented as real-world accuracy.
