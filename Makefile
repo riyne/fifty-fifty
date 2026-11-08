@@ -14,7 +14,7 @@ export DATABASE_URL         ?= postgres://fifty_app:fifty@localhost:5433/fifty?s
 export SYSTEM_DATABASE_URL  ?= postgres://fifty_system:fifty@localhost:5433/fifty?sslmode=disable
 export WORKER_DATABASE_URL  ?= postgres://fifty_worker:fifty@localhost:5433/fifty?sslmode=disable
 
-.PHONY: demo demo-keep mobile-check mobile-generate up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction ci ci-format ci-vet ci-generate ci-test ci-vuln
+.PHONY: demo demo-keep mobile-check mobile-generate up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction bench-accuracy ci ci-format ci-vet ci-generate ci-test ci-vuln
 
 up: ## start Postgres and Dex, wait for Postgres to be healthy
 	$(COMPOSE) up -d --build --wait postgres dex
@@ -127,6 +127,15 @@ demo: up
 
 demo-keep: up
 	go run ./cmd/demo --keep
+
+# Extraction accuracy of the real model on synthetic receipts (bench/README.md): 50 receipts
+# x 5 variants = 250 calls to the Anthropic API, which COSTS MONEY and needs
+# ANTHROPIC_API_KEY in this shell (read -s ANTHROPIC_API_KEY; export ANTHROPIC_API_KEY) and a
+# spend limit set in the console first. Needs tesseract and a clean working tree; touches no
+# database. The 250 is the number of calls, confirmed on purpose: change the run and the
+# program refuses until this number is changed too. Writes bench/results/accuracy-*.{json,txt}.
+bench-accuracy:
+	go run ./bench/accuracy --record --confirm-calls 250
 
 # CI. .github/workflows/ci.yml starts Postgres, migrates, then runs `make ci`, so every
 # gate can be run on this machine first (needs `make up && make migrate-up`).

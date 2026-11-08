@@ -2,6 +2,8 @@
 
 Status: **not run.** Ryan decided to skip it at the end of M6 (2026-11-07) and keep this procedure for later. Until it is run, nothing in this project says anything about how the real API or a real model behaves: every receipt test uses a mock LLM (`internal/mockllm`), which never reads its prompt. CLAIMS rows 27 and 28 say so.
 
+> **Update (M9.3):** the first look at the real API no longer needs the whole stack. `go run ./bench/accuracy --from 1 --receipts 3 --variants ground-truth-text,ocr-clean --allow-dirty --confirm-calls 6` sends 6 requests through the same `internal/anthropic` client and the same validator the worker uses, and answers most of what this procedure asks (is the request accepted, is the answer in the expected shape, token counts, a 429's `retry-after`). Use that first; it costs six calls. The procedure below, through the api and a worker, additionally exercises the worker wiring and is optional.
+
 ## What it is for
 
 One small, supervised check that the pipeline works against the real service, run once before relying on the extractor for anything (the M9 accuracy eval, CLAIMS row 10, or the demo). It can find things the mock cannot:

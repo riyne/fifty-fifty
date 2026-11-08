@@ -93,6 +93,33 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 - Observation not investigated: the mild variant reads more values exactly as printed (1,573) than the clean one (1,512), most of the difference in emails (269 against 132). Plausibly Tesseract's binarization behaves differently on the noise-free image; nothing was done about it, and it is recorded because a reader may notice it.
 - The first smoke runs (150-200 receipts, not recorded) suggested phones would be the most robust and cards next; at the moderate level the recording has cards (95.73%) and phones (95.07%) within each other's intervals, so that ordering is not established.
 
+## Extraction accuracy (`bench/accuracy`, CLAIMS row 10)
+
+**Status: the harness is built and tested against fakes and the mock LLM; no real model has been run through it, so there is no result yet.** It spends money when pointed at the real API.
+
+**What a call does.** The same path as the worker's `receipt.parse` phase one: a synthetic receipt (`internal/receipts/synth`, references 5001 to 5050, disjoint from the 1-1000 of the redaction benchmark and the 1-3 of the first look) is turned into text in one of five variants (the ground-truth text, or the receipt rendered as an image, clean / mild / moderate / harsh skew and noise, read by Tesseract: the same variants as the redaction benchmark), redacted (`receipts.Redact`), cut at 6000 characters, sent through `internal/anthropic` with the project's prompt, and the answer goes through `receipts.Interpret`, which decides `claiming` (accepted) or `needs_review` (flagged). It is then scored against the receipt's ground truth. 50 receipts x 5 variants = 250 calls.
+
+**Definitions** (also in `bench/accuracy/eval.go`). Everything is compared as claimable units (a "3 Beer" line is three units, as the system stores it).
+- **Amounts exact** (the primary figure): the multiset of unit prices equals the receipt's, and tax and tip are equal. A parse that is not amounts-exact is **wrong**: balances would come out wrong. A misspelled description does not make it wrong.
+- **Exact**: amounts exact, plus every unit's description (case and spacing ignored) and the printed total.
+- The decision against the correctness gives four counts: accepted and correct; **accepted and wrong (silent errors)**; flagged and wrong (caught); flagged but correct (false alarms). Reported with 95% Wilson intervals: the silent-error rate (out of all answered receipts), the **review-flag catch rate** (out of the wrong parses), and the false-alarm rate (out of the correct ones). Also unit precision and recall (strict and on price alone), the review reasons, token counts and latency.
+
+**Running it.**
+- A first look (6 calls, not a recording; the result goes to a directory outside the repository): `read -s ANTHROPIC_API_KEY; export ANTHROPIC_API_KEY`, then `go run ./bench/accuracy --from 1 --receipts 3 --variants ground-truth-text,ocr-clean --allow-dirty --confirm-calls 6`.
+- The recording: `make bench-accuracy` (= `go run ./bench/accuracy --record --confirm-calls 250`), clean tree, writes `bench/results/accuracy-<UTC timestamp>.{json,txt}`. Only `--record` writes into the repository, and only for a real-service run on a clean tree.
+- Against the mock LLM, for a dry run with no key and no spend: `go run ./bench/accuracy --base-url http://127.0.0.1:8089 --allow-dirty` (with `cmd/mockllm --fixtures` from `cmd/receiptgen`). Its numbers say nothing about a model: the mock answers from the `REF n` line, which Tesseract misreads at harsh noise.
+- **Spend guard:** a run against anything but a loopback address refuses to start unless `--confirm-calls` equals the number of calls it is about to make. Failed calls (a 429 or 5xx is retried after the longer of `retry-after` and a backoff; a 4xx other than 429 never is) are recorded, excluded from the tallies, and make the program exit non-zero after it has written the files.
+- The key is read from the environment only. Keep it out of files and history; set a spend limit in the console first.
+
+**What it does not show (also printed in every result).**
+- Synthetic receipts, prompt and harness by one author, in one clean layout: not real receipts, not photographs, not other languages. Anything quoted must say so.
+- 50 receipts per variant is few: intervals are wide, and the variants reuse the same receipts, so they are not independent samples.
+- One run of one model at temperature 0; the service may change the model behind a name (the reported model string is in every record).
+- A wrong parse that adds up is not caught by the flag; the silent-error count is exactly that.
+- **Prompt injection is not tested.** No receipt contains instructions aimed at the model; the evaluation supports no claim of resistance to it.
+- Cost is not computed (no price is stored in the repository); token counts are, and are to be multiplied by the current price list.
+- **The prompt is frozen at the recorded commit.** If it changes after a result is seen, the earlier result stays recorded, as with the redaction patterns.
+
 ## Ledger stress and negative controls (`bench/stress`, CLAIMS rows 1 and 2)
 
 `caffeinate -ims make bench-stress` (about 51 minutes in the M6.3 recording; `go run ./bench/stress --help` for the knobs; `--configs 1,3` runs some configurations, `--runs`/`--duration` shrink it for a smoke run, which needs `--allow-dirty` and must not be committed). It runs **two builds**, one after the other, and writes one result file pair for each:
