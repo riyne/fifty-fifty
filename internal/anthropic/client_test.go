@@ -229,6 +229,21 @@ func asAPI(t *testing.T, err error) *anthropic.APIError {
 	return e
 }
 
+// Which failures are worth asking again for: the rule the worker and the accuracy harness
+// share. A client error other than 408, 409 and 429 cannot succeed on a retry; those three
+// and every 5xx can.
+func TestErrors_PermanentIsAClientErrorThatDoesNotDependOnTheMoment(t *testing.T) {
+	for status, want := range map[int]bool{
+		400: true, 401: true, 403: true, 404: true, 413: true, 422: true,
+		408: false, 409: false, 429: false, 500: false, 502: false, 503: false, 529: false,
+	} {
+		_, err := newClient(t, serve(t, status, nil, `{"type":"error","error":{"type":"x"}}`).URL).Extract(ctx, "x")
+		if got := asAPI(t, err).Permanent(); got != want {
+			t.Errorf("HTTP %d: Permanent() = %v, want %v", status, got, want)
+		}
+	}
+}
+
 func TestErrors_StatusTypeAndRetryAfter(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

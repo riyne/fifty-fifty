@@ -483,9 +483,11 @@ func extractWithRetry(ctx context.Context, ex receiptparse.Extractor, text strin
 }
 
 func retryable(err error) bool {
+	// The same classification the worker uses (anthropic.APIError.Permanent): a refusal that
+	// cannot succeed on a retry is not retried; everything else (429, 5xx, transport) is.
 	var ae *anthropic.APIError
 	if errors.As(err, &ae) {
-		return ae.Status == 429 || ae.Status >= 500
+		return !ae.Permanent()
 	}
 	return true
 }

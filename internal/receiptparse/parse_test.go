@@ -293,6 +293,57 @@ func TestParse_AFailedAttemptChangesNothingAndTheLastOneGivesUp(t *testing.T) {
 	}
 }
 
+// refusal is an extractor error that says retrying cannot help, as *anthropic.APIError does
+// for a client error such as a 400 or a 401.
+type refusal struct{ permanent bool }
+
+func (e refusal) Error() string   { return "the model service refused the request" }
+func (e refusal) Permanent() bool { return e.permanent }
+
+// A refusal that cannot succeed on a retry (a wrong key, a request the service rejects) is
+// not retried: the first attempt commits needs_review/extractor_failed, the extractor is
+// called once, and what OCR and redaction found is kept. A transient failure that happens
+// to carry the method answering false still retries, and so does one that is only wrapped.
+func TestParse_APermanentRefusalIsNotRetried(t *testing.T) {
+	r := newRig(t)
+	r.ocr.text = "text"
+	r.ex.err = fmt.Errorf("extract: %w", refusal{permanent: true}) // wrapped, as callers wrap
+	u := r.uploadSynth(t, 8)
+	h := r.handler(receiptparse.Config{})
+
+	committed, err := r.runOnce(t, h, u.ReceiptID, 1, maxAttempts)
+	if err != nil || !committed {
+		t.Fatalf("first attempt: committed=%v err=%v, want a commit at once", committed, err)
+	}
+	e, rc := r.expense(t, u.ExpenseID), r.receipt(t, u.ReceiptID)
+	if e.Status != "needs_review" || e.Items != 0 || e.Version != 2 || rc.Outcome != "needs_review" || strings.Join(rc.Reasons, ",") != receiptparse.ReasonExtractFail {
+		t.Fatalf("after one attempt: %+v %+v", e, rc)
+	}
+	if r.ex.calls != 1 {
+		t.Errorf("the extractor was called %d times, want 1", r.ex.calls)
+	}
+	if rc.OCRChars == nil || rc.Cards == nil {
+		t.Errorf("what OCR and redaction found was not kept: %+v", rc)
+	}
+	if rc.InTok != nil || rc.Model != nil {
+		t.Errorf("tokens or model recorded though the call failed: %+v", rc)
+	}
+}
+
+func TestParse_ATransientRefusalStillRetries(t *testing.T) {
+	r := newRig(t)
+	r.ocr.text = "text"
+	r.ex.err = refusal{permanent: false}
+	u := r.uploadSynth(t, 8)
+	committed, err := r.runOnce(t, r.handler(receiptparse.Config{}), u.ReceiptID, 1, maxAttempts)
+	if err == nil || committed {
+		t.Fatalf("committed=%v err=%v, want an error to retry", committed, err)
+	}
+	if e := r.expense(t, u.ExpenseID); e.Status != "parsing" || e.Version != 1 {
+		t.Fatalf("a transient failure changed the database: %+v", e)
+	}
+}
+
 // Running out of context (the lease was lost, the worker is stopping) says nothing about
 // the receipt: even on the last attempt it must not become needs_review. The context ends
 // while the extractor is being called, so the handler is past its reads and in the

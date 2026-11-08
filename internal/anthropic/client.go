@@ -144,6 +144,21 @@ func (e *APIError) Error() string {
 // RetryAfter is how long the service asked callers to wait. The worker honors it.
 func (e *APIError) RetryAfter() time.Duration { return e.After }
 
+// Permanent reports that asking again with the same request cannot succeed: a client error
+// (a request the service refuses as shaped, a key it does not accept, a model it does not
+// know) other than 408 (request timeout), 409 (conflict) and 429 (rate limit), which depend
+// on the moment, not on the request; Anthropic's own SDKs retry those three too. Every 5xx
+// (including 529, overloaded) is transient. The worker gives a permanent failure to a person
+// at once instead of retrying it, and the accuracy harness uses the same method, so the two
+// cannot disagree.
+func (e *APIError) Permanent() bool {
+	switch e.Status {
+	case http.StatusRequestTimeout, http.StatusConflict, http.StatusTooManyRequests:
+		return false
+	}
+	return e.Status >= 400 && e.Status < 500
+}
+
 // Extract sends the receipt text and returns the model's answer.
 func (c *Client) Extract(ctx context.Context, text string) (receiptparse.Extraction, error) {
 	body, err := json.Marshal(request{

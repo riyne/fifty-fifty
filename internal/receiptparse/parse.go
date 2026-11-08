@@ -77,7 +77,7 @@ const (
 	ReasonNoText      = "no_text"           // nothing readable came out of the image
 	ReasonNoImage     = "image_unavailable" // the stored image is missing or damaged
 	ReasonOCRFailed   = "ocr_failed"        // OCR failed on every attempt
-	ReasonExtractFail = "extractor_failed"  // the extractor failed on every attempt
+	ReasonExtractFail = "extractor_failed"  // the extractor failed on every attempt, or refused for good (see Permanent)
 	ReasonAbandoned   = "parse_abandoned"   // the job died and the sweep gave up on it
 )
 
@@ -91,6 +91,12 @@ type OCR interface {
 type Extractor interface {
 	Extract(ctx context.Context, text string) (Extraction, error)
 }
+
+// An error from an Extractor may say that retrying cannot help (a request or a key the
+// model service refuses, as opposed to a timeout or an overloaded service) by having a
+// `Permanent() bool` method that returns true. The handler then makes the receipt
+// needs_review at once, without spending the other attempts. *anthropic.APIError does.
+type permanenter interface{ Permanent() bool }
 
 // Extraction is what an Extractor returns.
 type Extraction struct {
@@ -218,6 +224,13 @@ func work(ctx context.Context, store objstore.Store, ocr OCR, ex Extractor, cfg 
 	got, err := ex.Extract(ectx, redacted)
 	cancel()
 	if err != nil {
+		var perm permanenter
+		if ctx.Err() == nil && errors.As(err, &perm) && perm.Permanent() {
+			// Retrying the same request cannot work; keep what OCR and redaction found.
+			slog.Warn("receipt.parse: the extractor refused permanently; needs_review without retrying", "err", err)
+			base.status, base.reasons = receipts.StatusNeedsReview, []string{ReasonExtractFail}
+			return base, nil
+		}
 		return result{}, &attemptError{ReasonExtractFail, fmt.Errorf("extract: %w", err)}
 	}
 

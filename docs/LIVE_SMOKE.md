@@ -46,7 +46,7 @@ Use a scratch directory outside the repo for the images.
          -F file=@$HOME/fifty-smoke/000000001.png localhost:8080/v1/groups/$GROUP/receipts
     # poll: curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/v1/groups/$GROUP/expenses/<expense_id> | jq
 
-Upload the first receipt alone and watch the worker log before uploading the rest. If the first attempt fails with `HTTP 400 (invalid_request_error)`, stop and look: the likeliest causes are the model name or a request field the model does not accept (for example `temperature`, set in `internal/anthropic/client.go`). `HTTP 401` is the key. The worker retries four times, then the receipt ends in `needs_review` with reason `extractor_failed`; this is the designed behavior, so a wrong key looks like a pile of such receipts.
+Upload the first receipt alone and watch the worker log before uploading the rest. If the first attempt fails with `HTTP 400 (invalid_request_error)`, stop and look: the likeliest causes are the model name or a request field the model does not accept (for example `temperature`, set in `internal/anthropic/client.go`). `HTTP 401` is the key. Since M10.7 the worker does not retry a client error such as a 400, 401 or 403 (other than 408, 409 and 429): the receipt ends in `needs_review` with reason `extractor_failed` on the first attempt, and the worker log says the extractor refused permanently. A wrong key therefore looks like a pile of such receipts within seconds. Rate limits (429), timeouts and 5xx are still retried, four attempts in all.
 
 Then upload the other nine. For each, compare the expense with the receipt's `NNN.json`.
 
