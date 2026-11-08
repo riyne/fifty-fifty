@@ -1,24 +1,25 @@
-import { Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Button, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { unwrap } from "../../../../../api/client";
-import { ApiError, describeError } from "../../../../../api/errors";
+import { unwrap } from "../../../../../../api/client";
+import { ApiError, describeError } from "../../../../../../api/errors";
 import {
   canClaim,
   canFinalize,
+  canReview,
   canVoid,
   claimSentence,
   finalizeBody,
   statusLabel,
   unclaimedCount,
-} from "../../../../../api/expenses";
-import { api } from "../../../../../api/instance";
-import { createActionKeys } from "../../../../../api/keys";
-import { formatMoney } from "../../../../../api/money";
-import { useLoad } from "../../../../../hooks/useLoad";
-import { usePolling } from "../../../../../hooks/usePolling";
-import { LoadGate } from "../../../../../ui/LoadGate";
+} from "../../../../../../api/expenses";
+import { api } from "../../../../../../api/instance";
+import { createActionKeys } from "../../../../../../api/keys";
+import { formatMoney } from "../../../../../../api/money";
+import { useLoad } from "../../../../../../hooks/useLoad";
+import { usePolling } from "../../../../../../hooks/usePolling";
+import { LoadGate } from "../../../../../../ui/LoadGate";
 
 export default function ExpenseScreen() {
   const { id, expenseId } = useLocalSearchParams<{ id: string; expenseId: string }>();
@@ -185,7 +186,7 @@ export default function ExpenseScreen() {
               <View style={styles.banner}>
                 <Text style={styles.bannerText}>
                   {payerIsMe ? "You" : nameOf(expense.payer_id)} {payerIsMe ? "need" : "needs"} to check the items against
-                  the receipt before anyone can claim them. (Editing items is not in the app yet.)
+                  the receipt before anyone can claim them.
                 </Text>
               </View>
             )}
@@ -230,6 +231,14 @@ export default function ExpenseScreen() {
 
             {error !== null && <Text style={styles.error}>{error}</Text>}
 
+            {canReview(expense, me.id) && (
+              <View style={styles.actions}>
+                <Button
+                  title="Review the items"
+                  onPress={() => router.push({ pathname: "/groups/[id]/expenses/[expenseId]/review", params: { id, expenseId } })}
+                />
+              </View>
+            )}
             {canFinalize(expense, me.id) && (
               <View style={styles.actions}>
                 {busy === "finalize" ? (

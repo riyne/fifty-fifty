@@ -23,6 +23,11 @@ export function canClaim(expense: Pick<Expense, "status">): boolean {
   return expense.status === "claiming";
 }
 
+/** Only the payer reviews, and only a receipt the worker left in `needs_review`. */
+export function canReview(expense: Pick<Expense, "status" | "payer_id">, meId: string): boolean {
+  return expense.status === "needs_review" && expense.payer_id === meId;
+}
+
 export function canFinalize(expense: Pick<Expense, "status" | "payer_id">, meId: string): boolean {
   return expense.status === "claiming" && expense.payer_id === meId;
 }
