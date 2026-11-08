@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -378,8 +377,7 @@ func expenseNotFound(w http.ResponseWriter) {
 }
 
 func (h *Handler) internalError(w http.ResponseWriter, what string, err error) {
-	slog.Error(what, "err", err)
-	httpx.WriteError(w, http.StatusInternalServerError, "internal", "internal error")
+	httpx.InternalError(w, what, err)
 }
 
 func jsonResult(status int, v any) idempotency.Result {

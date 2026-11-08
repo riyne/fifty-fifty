@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -292,8 +291,7 @@ func settlementNotFound(w http.ResponseWriter) {
 }
 
 func internalError(w http.ResponseWriter, what string, err error) {
-	slog.Error(what, "err", err)
-	httpx.WriteError(w, http.StatusInternalServerError, "internal", "internal error")
+	httpx.InternalError(w, what, err)
 }
 
 func errBody(code, message string) map[string]string {

@@ -3,7 +3,6 @@ package groups
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -169,6 +168,5 @@ func notFound(w http.ResponseWriter) {
 }
 
 func (h *Handler) internalError(w http.ResponseWriter, what string, err error) {
-	slog.Error(what, "err", err)
-	httpx.WriteError(w, http.StatusInternalServerError, "internal", "internal error")
+	httpx.InternalError(w, what, err)
 }

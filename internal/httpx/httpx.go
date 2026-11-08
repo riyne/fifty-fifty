@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // MaxBodyBytes caps request bodies (DESIGN.md section 9: request size limits).
@@ -57,4 +59,30 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 		return fmt.Errorf("invalid JSON body")
 	}
 	return nil
+}
+
+// lockNotAvailable is Postgres's SQLSTATE for a lock wait that ran past lock_timeout.
+const lockNotAvailable = "55P03"
+
+// IsLockTimeout reports whether err is a lock wait that Postgres cancelled because it
+// ran past lock_timeout (dbscope sets it for every request transaction).
+func IsLockTimeout(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == lockNotAvailable
+}
+
+// InternalError answers a request that failed on the server side and logs why. A lock
+// wait that timed out is not a bug: it is 503 `busy` with a Retry-After, and the client
+// should retry (with the same Idempotency-Key: the failed attempt rolled back, and
+// nothing is stored under a key for a 5xx). Everything else is a 500 `internal` with no
+// detail for the client.
+func InternalError(w http.ResponseWriter, what string, err error) {
+	if IsLockTimeout(err) {
+		slog.Warn(what+": gave up waiting for a lock", "err", err)
+		w.Header().Set("Retry-After", "1")
+		WriteError(w, http.StatusServiceUnavailable, "busy", "the request waited too long for another request to finish and was not done; nothing changed, so retry it (with the same Idempotency-Key if it has one)")
+		return
+	}
+	slog.Error(what, "err", err)
+	WriteError(w, http.StatusInternalServerError, "internal", "internal error")
 }

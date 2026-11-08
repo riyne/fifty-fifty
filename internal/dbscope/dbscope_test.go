@@ -226,3 +226,89 @@ func TestReader_RefusesWrites(t *testing.T) {
 		t.Fatalf("%d connections still held", got)
 	}
 }
+
+// ---- lock timeout (M10.14) ----
+
+// A request transaction gives up on a lock another transaction holds. An advisory lock
+// held by a raw owner transaction stands for any lock (a row lock, the unique index of
+// an idempotency key); Postgres treats them alike for lock_timeout.
+func TestBegin_LockWaitEndsAtTheLockTimeout(t *testing.T) {
+	ShortenLockTimeout(t, 300*time.Millisecond)
+	owner := testutil.SharedOwnerPool(t)
+	ctx := tctx(t)
+	const lockID = 7_100_014
+
+	holder, err := owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Rollback(ctx) //nolint:errcheck // cleanup
+	if _, err := holder.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockID); err != nil {
+		t.Fatal(err)
+	}
+
+	tx, err := New(onePool(t)).Begin(ctx, uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // cleanup
+	start := time.Now()
+	_, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, lockID)
+	waited := time.Since(start)
+	var pe *pgconn.PgError
+	if !errors.As(err, &pe) || pe.Code != "55P03" {
+		t.Fatalf("waiting for a held lock: err = %v after %v, want SQLSTATE 55P03 (lock timeout)", err, waited)
+	}
+	if waited < 250*time.Millisecond || waited > 3*time.Second {
+		t.Errorf("gave up after %v, want about the 300 ms timeout", waited)
+	}
+}
+
+// The timeout is transaction-local like the identity: a pooled connection must not carry
+// it into the next use (the same single connection is reused here).
+func TestBegin_LockTimeoutEndsWithTheTransaction(t *testing.T) {
+	pool := onePool(t)
+	ctx := tctx(t)
+	var before string
+	if err := pool.QueryRow(ctx, `SHOW lock_timeout`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := New(pool).Begin(ctx, uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inside string
+	if err := tx.QueryRow(ctx, `SHOW lock_timeout`).Scan(&inside); err != nil {
+		t.Fatal(err)
+	}
+	if inside != "5s" {
+		t.Errorf("inside the transaction lock_timeout = %q, want 5s", inside)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var after string
+	if err := pool.QueryRow(ctx, `SHOW lock_timeout`).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Errorf("after the transaction lock_timeout = %q, want it back to %q: the setting leaked", after, before)
+	}
+}
+
+// Nothing may use the test hook to switch the protection off.
+func TestShortenLockTimeout_OnlyShortens(t *testing.T) {
+	for _, d := range []time.Duration{0, -time.Second, DefaultLockTimeout, 2 * DefaultLockTimeout} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("ShortenLockTimeout(%v) did not panic", d)
+				}
+			}()
+			ShortenLockTimeout(t, d)
+		}()
+	}
+	if lockTimeout() != DefaultLockTimeout {
+		t.Errorf("a refused call changed the timeout to %v", lockTimeout())
+	}
+}

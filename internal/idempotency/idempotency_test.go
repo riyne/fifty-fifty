@@ -14,6 +14,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/dbscope"
+	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
 	"github.com/riyne/fifty-fifty/internal/testutil"
 )
@@ -309,5 +310,57 @@ func TestDeleteExpired_DoesNotDeleteAKeyReclaimedInFlight(t *testing.T) {
 	}
 	if keyRows(t, user, key) != 1 {
 		t.Fatal("the cleanup deleted a key that a request had just re-claimed")
+	}
+}
+
+// A request whose key another request is still inserting waits for it, and gives up at
+// the lock timeout instead of waiting for as long as the holder lives. The attempt that
+// gave up stored nothing and ran nothing, so the same key works afterwards.
+func TestDo_GivesUpWaitingForAStalledKeyHolder(t *testing.T) {
+	dbscope.ShortenLockTimeout(t, 300*time.Millisecond)
+	pool := testutil.Pool(t)
+	user, key := newUser(t), uuid.NewString()
+
+	// A raw owner transaction has inserted the key and not committed: the first request
+	// "stalled" in the middle of its work.
+	holder, err := testutil.SharedOwnerPool(t).Begin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer holder.Rollback(context.Background()) //nolint:errcheck // cleanup
+	if _, err := holder.Exec(context.Background(), `INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
+		VALUES ($1, $2, $3, 0, ''::bytea, now() + interval '1 hour')`, user, key, fp); err != nil {
+		t.Fatal(err)
+	}
+
+	calls := 0
+	fn := func(context.Context, pgx.Tx) (idempotency.Result, error) {
+		calls++
+		return idempotency.Result{Status: 201, Body: []byte(`{"n":1}`)}, nil
+	}
+	// The context ends well after the timeout, so a missing timeout shows as an error
+	// that is not a lock timeout instead of a hung test.
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err = idempotency.Do(ctx, dbscope.New(pool), user, key, fp, fn)
+	waited := time.Since(start)
+	if !httpx.IsLockTimeout(err) {
+		t.Fatalf("Do = %v after %v, want a lock timeout", err, waited)
+	}
+	if waited > 3*time.Second || calls != 0 {
+		t.Errorf("waited %v with %d runs of fn, want to give up near 300 ms and never run", waited, calls)
+	}
+
+	// The holder lets go. The failed attempt left nothing, and the same key now works.
+	if err := holder.Rollback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := keyRows(t, user, key); n != 0 {
+		t.Fatalf("%d key rows after the holder rolled back, want 0", n)
+	}
+	out, err := idempotency.Do(context.Background(), dbscope.New(pool), user, key, fp, fn)
+	if err != nil || out.Replayed || out.Status != 201 || calls != 1 {
+		t.Fatalf("retry with the same key: %+v, %v (fn ran %d times), want one fresh run", out, err, calls)
 	}
 }

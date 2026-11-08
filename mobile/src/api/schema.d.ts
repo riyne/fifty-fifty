@@ -197,6 +197,7 @@ export interface paths {
                 };
                 400: components["responses"]["BadRequest"];
                 401: components["responses"]["Unauthorized"];
+                503: components["responses"]["Busy"];
             };
         };
         delete?: never;
@@ -327,6 +328,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                503: components["responses"]["Busy"];
             };
         };
         delete?: never;
@@ -368,6 +370,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                503: components["responses"]["Busy"];
             };
         };
         options?: never;
@@ -511,6 +514,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 404: components["responses"]["NotFound"];
                 422: components["responses"]["KeyReuse"];
+                503: components["responses"]["Busy"];
             };
         };
         delete?: never;
@@ -589,7 +593,7 @@ export interface paths {
                 };
                 422: components["responses"]["KeyReuse"];
                 429: components["responses"]["TooManyRequests"];
-                /** @description Too many uploads are being processed (code `busy`). Retry-After says when to try again. */
+                /** @description Too many uploads are being processed, or the request waited too long for a lock (code `busy` in both cases; nothing changed). Retry-After says when to try again. */
                 503: {
                     headers: {
                         "Retry-After"?: number;
@@ -723,6 +727,7 @@ export interface paths {
                     };
                 };
                 422: components["responses"]["KeyReuse"];
+                503: components["responses"]["Busy"];
             };
         };
         trace?: never;
@@ -793,6 +798,7 @@ export interface paths {
                     };
                 };
                 422: components["responses"]["KeyReuse"];
+                503: components["responses"]["Busy"];
             };
         };
         delete?: never;
@@ -867,6 +873,7 @@ export interface paths {
                     };
                 };
                 422: components["responses"]["KeyReuse"];
+                503: components["responses"]["Busy"];
             };
         };
         delete?: never;
@@ -938,6 +945,7 @@ export interface paths {
                     };
                 };
                 422: components["responses"]["KeyReuse"];
+                503: components["responses"]["Busy"];
             };
         };
         delete?: never;
@@ -987,6 +995,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 404: components["responses"]["NotFound"];
                 409: components["responses"]["NotClaimable"];
+                503: components["responses"]["Busy"];
             };
         };
         post?: never;
@@ -1017,6 +1026,7 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 404: components["responses"]["NotFound"];
                 409: components["responses"]["NotClaimable"];
+                503: components["responses"]["Busy"];
             };
         };
         options?: never;
@@ -1119,6 +1129,7 @@ export interface paths {
                     };
                 };
                 422: components["responses"]["KeyReuse"];
+                503: components["responses"]["Busy"];
             };
         };
         delete?: never;
@@ -1309,6 +1320,7 @@ export interface paths {
                 404: components["responses"]["NotFound"];
                 422: components["responses"]["KeyReuse"];
                 429: components["responses"]["TooManyRequests"];
+                503: components["responses"]["Busy"];
             };
         };
         delete?: never;
@@ -1608,6 +1620,17 @@ export interface components {
         /** @description The Idempotency-Key was already used with a different request. */
         KeyReuse: {
             headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The request waited too long for another request to finish (a lock it needed was held for more than 5 seconds, or the request with the same Idempotency-Key was still running) and was not done: nothing changed and nothing is stored under the Idempotency-Key. Code `busy`. Retry, with the same Idempotency-Key if the operation takes one. */
+        Busy: {
+            headers: {
+                /** @description Seconds to wait before retrying. */
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {

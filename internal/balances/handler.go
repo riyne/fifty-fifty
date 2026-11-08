@@ -4,7 +4,6 @@ package balances
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -95,6 +94,5 @@ func groupNotFound(w http.ResponseWriter) {
 }
 
 func internalError(w http.ResponseWriter, what string, err error) {
-	slog.Error(what, "err", err)
-	httpx.WriteError(w, http.StatusInternalServerError, "internal", "internal error")
+	httpx.InternalError(w, what, err)
 }

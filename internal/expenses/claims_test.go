@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/riyne/fifty-fifty/internal/dbscope"
 	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
@@ -305,6 +306,79 @@ func TestClaim_WaitsForFinalizerThenIsRejected(t *testing.T) {
 	}
 	if rows := w.claimRows(t, exp); len(rows) != 0 {
 		t.Fatalf("a claim was accepted after finalize: %v", rows)
+	}
+}
+
+// A claim that waits for a stalled holder of the expense lock gives up at the lock
+// timeout with 503 busy and a Retry-After, instead of hanging for as long as the holder
+// lives; nothing is written; and the same request works once the holder lets go.
+func TestClaim_GivesUpWaitingForAStalledLockHolder(t *testing.T) {
+	dbscope.ShortenLockTimeout(t, 300*time.Millisecond)
+	w := newWorld(t)
+	exp, items := w.newExpense(t, w.member, goodBody)
+
+	stalled := w.begin(t)
+	lock(t, stalled, "FOR UPDATE", exp) // a finalize that has stopped making progress
+
+	done := make(chan teststack.Response, 1)
+	go func() { done <- w.put(t, w.member, w.group, exp, items[0]) }()
+	var r teststack.Response
+	select {
+	case r = <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the claim was still waiting after 3 s: there is no lock timeout")
+	}
+	if r.Status != http.StatusServiceUnavailable || r.Header.Get("Retry-After") != "1" || !strings.Contains(string(r.Body), `"code":"busy"`) {
+		t.Fatalf("claim behind a stalled lock = %d %s (Retry-After %q), want 503 busy with Retry-After 1", r.Status, r.Body, r.Header.Get("Retry-After"))
+	}
+	if rows := w.claimRows(t, exp); len(rows) != 0 {
+		t.Fatalf("the claim that gave up wrote %v", rows)
+	}
+
+	if err := stalled.Rollback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if r := w.put(t, w.member, w.group, exp, items[0]); r.Status != http.StatusOK {
+		t.Fatalf("the same claim after the holder let go = %d %s, want 200", r.Status, r.Body)
+	}
+}
+
+// The same for a duplicate that waits on the first request's idempotency key: 503 busy,
+// not stored under the key, and the retry with the same key is the one that runs.
+func TestCreate_DuplicateBehindAStalledFirstRequestGivesUp(t *testing.T) {
+	dbscope.ShortenLockTimeout(t, 300*time.Millisecond)
+	w := newWorld(t)
+	key := uuid.NewString()
+	url := "/v1/groups/" + w.group + "/expenses"
+
+	stalled := w.begin(t)
+	if _, err := stalled.Exec(context.Background(), `INSERT INTO idempotency_keys (user_id, key, fingerprint, response_status, response_body, expires_at)
+		VALUES ($1, $2, $3, 0, ''::bytea, now() + interval '1 hour')`, w.memberID, key, []byte("whatever")); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan teststack.Response, 1)
+	go func() { done <- w.s.Do(t, w.member, "POST", url, goodBody, "Idempotency-Key", key) }()
+	var r teststack.Response
+	select {
+	case r = <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the duplicate was still waiting after 3 s: there is no lock timeout")
+	}
+	if r.Status != http.StatusServiceUnavailable || !strings.Contains(string(r.Body), `"code":"busy"`) {
+		t.Fatalf("duplicate behind a stalled first request = %d %s, want 503 busy", r.Status, r.Body)
+	}
+
+	if err := stalled.Rollback(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	r = w.s.Do(t, w.member, "POST", url, goodBody, "Idempotency-Key", key)
+	if r.Status != http.StatusCreated {
+		t.Fatalf("retry with the same key after the holder let go = %d %s, want 201", r.Status, r.Body)
+	}
+	var n int
+	if err := w.s.Pool.QueryRow(context.Background(), `SELECT count(*) FROM expenses WHERE group_id = $1`, w.group).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("%d expenses in the group (%v), want exactly one", n, err)
 	}
 }
 

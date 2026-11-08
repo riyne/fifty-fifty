@@ -16,6 +16,9 @@ package dbscope
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"sync/atomic"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -27,6 +30,39 @@ import (
 
 // Setting is the name of the transaction-local setting that carries the caller.
 const Setting = "app.user_id"
+
+// DefaultLockTimeout is how long a statement of a user request may wait for a lock that
+// another transaction holds (a row lock, or the idempotency key another request is
+// still inserting) before Postgres cancels it with SQLSTATE 55P03. A request normally
+// holds its locks for milliseconds, so a wait of seconds means the holder has stalled;
+// without a limit the waiting requests would pile up behind it for as long as it lives.
+// The transaction rolls back and nothing is stored under the idempotency key, so the
+// client's retry with the same key is a fresh attempt. The api answers 503 `busy`
+// (httpx.InternalError). A placeholder, not tuned.
+const DefaultLockTimeout = 5 * time.Second
+
+// shortened is a test's shorter timeout in nanoseconds; 0 means DefaultLockTimeout.
+var shortened atomic.Int64
+
+// ShortenLockTimeout makes the lock timeout d until the test ends, so that a test can
+// hold a raw lock for a fraction of a second and see a request give up. It can only
+// shorten the wait: a d of zero or less, or one not below the default, panics, so that
+// nothing can use it to switch the limit off. A test that calls it must not run in
+// parallel with another that depends on the default.
+func ShortenLockTimeout(t interface{ Cleanup(func()) }, d time.Duration) {
+	if d <= 0 || d >= DefaultLockTimeout {
+		panic("dbscope.ShortenLockTimeout: the timeout may only be made shorter than the default, and above zero")
+	}
+	shortened.Store(int64(d))
+	t.Cleanup(func() { shortened.Store(0) })
+}
+
+func lockTimeout() time.Duration {
+	if s := shortened.Load(); s > 0 {
+		return time.Duration(s)
+	}
+	return DefaultLockTimeout
+}
 
 // DB runs statements on behalf of one user at a time.
 type DB struct {
@@ -49,10 +85,13 @@ func (d *DB) BeginTx(ctx context.Context, userID uuid.UUID, opts pgx.TxOptions) 
 	}
 	// The third argument is is_local: the value lasts until the end of this
 	// transaction and no longer. Passing false would make it last for the whole
-	// connection, which is the leak this package exists to prevent.
-	if _, err := tx.Exec(ctx, "SELECT set_config('"+Setting+"', $1, true)", userID.String()); err != nil {
+	// connection, which is the leak this package exists to prevent. The lock timeout
+	// is set the same way, in the same statement (no extra round trip), for the same
+	// reason: it must not outlive the transaction on a pooled connection.
+	if _, err := tx.Exec(ctx, "SELECT set_config('"+Setting+"', $1, true), set_config('lock_timeout', $2, true)",
+		userID.String(), strconv.FormatInt(lockTimeout().Milliseconds(), 10)); err != nil {
 		_ = tx.Rollback(ctx)
-		return nil, fmt.Errorf("set %s: %w", Setting, err)
+		return nil, fmt.Errorf("set %s and the lock timeout: %w", Setting, err)
 	}
 	return tx, nil
 }

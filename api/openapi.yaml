@@ -92,6 +92,7 @@ paths:
               schema: { $ref: "#/components/schemas/Group" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/Busy" }
   /v1/groups/{id}:
     get:
       summary: A group and its members. 404 if it does not exist or the caller is not a member (indistinguishable by design).
@@ -145,6 +146,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Busy" }
     get:
       summary: List the group's join codes (owner only). Metadata only, never the code.
       responses:
@@ -173,6 +175,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Busy" }
   /v1/groups/{id}/balances:
     parameters:
       - { $ref: "#/components/parameters/GroupId" }
@@ -243,6 +246,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/KeyReuse" }
+        "503": { $ref: "#/components/responses/Busy" }
     get:
       summary: The group's expenses, newest first (any member).
       responses:
@@ -322,7 +326,7 @@ paths:
         "422": { $ref: "#/components/responses/KeyReuse" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "503":
-          description: Too many uploads are being processed (code `busy`). Retry-After says when to try again.
+          description: Too many uploads are being processed, or the request waited too long for a lock (code `busy` in both cases; nothing changed). Retry-After says when to try again.
           headers:
             Retry-After: { schema: { type: integer } }
           content:
@@ -426,6 +430,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/KeyReuse" }
+        "503": { $ref: "#/components/responses/Busy" }
   /v1/groups/{id}/expenses/{expenseId}/confirm:
     post:
       summary: End a review and open the expense for claiming (payer only). Requires Idempotency-Key.
@@ -471,6 +476,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/KeyReuse" }
+        "503": { $ref: "#/components/responses/Busy" }
   /v1/groups/{id}/expenses/{expenseId}/finalize:
     post:
       summary: Finalize an expense into ledger entries (payer only). Requires Idempotency-Key.
@@ -526,6 +532,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/KeyReuse" }
+        "503": { $ref: "#/components/responses/Busy" }
   /v1/groups/{id}/expenses/{expenseId}/void:
     post:
       summary: Void a finalized expense (the payer or the group owner). Requires Idempotency-Key.
@@ -569,6 +576,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/KeyReuse" }
+        "503": { $ref: "#/components/responses/Busy" }
   /v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim:
     parameters:
       - { $ref: "#/components/parameters/GroupId" }
@@ -591,6 +599,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/NotClaimable" }
+        "503": { $ref: "#/components/responses/Busy" }
     delete:
       summary: Remove your own claim on an item (any member). Idempotent.
       description: Removes only the caller's claim. Unclaiming an item you do not hold is a no-op. Same 404 and 409 rules as claiming.
@@ -599,6 +608,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/NotClaimable" }
+        "503": { $ref: "#/components/responses/Busy" }
   /v1/groups/{id}/settlements:
     parameters:
       - { $ref: "#/components/parameters/GroupId" }
@@ -645,6 +655,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
         "422": { $ref: "#/components/responses/KeyReuse" }
+        "503": { $ref: "#/components/responses/Busy" }
     get:
       summary: List the group's settlements, newest first, at most 100 (any member).
       description: 404 if the caller is not in the group (or it does not exist).
@@ -779,6 +790,7 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "422": { $ref: "#/components/responses/KeyReuse" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+        "503": { $ref: "#/components/responses/Busy" }
 components:
   parameters:
     GroupId:
@@ -998,6 +1010,17 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     KeyReuse:
       description: The Idempotency-Key was already used with a different request.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Busy:
+      description: >
+        The request waited too long for another request to finish (a lock it needed was held
+        for more than 5 seconds, or the request with the same Idempotency-Key was still running)
+        and was not done: nothing changed and nothing is stored under the Idempotency-Key.
+        Code `busy`. Retry, with the same Idempotency-Key if the operation takes one.
+      headers:
+        Retry-After: { schema: { type: integer }, description: Seconds to wait before retrying. }
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
