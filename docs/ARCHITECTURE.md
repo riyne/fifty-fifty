@@ -42,7 +42,7 @@ flowchart LR
 | **Postgres** | Is the database, the job queue and the lock manager. Nothing else holds state | (the server) | `migrations/` |
 | **Dex** | Logs users in; its tokens are the only credential the api accepts | none | `deploy/dex/` |
 | **Tesseract** | Reads the text off a receipt image (run by the worker as a child process, image on stdin) | none | `internal/ocr` |
-| **mock LLM / Anthropic** | Turns redacted receipt text into JSON items. The mock answers from the synthetic receipts' ground truth; the real API has never been called | none | `cmd/mockllm`, `internal/anthropic` |
+| **mock LLM / Anthropic** | Turns redacted receipt text into JSON items. The mock answers from the synthetic receipts' ground truth; the real API has been called only in a 12-call smoke test (`bench/accuracy`, M9.3), never by the demo or the tests | none | `cmd/mockllm`, `internal/anthropic` |
 | **mock payment provider** | Pretends to move money, with injectable faults and signed webhooks | none | `cmd/mockpay`, `internal/mockpay` |
 
 Things to remember:
