@@ -95,7 +95,7 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 
 ## Extraction accuracy (`bench/accuracy`, CLAIMS row 10)
 
-**Status: the harness is built and tested against fakes and the mock LLM; no real model has been run through it, so there is no result yet.** It spends money when pointed at the real API.
+**Status: recorded once (M9.3d, below). The harness spends money when pointed at the real API (about 8 US cents for the recording).**
 
 **What a call does.** The same path as the worker's `receipt.parse` phase one: a synthetic receipt (`internal/receipts/synth`, references 5001 to 5050, disjoint from the 1-1000 of the redaction benchmark and the 1-3 of the first look) is turned into text in one of five variants (the ground-truth text, or the receipt rendered as an image, clean / mild / moderate / harsh skew and noise, read by Tesseract: the same variants as the redaction benchmark), redacted (`receipts.Redact`), cut at 6000 characters, sent through `internal/anthropic` with the project's prompt, and the answer goes through `receipts.Interpret`, which decides `claiming` (accepted) or `needs_review` (flagged). It is then scored against the receipt's ground truth. 50 receipts x 5 variants = 250 calls.
 
@@ -107,6 +107,7 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 **Running it.**
 - A first look (6 calls, not a recording; the result goes to a directory outside the repository): `read -s ANTHROPIC_API_KEY; export ANTHROPIC_API_KEY`, then `go run ./bench/accuracy --from 1 --receipts 3 --variants ground-truth-text,ocr-clean --allow-dirty --confirm-calls 6`.
 - The recording: `make bench-accuracy` (= `go run ./bench/accuracy --record --confirm-calls 250`), clean tree, writes `bench/results/accuracy-<UTC timestamp>.{json,txt}`. Only `--record` writes into the repository, and only for a real-service run on a clean tree.
+- `go run ./bench/accuracy --analyze <recording.json>` (no calls, no spend): splits the wrong parses of a recording by kind (quantity only, amounts, no valid answer) and by what the system did with them, regenerating the ground truth from the reference numbers and using the answers the recording kept.
 - Against the mock LLM, for a dry run with no key and no spend: `go run ./bench/accuracy --base-url http://127.0.0.1:8089 --allow-dirty` (with `cmd/mockllm --fixtures` from `cmd/receiptgen`). Its numbers say nothing about a model: the mock answers from the `REF n` line, which Tesseract misreads at harsh noise.
 - **Spend guard:** a run against anything but a loopback address refuses to start unless `--confirm-calls` equals the number of calls it is about to make. Failed calls (a 429 or 5xx is retried after the longer of `retry-after` and a backoff; a 4xx other than 429 never is) are recorded, excluded from the tallies, and make the program exit non-zero after it has written the files.
 - The key is read from the environment only. Keep it out of files and history; set a spend limit in the console first.
@@ -119,6 +120,14 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 - **Prompt injection is not tested.** No receipt contains instructions aimed at the model; the evaluation supports no claim of resistance to it.
 - Cost is not computed (no price is stored in the repository); token counts are, and are to be multiplied by the current price list.
 - **The prompt is frozen at the recorded commit.** If it changes after a result is seen, the earlier result stays recorded, as with the redaction patterns.
+
+**Recorded run (M9.3d, 2026-11-08 UTC, commit 69368b2, clean tree, `make bench-accuracy`, 154 s). USED.** `bench/results/accuracy-20261108T044115Z.{json,txt}`: Claude Haiku 5.5 (`claude-haiku-5-5`, as reported by the service), 50 receipts x 5 variants = 250 calls, no failures, no retries. CLAIMS row 10 has the full result; in short:
+- Prices of every unit right: ground-truth text 50/50, clean render 50/50, then 80%, 76% and 34% at mild, moderate and harsh noise (intervals in the file). Tesseract is what loses the rest: at harsh noise it garbles prices and drops quantity digits.
+- The arithmetic review flag caught 43 of the 46 wrong-amount receipts of the three noisy variants and none of the 8 whose only error was a quantity. 3 wrong-amount and 8 wrong-quantity receipts were accepted silently (the 11 silent errors: 2 at moderate noise, 9 at harsh).
+- **The finding that matters.** All three silent amount errors are the model filling a garbled or unreadable price so that the sum matches the printed subtotal (it even rewrote a correctly read price once), which makes the flag's own check pass. The prompt does not forbid it. A prompt that says to leave an unreadable item out instead of computing it, so the sum disagrees and the receipt is flagged, is the obvious next step; it is not done (DESIGN section 13, "Accuracy follow-ups"), and doing it means a second recording next to this one, which stays.
+- Quantity digits lost by OCR are invisible to arithmetic by construction (the line totals are right); the flag cannot be extended to catch them without another signal.
+- Cost: 178,685 input and 123,480 output tokens, about 8 US cents at the rates quoted in DESIGN M9.3b.
+- The first look before it (3 receipts x 2 variants, six calls, not a result) and the failed attempt before that (six calls refused with 400 for `temperature: 0`) are in DESIGN "M9.3b".
 
 ## Ledger stress and negative controls (`bench/stress`, CLAIMS rows 1 and 2)
 

@@ -383,7 +383,7 @@ flowchart TD
     P2 -- "invalid, or does not add up, or unreadable" --> NR["expense becomes needs_review<br/>payer edits items, then confirms"]
 ```
 
-- **The model is untrusted.** It has no tools; its output must match an exact schema; whether a human must look is decided by arithmetic only (the self-reported confidence is not used). The worst case of a bad or malicious receipt is a wrong parse the payer reviews. A parse that is wrong *and* adds up is not caught.
+- **The model is untrusted.** It has no tools; its output must match an exact schema; whether a human must look is decided by arithmetic only (the self-reported confidence is not used). The worst case of a bad or malicious receipt is a wrong parse the payer reviews. A parse that is wrong *and* adds up is not caught: measured on synthetic receipts with Claude Haiku 5.5 (CLAIMS row 10), the arithmetic check caught 43 of 46 wrong-amount receipts but none of 8 wrong-quantity ones, and the three amount errors that got through were the model filling an unreadable price so the sum matched.
 - **There is no failed status.** A receipt that cannot be read ends in `needs_review` with no items, and the payer types it in. A sweep job moves expenses whose job died to `needs_review`, so nothing stays in `parsing` forever.
 - **Personal data:** card numbers, emails and phone numbers are replaced by placeholders before text leaves the system; names and addresses are not touched. Logs and the database never hold the receipt text.
 - Code: `internal/receiptapi` (upload), `internal/receipts` (hardening, redaction, validation, the review decision), `internal/receiptparse` (the job and the sweep), `internal/ocr`, `internal/anthropic`, `internal/objstore`.
