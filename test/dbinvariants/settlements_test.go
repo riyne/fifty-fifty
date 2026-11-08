@@ -168,11 +168,13 @@ func TestSettlementPointsAtItsOwnPosting(t *testing.T) {
 		"an expense posting":            expensePosting,
 		"a posting that does not exist": uuid.New(),
 	} {
-		err := inTxAlwaysRollback(w.pool, func(tx pgx.Tx) error { _, err := tx.Exec(ctx, mark, s2, posting); return err })
+		// The owner: marking a settlement is the worker's and the webhook's job, never fifty_app's
+		// (00017), and what is under test is the foreign key, not a privilege.
+		err := inTxAlwaysRollback(w.owner, func(tx pgx.Tx) error { _, err := tx.Exec(ctx, mark, s2, posting); return err })
 		wantCode(t, err, codeFK, "settlement marked succeeded with "+name)
 	}
 
 	// Its own posting is accepted.
-	_, err = w.pool.Exec(ctx, mark, s1, p1)
+	_, err = w.owner.Exec(ctx, mark, s1, p1)
 	wantCode(t, err, noErrExpected, "settlement marked succeeded with its own posting")
 }

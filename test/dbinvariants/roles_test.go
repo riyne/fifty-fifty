@@ -21,10 +21,10 @@ import (
 // roles).
 var expectedPrivileges = map[string]map[string]string{
 	dbrole.App: {
-		"audit_events": "SI", "claims": "SIUD", "expense_items": "SIUD", "expenses": "SIUD",
-		"groups": "SIUD", "idempotency_keys": "SIUD", "jobs": "SIUD", "join_codes": "SIUD",
-		"ledger_entries": "SI", "ledger_transactions": "SI", "memberships": "SIUD",
-		"receipt_quota": "SIUD", "receipts": "SIUD", "settlements": "SIUD", "users": "SIUD",
+		"audit_events": "SI", "claims": "SID", "expense_items": "SIUD", "expenses": "SIU",
+		"groups": "SIU", "idempotency_keys": "SIU", "jobs": "SI", "join_codes": "SIU",
+		"ledger_entries": "SI", "ledger_transactions": "SI", "memberships": "SI",
+		"receipt_quota": "SIU", "receipts": "SI", "settlements": "SI", "users": "S",
 	},
 	dbrole.Worker: {
 		"audit_events": "I", "expense_items": "SI", "expenses": "SU", "groups": "S",
@@ -181,4 +181,97 @@ func TestRoles_AreOnlyPlainLogins(t *testing.T) {
 			t.Errorf("%s: can create in public = %v, owns relations = %v", role, canCreate, ownsAny)
 		}
 	}
+}
+
+// ---- what migration 00017 took from fifty_app, tried for real (M10.16) ----
+//
+// The matrix above says which privileges exist. These show the refusals happen, for the
+// statements a bug or an injected statement in the user-request path would try. The world's
+// connections carry the identity of a member of every group, so row-level security would
+// let each of these through: it is the missing privilege that refuses them.
+func TestRoles_AppIsRefusedTheCommandsItNeverRuns(t *testing.T) {
+	w := newWorld(t)
+	for _, tc := range []struct{ name, sql string }{
+		{"delete a group", `DELETE FROM groups WHERE id = $1`},
+		{"delete an expense", `DELETE FROM expenses WHERE group_id = $1`},
+		{"rewrite a settlement", `UPDATE settlements SET amount_minor = 1 WHERE group_id = $1`},
+		{"delete a settlement", `DELETE FROM settlements WHERE group_id = $1`},
+		{"change a membership's role", `UPDATE memberships SET role = 'owner' WHERE group_id = $1`},
+		{"remove a member", `DELETE FROM memberships WHERE group_id = $1`},
+		{"mark a receipt parsed", `UPDATE receipts SET parse_outcome = 'claiming' WHERE group_id = $1`},
+		{"delete a receipt", `DELETE FROM receipts WHERE group_id = $1`},
+		{"delete a join code", `DELETE FROM join_codes WHERE group_id = $1`},
+		{"change a claim in place", `UPDATE claims SET member_id = member_id WHERE group_id = $1`},
+	} {
+		_, err := w.pool.Exec(ctx, tc.sql, w.g)
+		wantCode(t, err, codePrivilege, "fifty_app tried to "+tc.name)
+	}
+	// Not group-scoped.
+	for name, sql := range map[string]string{
+		"delete a job":                 `DELETE FROM jobs WHERE false`,
+		"claim or fail a job":          `UPDATE jobs SET state = state WHERE false`,
+		"create a user":                `INSERT INTO users (issuer, subject) VALUES ('x', 'y')`,
+		"change a user":                `UPDATE users SET display_name = 'z' WHERE false`,
+		"delete an idempotency key":    `DELETE FROM idempotency_keys WHERE false`,
+		"delete a receipt quota count": `DELETE FROM receipt_quota WHERE false`,
+	} {
+		_, err := w.pool.Exec(ctx, sql)
+		wantCode(t, err, codePrivilege, "fifty_app tried to "+name)
+	}
+	// What it does need still works, including the two kinds of UPDATE a verb search misses:
+	// a row lock (needs UPDATE on the table) and ON CONFLICT DO UPDATE.
+	for _, ok := range []string{
+		`SELECT 1 FROM groups WHERE id = $1 FOR NO KEY UPDATE`,
+		`SELECT 1 FROM expenses WHERE group_id = $1 LIMIT 1 FOR SHARE`,
+	} {
+		if _, err := w.pool.Exec(ctx, ok, w.g); err != nil {
+			t.Errorf("fifty_app lost a privilege its row locks need: %s: %v", ok, err)
+		}
+	}
+	_, err := w.pool.Exec(ctx, `INSERT INTO receipt_quota (user_id, day, used) VALUES ($1, current_date, 1)
+		ON CONFLICT (user_id, day) DO UPDATE SET used = receipt_quota.used + 1`, w.actor)
+	if err != nil {
+		t.Errorf("fifty_app lost the privilege ON CONFLICT DO UPDATE needs: %v", err)
+	}
+}
+
+// A table added by a later migration is not handed to fifty_app automatically (it used to
+// be: 00004). Shown by creating one as the owner in a transaction that is rolled back.
+func TestRoles_NewTablesAreNotGrantedToTheAppRoleAutomatically(t *testing.T) {
+	w := newWorld(t)
+	tx, err := w.owner.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // always rolled back
+	if _, err := tx.Exec(ctx, `CREATE TABLE zz_new_table_probe (id serial PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{dbrole.App, dbrole.Worker, dbrole.System} {
+		var any bool
+		if err := tx.QueryRow(ctx, `SELECT has_table_privilege($1, 'zz_new_table_probe', 'SELECT, INSERT, UPDATE, DELETE')
+			OR has_sequence_privilege($1, 'zz_new_table_probe_id_seq', 'USAGE, SELECT')`, role).Scan(&any); err != nil {
+			t.Fatal(err)
+		}
+		if any {
+			t.Errorf("%s has a privilege on a table nobody granted it: a later migration must say what each role may do", role)
+		}
+	}
+}
+
+// Every role could create temporary tables (PUBLIC has TEMPORARY on a new database). Nothing
+// in the product does; the privilege is gone from PUBLIC (00017).
+func TestRoles_NoOneCanCreateTemporaryTables(t *testing.T) {
+	w := newWorld(t)
+	for _, role := range []string{dbrole.App, dbrole.Worker, dbrole.System} {
+		var can bool
+		if err := w.owner.QueryRow(ctx, `SELECT has_database_privilege($1, current_database(), 'TEMPORARY')`, role).Scan(&can); err != nil {
+			t.Fatal(err)
+		}
+		if can {
+			t.Errorf("%s may create temporary tables", role)
+		}
+	}
+	_, err := w.pool.Exec(ctx, `CREATE TEMP TABLE zz_probe (x int)`)
+	wantCode(t, err, codePrivilege, "fifty_app creating a temporary table")
 }

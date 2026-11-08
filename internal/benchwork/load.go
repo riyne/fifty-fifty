@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/riyne/fifty-fifty/internal/dbrole"
 	"github.com/riyne/fifty-fifty/internal/mockllm"
 )
 
@@ -28,7 +29,7 @@ import (
 //     Rate below capacity this measures latency: how long a job takes from enqueue
 //     to done, and how long it waits before a worker starts it.
 type LoadParams struct {
-	DatabaseURL string // the app role
+	DatabaseURL string // any role's URL for the database; the run connects as fifty_worker, as production workers do (00017)
 	OwnerURL    string // the owner role, for the bench schema and cleanup
 	WorkerBin   string // a built cmd/benchworker
 
@@ -113,7 +114,13 @@ func RunLoad(ctx context.Context, p LoadParams) (LoadResult, error) {
 	if err := Setup(ctx, owner); err != nil {
 		return LoadResult{}, err
 	}
-	pool, err := pgxpool.New(ctx, p.DatabaseURL)
+	// The workers and the harness's reads use the worker role: the jobs table and the bench
+	// schema are its, and fifty_app has no UPDATE or DELETE on jobs (00017).
+	workerURL, err := dbrole.URL(p.DatabaseURL, dbrole.Worker)
+	if err != nil {
+		return LoadResult{}, err
+	}
+	pool, err := pgxpool.New(ctx, workerURL)
 	if err != nil {
 		return LoadResult{}, err
 	}
@@ -145,7 +152,7 @@ func RunLoad(ctx context.Context, p LoadParams) (LoadResult, error) {
 	defer stopAll(procs)
 	for i := range procs {
 		procs[i], err = startWorker(workerSpec{
-			Bin: p.WorkerBin, DatabaseURL: p.DatabaseURL, MockURL: mockSrv.URL, ID: "w" + strconv.Itoa(i+1),
+			Bin: p.WorkerBin, DatabaseURL: workerURL, MockURL: mockSrv.URL, ID: "w" + strconv.Itoa(i+1),
 			Concurrency: p.Concurrency, Lease: p.Lease, Poll: p.Poll, Lean: p.Lean,
 		})
 		if err != nil {

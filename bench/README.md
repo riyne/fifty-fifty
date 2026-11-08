@@ -65,6 +65,8 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 - The mock draws its faults from (seed, settlement id, call number), and settlement ids are random, so which settlements get faults differs between runs even with the same seed; the arrival times repeat for the same seed (the same seeds are used for every mix).
 - One machine running the workers, the mock, the harness and Postgres 17 in Docker Desktop (no container limits); a mock provider; 3 worker processes and 300 settlements per run. Numbers from another machine, a real provider, more workers or sustained load would differ. This is a fault-injection benchmark with a correctness assertion, not a throughput benchmark.
 
+**Role of the queue benchmarks (M10.16).** From migration 00017 `fifty_app` has no UPDATE or DELETE on `jobs`, so the programs behind `bench/queue` and `bench/recovery` (`internal/benchwork`) connect their workers, and the harness's own reads, as `fifty_worker`, the role of a production worker, and grant their bookkeeping tables to it. The recordings above were made before this (they ran as the application role, or as the superuser before M7) and are untouched.
+
 ## Redaction recall (`bench/redaction`, CLAIMS row 9)
 
 `caffeinate -ims make bench-redaction` (about 3 minutes; `go run ./bench/redaction --help`; `--receipts`/`--variants` shrink it for a smoke run, which needs `--allow-dirty` and must not be committed). Needs Tesseract installed (`brew install tesseract`) and a clean git working tree, so the commit recorded is the code that ran. It touches **no database**: the result says so in place of a Postgres version. Output `bench/results/redaction-<UTC timestamp>.{json,txt}`.

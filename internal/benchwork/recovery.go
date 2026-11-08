@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/riyne/fifty-fifty/internal/dbrole"
 	"github.com/riyne/fifty-fifty/internal/mockllm"
 )
 
@@ -33,7 +34,7 @@ const (
 
 // RecoveryParams describes one trial of "kill -9 a worker mid-job".
 type RecoveryParams struct {
-	DatabaseURL string // the app role: workers and the harness's reads
+	DatabaseURL string // any role's URL for the database; workers and the harness's reads connect as fifty_worker (00017)
 	OwnerURL    string // the owner role: creates the bench schema
 	WorkerBin   string // path to a built cmd/benchworker
 
@@ -104,7 +105,11 @@ func RunRecovery(ctx context.Context, p RecoveryParams) (RecoveryResult, error) 
 	if err := Setup(ctx, owner); err != nil {
 		return RecoveryResult{}, err
 	}
-	pool, err := pgxpool.New(ctx, p.DatabaseURL)
+	workerURL, err := dbrole.URL(p.DatabaseURL, dbrole.Worker) // see RunLoad
+	if err != nil {
+		return RecoveryResult{}, err
+	}
+	pool, err := pgxpool.New(ctx, workerURL)
 	if err != nil {
 		return RecoveryResult{}, err
 	}
@@ -127,7 +132,7 @@ func RunRecovery(ctx context.Context, p RecoveryParams) (RecoveryResult, error) 
 	for i := range procs {
 		id := "w" + strconv.Itoa(i+1)
 		procs[i], err = startWorker(workerSpec{
-			Bin: p.WorkerBin, DatabaseURL: p.DatabaseURL, MockURL: mockSrv.URL, ID: id,
+			Bin: p.WorkerBin, DatabaseURL: workerURL, MockURL: mockSrv.URL, ID: id,
 			Concurrency: p.Concurrency, Lease: p.Lease, Poll: p.Poll, CommitDelay: p.CommitDelay,
 		})
 		if err != nil {

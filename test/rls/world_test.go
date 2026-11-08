@@ -79,6 +79,22 @@ func newWorld(t *testing.T) *world {
 		t.Fatal(err)
 	}
 	w := &world{sc: sc, app: sc.Pool, owner: sc.Owner}
+	// These tests ask whether the POLICIES refuse a statement, so fifty_app gets back, in this
+	// scratch database only, the privileges migration 00017 took from it (the state of 00004
+	// and 00005: the ledger and the audit log stay append-only). With them removed the
+	// statements would be refused one layer earlier, by the grant, and the policy would never be
+	// asked: the defense in depth (CLAIMS row 11) would be untested. What the real role may do
+	// is test/dbinvariants/roles_test.go.
+	for _, g := range []string{
+		`GRANT INSERT, UPDATE, DELETE ON users TO fifty_app`,
+		`GRANT UPDATE ON claims TO fifty_app`,
+		`GRANT UPDATE, DELETE ON jobs, memberships, receipts, settlements TO fifty_app`,
+		`GRANT DELETE ON expenses, groups, idempotency_keys, join_codes, receipt_quota TO fifty_app`,
+	} {
+		if _, err := sc.Owner.Exec(ctx, g); err != nil {
+			t.Fatalf("%s: %v", g, err)
+		}
+	}
 	if w.worker, err = pgxpool.New(ctx, sc.WorkerURL); err != nil {
 		t.Fatal(err)
 	}

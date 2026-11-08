@@ -14,7 +14,7 @@ import (
 // system there are none, and a run alone could never show the check works.
 func TestEffectCounts_FindsDuplicatesAndMissingEffects(t *testing.T) {
 	ctx := context.Background()
-	pool, owner := testutil.Pool(t), testutil.OwnerPool(t)
+	pool, owner := testutil.WorkerPool(t), testutil.OwnerPool(t)
 	if err := Setup(ctx, owner); err != nil {
 		t.Fatal(err)
 	}

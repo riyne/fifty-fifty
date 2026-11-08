@@ -59,9 +59,9 @@ CREATE TABLE IF NOT EXISTS bench.effects (
     created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 CREATE INDEX IF NOT EXISTS effects_job_idx ON bench.effects (job_id);
-GRANT USAGE ON SCHEMA bench TO fifty_app;
-GRANT SELECT, INSERT, UPDATE ON bench.attempts TO fifty_app;
-GRANT SELECT, INSERT ON bench.effects TO fifty_app;
+GRANT USAGE ON SCHEMA bench TO fifty_worker;
+GRANT SELECT, INSERT, UPDATE ON bench.attempts TO fifty_worker;
+GRANT SELECT, INSERT ON bench.effects TO fifty_worker;
 `
 
 // Setup creates the bench schema. Call it with the owner role's pool; it is

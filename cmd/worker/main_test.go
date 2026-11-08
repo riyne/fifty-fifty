@@ -65,7 +65,7 @@ func TestRun_RejectsOtherCommands(t *testing.T) {
 }
 
 func TestRequeue_PrintsTheRequeuedIDs(t *testing.T) {
-	pool := testutil.Pool(t)
+	pool := testutil.WorkerPool(t) // the queue is the worker role's: fifty_app cannot claim or fail a job (00017)
 	ctx := context.Background()
 	kind := "test.cli." + uuid.NewString()
 

@@ -56,7 +56,7 @@ Things to remember:
 ### 2.1 How it is set up
 
 - **Postgres 17** in a Docker container (`deploy/docker-compose.yml`), published on **host port 5433** (so it cannot collide with a local Postgres on 5432). User `fifty`, database `fifty`, throwaway password; the data lives in the `pgdata` volume. `make up` starts it, `make down` stops it and keeps the data, `make reset` deletes the volume (all development data).
-- **Schema = 16 migrations** in `migrations/` (`00001` to `00016`), applied by **goose** (`make migrate-up`; goose is pinned in the separate module `tools/go.mod` and run through `go tool -modfile=tools/go.mod goose`). Migrations run as the owner role `fifty`. goose records progress in the `goose_db_version` table.
+- **Schema = 17 migrations** in `migrations/` (`00001` to `00017`), applied by **goose** (`make migrate-up`; goose is pinned in the separate module `tools/go.mod` and run through `go tool -modfile=tools/go.mod goose`). Migrations run as the owner role `fifty`. goose records progress in the `goose_db_version` table.
 - **Queries are SQL files, not an ORM.** `internal/db/queries/*.sql` are compiled by **sqlc** into typed Go in `internal/db/` (committed; `make generate` regenerates it, and CI fails if the committed output is stale). sqlc reads `migrations/` as the schema, so a migration and its queries are checked against each other at generation time.
 - **The driver is pgx** (`pgxpool`). Money is `bigint` minor units; there are no floats anywhere.
 - **Scratch databases.** Tests, the demo and the benchmarks do not use the development database for process-level work: `settlerig.NewScratch` creates a database named `fifty_e2e_<hex>`, runs all migrations, and drops it afterwards. The shared development database is what `make test` runs against.
@@ -79,6 +79,7 @@ Things to remember:
 | `00014_receipt_parse` | the columns the parse job fills in (outcome, reasons, token counts) and two indexes for the sweep |
 | `00015_worker_system_roles` | the roles `fifty_worker` and `fifty_system` and their grants |
 | `00016_row_level_security` | the policies, `app_user_id()`, `my_group_ids()`, `redeem_join_code()` |
+| `00017_revoke_unused_app_privileges` | takes from `fifty_app` every privilege its code path does not use, stops new tables being granted to it automatically, and removes `TEMPORARY` from PUBLIC |
 
 ### 2.2 The four database roles
 
@@ -87,7 +88,7 @@ Roles are **cluster-wide** in Postgres, not per database. Never `ALTER ROLE` one
 | Role | Login | Used by | What it can do |
 |---|---|---|---|
 | `fifty` | yes, **superuser** | goose (migrations), tests that seed or inspect, scratch-database creation | everything; bypasses row-level security. Neither the api nor the worker ever connects as it |
-| `fifty_app` | yes | the api, for a user's request | select/insert/update/delete on the tables handlers write, **no UPDATE or DELETE on `ledger_entries`, `ledger_transactions` or `audit_events`**; limited by row-level security to the caller's groups |
+| `fifty_app` | yes | the api, for a user's request | only the commands the user-request path runs, table by table (the exact list is in `test/dbinvariants/roles_test.go`): for example it can insert settlements and jobs but never update or delete them, can only read `users`, and **has no UPDATE or DELETE on `ledger_entries`, `ledger_transactions` or `audit_events`**; limited by row-level security to the caller's groups. It keeps UPDATE on `expenses` and `groups` only because `SELECT ... FOR UPDATE` needs it |
 | `fifty_system` | yes | the api, for first login and the payment webhook | create users, read groups, update settlements, insert ledger rows and audit events: only what those two paths need |
 | `fifty_worker` | yes | the worker | the `jobs` table in full, plus the narrow reads and writes each job handler needs |
 
