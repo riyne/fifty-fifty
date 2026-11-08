@@ -55,11 +55,51 @@ func TestRedact(t *testing.T) {
 	}
 }
 
+// OCR sometimes puts one space beside a dot inside an address. Before M10.12 the pattern
+// missed these, or matched only the part after the space and left the start of the local
+// part in the text. Each case below was seen in, or is the same kind as, the leaks in
+// bench/results/redaction-20261107T044640Z.txt.
+func TestRedact_EmailsWithAnOCRSpaceBesideADot(t *testing.T) {
+	for _, c := range []struct{ name, in, want string }{
+		{"space after a dot in the local part", "Customer alex. k6@example.com", "Customer [EMAIL]"},
+		{"space before a dot in the local part", "chris .o88@example.com", "[EMAIL]"},
+		{"space after the dot before the tld", "r.singh36@example. org", "[EMAIL]"},
+		{"space before the dot before the tld", "dana.w30@example .org", "[EMAIL]"},
+		{"space in a middle label", "x@mail. example.co.uk", "[EMAIL]"},
+		{"two spaces in one address", "alex. k6@example. com", "[EMAIL]"},
+		{"unchanged: no spaces", "jane.doe+tips@mail.example.co.uk", "[EMAIL]"},
+		// The capital after a dot is the next sentence, not the address.
+		{"next sentence is kept", "write jo@example.com. Thank you", "write [EMAIL]. Thank you"},
+		{"next word after a dot is kept when capital", "jo@example.com. Total 12.50", "[EMAIL]. Total 12.50"},
+	} {
+		got, n := receipts.Redact(c.in)
+		if got != c.want || n.Emails != 1 || n.Cards != 0 || n.Phones != 0 {
+			t.Errorf("%s: Redact(%q) = %q %+v, want %q with one email", c.name, c.in, got, n, c.want)
+		}
+	}
+}
+
+// The spaces are tolerated only inside an address: text with no @ is left alone, and a
+// space beside the @ is not tolerated (a known limit, below).
+func TestRedact_SpaceToleranceDoesNotTouchOrdinaryText(t *testing.T) {
+	for _, in := range []string{
+		"Subtotal. 12.50  Tax. 1.50",
+		"Qty 2. milk. bread. eggs",
+		"Total. 14.00 www. example. com",
+		"thanks. see you. soon",
+	} {
+		if got, n := receipts.Redact(in); got != in || n.Total() != 0 {
+			t.Errorf("Redact(%q) = %q %+v, want it unchanged", in, got, n)
+		}
+	}
+}
+
 // What pattern matching cannot do, pinned so that nobody comes to rely on it: spelled
 // out addresses, digits written as words, and anything that is not one of the three kinds.
 func TestRedact_KnownLimits(t *testing.T) {
 	for _, in := range []string{
 		"jane at example dot com",
+		"jane doe @example.com", // a space beside the @ is not tolerated (M10.12 allows one beside a dot only)
 		"call six zero four five five five zero one nine nine",
 		"Jane Doe, 123 Main Street, Vancouver BC V6B 1A1",
 		"SIN 123 456 789",
