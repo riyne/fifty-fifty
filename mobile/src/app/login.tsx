@@ -12,8 +12,8 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      const idToken = await signInWithOidc();
-      if (idToken !== null) await session.signIn(idToken); // the layout then leaves this screen
+      const tokens = await signInWithOidc();
+      if (tokens !== null) await session.signIn(tokens.idToken, tokens.refreshToken); // the layout then leaves this screen
     } catch (e) {
       setError(e instanceof Error ? e.message : "login failed");
     } finally {

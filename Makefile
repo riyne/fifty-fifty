@@ -16,8 +16,10 @@ export WORKER_DATABASE_URL  ?= postgres://fifty_worker:fifty@localhost:5433/fift
 
 .PHONY: demo demo-keep mobile-check mobile-generate up down reset migrate-up migrate-down migrate-status generate run-api test test-unsafe test-controls test-e2e bench-recovery bench-queue bench-settlement bench-stress bench-rls bench-redaction bench-accuracy ci ci-format ci-vet ci-lint ci-generate ci-test ci-vuln
 
-up: ## start Postgres and Dex, wait for Postgres to be healthy
-	$(COMPOSE) up -d --build --wait postgres dex
+up: ## start Postgres, make Dex's database, start Dex
+	$(COMPOSE) up -d --wait postgres
+	$(COMPOSE) exec -T postgres psql -U fifty -d fifty -v ON_ERROR_STOP=1 < deploy/dex/create-db.sql
+	$(COMPOSE) up -d --build --wait dex
 
 down: ## stop containers, keep data
 	$(COMPOSE) down

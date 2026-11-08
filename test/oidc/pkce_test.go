@@ -30,7 +30,7 @@ import (
 const (
 	clientID    = "fifty-fifty"
 	redirectURI = "fiftyfifty://auth"
-	scope       = "openid email profile"
+	scope       = "openid email profile offline_access" // offline_access since M10.21: Dex issues a refresh token
 )
 
 func issuer() string {
@@ -140,13 +140,13 @@ type tokenResult struct {
 	fields map[string]any
 }
 
-func exchange(t *testing.T, code, verifier, redirect string) tokenResult {
+// tokenClient has a timeout: a Dex that stops answering (it did, in M10.21, on a refresh request)
+// must fail a test, not hang the suite.
+var tokenClient = &http.Client{Timeout: 15 * time.Second}
+
+func postToken(t *testing.T, form url.Values) tokenResult {
 	t.Helper()
-	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirect}, "client_id": {clientID}}
-	if verifier != "" {
-		form.Set("code_verifier", verifier)
-	}
-	resp, err := http.PostForm(issuer()+"/token", form)
+	resp, err := tokenClient.PostForm(issuer()+"/token", form)
 	if err != nil {
 		t.Fatalf("token request: %v", err)
 	}
@@ -156,6 +156,20 @@ func exchange(t *testing.T, code, verifier, redirect string) tokenResult {
 		t.Fatalf("token response is not JSON (HTTP %d): %v", resp.StatusCode, err)
 	}
 	return tokenResult{status: resp.StatusCode, fields: f}
+}
+
+func exchange(t *testing.T, code, verifier, redirect string) tokenResult {
+	t.Helper()
+	form := url.Values{"grant_type": {"authorization_code"}, "code": {code}, "redirect_uri": {redirect}, "client_id": {clientID}}
+	if verifier != "" {
+		form.Set("code_verifier", verifier)
+	}
+	return postToken(t, form)
+}
+
+func refresh(t *testing.T, refreshToken, client string) tokenResult {
+	t.Helper()
+	return postToken(t, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}, "client_id": {client}})
 }
 
 // freshCode runs a full, correct login and returns the code and the PKCE pair that goes with it.
@@ -214,9 +228,9 @@ func TestPKCE_TheAppsLoginGivesAnIDTokenTheApiAccepts(t *testing.T) {
 	if idToken == "" {
 		t.Fatalf("no id_token in %v", tok.fields)
 	}
-	// The app asks for no offline_access: no refresh token. (10.21 will change this on purpose.)
-	if _, ok := tok.fields["refresh_token"]; ok {
-		t.Errorf("a refresh token was issued although the app did not ask for offline_access")
+	// The app asks for offline_access: a refresh token comes with the ID token.
+	if rt, _ := tok.fields["refresh_token"].(string); rt == "" {
+		t.Errorf("no refresh token although the app asks for offline_access: %v", tok.fields)
 	}
 
 	// The api's own verifier (signature from Dex's published keys, issuer, audience, expiry).
@@ -415,5 +429,150 @@ func TestTheRequestMatchesTheAppsSource(t *testing.T) {
 	}
 	if !strings.Contains(string(app), `"scheme": "`+strings.SplitN(redirectURI, "://", 2)[0]+`"`) {
 		t.Errorf("mobile/app.json does not declare the URL scheme of %q", redirectURI)
+	}
+}
+
+// ---- refresh tokens (M10.21) ----
+//
+// The app asks for offline_access and keeps a refresh token. Dex v2.46.0 and v2.46.1 deadlocked
+// on any refresh with in-memory storage, which is why deploy/dex/config.yaml uses Postgres; these
+// tests would fail by timeout on a Dex that has that bug.
+
+// scopeWithoutRefresh is what the app asked for before M10.21.
+const scopeWithoutRefresh = "openid email profile"
+
+// refreshLogin logs in as alice asking for offline_access and returns the token response.
+func refreshLogin(t *testing.T) tokenResult {
+	t.Helper()
+	p := newPKCE(t)
+	o := login(t, authParams(p, "state-"+p.verifier[:8]), "alice@example.com", "password")
+	if o.redirect == nil || o.code() == "" {
+		t.Fatalf("a login asking for offline_access gave no code: HTTP %d, redirect %v", o.status, o.redirect)
+	}
+	tok := exchange(t, o.code(), p.verifier, redirectURI)
+	if tok.status != http.StatusOK {
+		t.Fatalf("exchange = %d %v", tok.status, tok.fields)
+	}
+	return tok
+}
+
+func verifyIDToken(t *testing.T, idToken string) auth.Claims {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	v, err := auth.NewOIDCVerifier(ctx, issuer(), "", clientID)
+	if err != nil {
+		t.Fatalf("NewOIDCVerifier: %v", err)
+	}
+	c, err := v.Verify(ctx, idToken)
+	if err != nil {
+		t.Fatalf("the api's verifier rejected the ID token: %v", err)
+	}
+	return c
+}
+
+// idTokenLifetime is exp - iat of a JWT, read without verifying (the verifier does that).
+func idTokenLifetime(t *testing.T, idToken string) time.Duration {
+	t.Helper()
+	parts := strings.Split(idToken, ".")
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c struct{ Exp, Iat float64 }
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatal(err)
+	}
+	return time.Duration(c.Exp-c.Iat) * time.Second
+}
+
+func TestRefresh_OnlyWithOfflineAccess(t *testing.T) {
+	requireDex(t)
+	// Without the scope there is no refresh token (the scopes the app used before 10.21); with it
+	// (the app's request now) there is one.
+	p := newPKCE(t)
+	params := authParams(p, "s")
+	params.Set("scope", scopeWithoutRefresh)
+	o := login(t, params, "alice@example.com", "password")
+	if o.redirect == nil || o.code() == "" {
+		t.Fatalf("a login without offline_access gave no code: HTTP %d", o.status)
+	}
+	plain := exchange(t, o.code(), p.verifier, redirectURI)
+	if _, ok := plain.fields["refresh_token"]; ok {
+		t.Errorf("a refresh token was issued without offline_access")
+	}
+	if tok := refreshLogin(t); tok.fields["refresh_token"] == nil || tok.fields["refresh_token"] == "" {
+		t.Errorf("no refresh token with offline_access: %v", tok.fields)
+	}
+}
+
+func TestRefresh_GivesANewIDTokenTheApiAcceptsAndRotatesTheRefreshToken(t *testing.T) {
+	requireDex(t)
+	first := refreshLogin(t)
+	rt1 := first.fields["refresh_token"].(string)
+	id1 := first.fields["id_token"].(string)
+	if d := idTokenLifetime(t, id1); d != time.Hour {
+		t.Errorf("the ID token lives %v, want 1h (deploy/dex/config.yaml expiry.idTokens)", d)
+	}
+
+	second := refresh(t, rt1, clientID)
+	if second.status != http.StatusOK {
+		t.Fatalf("refresh = %d %v", second.status, second.fields)
+	}
+	id2, _ := second.fields["id_token"].(string)
+	rt2, _ := second.fields["refresh_token"].(string)
+	if id2 == "" || id2 == id1 {
+		t.Errorf("the refresh gave no new ID token")
+	}
+	if rt2 == "" || rt2 == rt1 {
+		t.Errorf("the refresh token was not rotated: %q", rt2)
+	}
+	c1, c2 := verifyIDToken(t, id1), verifyIDToken(t, id2)
+	if c1.Subject != c2.Subject || c2.Email != "alice@example.com" || c2.Issuer != issuer() {
+		t.Errorf("claims changed across a refresh: %+v then %+v", c1, c2)
+	}
+	if d := idTokenLifetime(t, id2); d != time.Hour {
+		t.Errorf("the refreshed ID token lives %v, want 1h", d)
+	}
+}
+
+// What the app must be able to rely on: an old refresh token is dead, and replaying it does not
+// kill the current one (so a stale request cannot log the user out by itself).
+func TestRefresh_AReplayedTokenIsRefusedAndTheCurrentOneKeepsWorking(t *testing.T) {
+	requireDex(t)
+	first := refreshLogin(t)
+	rt1 := first.fields["refresh_token"].(string)
+	second := refresh(t, rt1, clientID)
+	if second.status != http.StatusOK {
+		t.Fatalf("first refresh = %d %v", second.status, second.fields)
+	}
+	rt2 := second.fields["refresh_token"].(string)
+
+	replay := refresh(t, rt1, clientID)
+	if replay.status != http.StatusBadRequest || replay.fields["error"] != "invalid_grant" || replay.fields["id_token"] != nil {
+		t.Errorf("replaying the used token = %d %v, want 400 invalid_grant and no token", replay.status, replay.fields)
+	}
+	third := refresh(t, rt2, clientID)
+	if third.status != http.StatusOK || third.fields["id_token"] == nil {
+		t.Errorf("after the replay the current token = %d %v, want it to still work", third.status, third.fields)
+	}
+}
+
+func TestRefresh_Refusals(t *testing.T) {
+	requireDex(t)
+	rt := refreshLogin(t).fields["refresh_token"].(string)
+
+	if r := refresh(t, rt, "some-other-client"); r.status != http.StatusUnauthorized || r.fields["id_token"] != nil {
+		t.Errorf("another client id = %d %v, want 401 and no token", r.status, r.fields)
+	}
+	if r := refresh(t, "not-a-refresh-token", clientID); r.status != http.StatusBadRequest || r.fields["error"] != "invalid_grant" {
+		t.Errorf("a garbage token = %d %v, want 400 invalid_grant", r.status, r.fields)
+	}
+	if r := postToken(t, url.Values{"grant_type": {"refresh_token"}, "client_id": {clientID}}); r.status != http.StatusBadRequest {
+		t.Errorf("no token at all = %d %v, want 400", r.status, r.fields)
+	}
+	// None of those used up the real one.
+	if r := refresh(t, rt, clientID); r.status != http.StatusOK {
+		t.Errorf("the real token after the refusals = %d %v, want 200", r.status, r.fields)
 	}
 }

@@ -6,8 +6,29 @@
 # client and the containerized api are added.
 issuer: http://localhost:5556/dex
 
+# Postgres, not memory: refresh tokens deadlock Dex's in-memory storage (see Dockerfile). The
+# database and role are made by deploy/dex/create-db.sql (`make up` runs it). host.docker.internal
+# is the host's published Postgres port: it works from compose on Docker Desktop and, with
+# `--add-host=host.docker.internal:host-gateway`, from the CI runner.
 storage:
-  type: memory # tokens and sessions are lost on restart; fine for dev
+  type: postgres
+  config:
+    host: host.docker.internal
+    port: 5433
+    database: dex
+    user: dex
+    password: dex
+    ssl:
+      mode: disable
+
+# Short ID tokens, refresh tokens for staying signed in (M10.21). The app sends the ID token
+# to the api, so a short lifetime limits what a stolen one is worth; the refresh token is kept
+# in the iOS Keychain and rotated on every use (a used token is refused).
+expiry:
+  idTokens: 1h
+  refreshTokens:
+    validIfNotUsedFor: 168h
+    absoluteLifetime: 720h
 
 web:
   http: 0.0.0.0:5556

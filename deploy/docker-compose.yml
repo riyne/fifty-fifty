@@ -23,6 +23,10 @@ services:
     build: ./dex
     ports:
       - "127.0.0.1:5556:5556"
+    extra_hosts:
+      # Dex keeps its state in the Postgres above, through the host's published port
+      # (deploy/dex/config.yaml); this makes the name resolve on Linux too.
+      - "host.docker.internal:host-gateway"
 
 volumes:
   pgdata:

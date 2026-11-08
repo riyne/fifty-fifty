@@ -57,8 +57,9 @@ jobs:
       # reachable a failure, not a skip.
       - name: Start Dex
         run: |
+          PGPASSWORD=fifty psql -h localhost -p 5433 -U fifty -d fifty -v ON_ERROR_STOP=1 -f deploy/dex/create-db.sql
           docker build -t fifty-dex deploy/dex
-          docker run -d --name dex -p 5556:5556 fifty-dex
+          docker run -d --name dex -p 5556:5556 --add-host=host.docker.internal:host-gateway fifty-dex
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:5556/dex/.well-known/openid-configuration >/dev/null; then exit 0; fi
             sleep 1
