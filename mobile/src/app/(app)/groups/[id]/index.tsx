@@ -8,6 +8,7 @@ import { api } from "../../../../api/instance";
 import { statusLabel } from "../../../../api/expenses";
 import { formatMoney } from "../../../../api/money";
 import { balanceSentence, transferSentence } from "../../../../api/sentences";
+import { settlementTitle, statusWord } from "../../../../api/settlements";
 import type { CreatedJoinCode } from "../../../../api/types";
 import { useLoad } from "../../../../hooks/useLoad";
 import { LoadGate } from "../../../../ui/LoadGate";
@@ -18,13 +19,14 @@ export default function GroupScreen() {
     const path = { params: { path: { id } } };
     // one request each; balances and members come from different statements, so a member who
     // joined between the two is simply missing from one list until the next refresh
-    const [group, balances, expenses, me] = await Promise.all([
+    const [group, balances, expenses, settlements, me] = await Promise.all([
       unwrap(api.GET("/v1/groups/{id}", path)),
       unwrap(api.GET("/v1/groups/{id}/balances", path)),
       unwrap(api.GET("/v1/groups/{id}/expenses", path)),
+      unwrap(api.GET("/v1/groups/{id}/settlements", path)),
       unwrap(api.GET("/v1/me")),
     ]);
-    return { group, balances, expenses: expenses.expenses, me };
+    return { group, balances, expenses: expenses.expenses, settlements: settlements.settlements, me };
   });
 
   useFocusEffect(
@@ -35,7 +37,7 @@ export default function GroupScreen() {
 
   return (
     <LoadGate load={state} onRetry={reload}>
-      {({ group, balances, expenses, me }, refreshing) => {
+      {({ group, balances, expenses, settlements, me }, refreshing) => {
         const names = new Map(balances.balances.map((b) => [b.member_id, b.display_name]));
         const roles = new Map(group.members.map((m) => [m.user_id, m.role]));
         const who = (memberId: string) => ({ name: names.get(memberId) ?? "Someone", isMe: memberId === me.id });
@@ -92,15 +94,46 @@ export default function GroupScreen() {
               <Text style={styles.meta}>Nobody owes anybody.</Text>
             ) : (
               balances.suggested_transfers.map((t) => (
-                <Text key={`${t.from_member_id}-${t.to_member_id}`}>
-                  {transferSentence(who(t.from_member_id), who(t.to_member_id), t.amount_minor, balances.currency)}
-                </Text>
+                <View key={`${t.from_member_id}-${t.to_member_id}`} style={styles.transfer}>
+                  <Text style={styles.transferText}>
+                    {transferSentence(who(t.from_member_id), who(t.to_member_id), t.amount_minor, balances.currency)}
+                  </Text>
+                  {t.from_member_id === me.id && (
+                    <Button
+                      title="Pay (simulated)"
+                      onPress={() =>
+                        router.push({
+                          pathname: "/groups/[id]/settle",
+                          params: { id: group.id, to: t.to_member_id, amount: String(t.amount_minor) },
+                        })
+                      }
+                    />
+                  )}
+                </View>
               ))
             )}
             <Text style={styles.note}>
               Suggestions only: nothing is recorded until a settlement is made. The list reduces the number of
               payments but is not always the smallest possible.
             </Text>
+
+            <Text style={styles.heading}>Settlements</Text>
+            {settlements.length === 0 ? (
+              <Text style={styles.meta}>No settlements yet. Settlement here is simulated: no real money moves.</Text>
+            ) : (
+              settlements.slice(0, 10).map((st) => (
+                <Pressable
+                  key={st.id}
+                  style={styles.row}
+                  onPress={() =>
+                    router.push({ pathname: "/groups/[id]/settlements/[settlementId]", params: { id: group.id, settlementId: st.id } })
+                  }
+                >
+                  <Text style={styles.name}>{settlementTitle(st, me.id, (m) => who(m).name, st.currency)}</Text>
+                  <Text style={styles.meta}>{statusWord(st.status)} · simulated</Text>
+                </Pressable>
+              ))
+            )}
 
             {group.role === "owner" && <Invite groupId={group.id} />}
           </ScrollView>
@@ -154,6 +187,8 @@ const styles = StyleSheet.create({
   row: { paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: "#ccc", gap: 2 },
   name: { fontWeight: "600" },
   note: { color: "#666", fontSize: 12 },
+  transfer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  transferText: { flex: 1 },
   invite: { gap: 8 },
   code: { alignItems: "center", gap: 4, padding: 12, backgroundColor: "#eef", borderRadius: 8 },
   codeText: { fontSize: 24, fontWeight: "700", letterSpacing: 2 },

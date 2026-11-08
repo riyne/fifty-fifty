@@ -11,4 +11,6 @@ export type Expense = components["schemas"]["Expense"];
 export type ExpenseSummary = components["schemas"]["ExpenseSummary"];
 export type ExpenseItem = components["schemas"]["ExpenseItem"];
 export type ExpenseStatus = Expense["status"];
+export type Settlement = components["schemas"]["Settlement"];
+export type SettlementStatus = Settlement["status"];
 export type { Currency } from "./money";
