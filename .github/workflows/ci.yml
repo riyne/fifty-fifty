@@ -52,6 +52,19 @@ jobs:
       # results were recorded with; the tests only check that it reads clean renders.
       - name: Install tesseract
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tesseract-ocr
+      # The OIDC login test (test/oidc) drives a real Dex: the same image and config as
+      # `make up` (deploy/dex/Dockerfile). REQUIRE_DEX=1 in `make ci` makes a Dex that is not
+      # reachable a failure, not a skip.
+      - name: Start Dex
+        run: |
+          docker build -t fifty-dex deploy/dex
+          docker run -d --name dex -p 5556:5556 fifty-dex
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:5556/dex/.well-known/openid-configuration >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs dex
+          exit 1
       - name: Apply migrations
         run: make migrate-up
       - name: Run the gates

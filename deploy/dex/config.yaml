@@ -14,6 +14,14 @@ web:
 
 oauth2:
   skipApprovalScreen: true
+  # PKCE is required, and only S256 (M10.22). Without this Dex issued and exchanged a code for
+  # this public client with no code_challenge at all, and accepted the `plain` method (the
+  # verifier itself sent in the authorization URL). The app and scripts/dev-token.sh already
+  # send S256; test/oidc/pkce_test.go checks that nothing else is accepted.
+  pkce:
+    enforce: true
+    codeChallengeMethodsSupported:
+      - S256
 
 enablePasswordDB: true
 

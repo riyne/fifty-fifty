@@ -172,6 +172,8 @@ ci-generate:
 ci-test: export REQUIRE_DATABASE = 1
 # The OCR tests need the real tesseract program; here a missing one is a failure, not a skip.
 ci-test: export REQUIRE_TESSERACT = 1
+# The OIDC login test needs the compose Dex (`make up`); here a missing one is a failure, not a skip.
+ci-test: export REQUIRE_DEX = 1
 ci-test:
 	@set -o pipefail; go test -count=1 -p 1 -v ./... 2>&1 | tee ci-test.log | grep -E "^(--- FAIL|FAIL|ok|panic)"
 	@echo "skipped tests:"; grep -E "^\s*--- SKIP" ci-test.log | sed 's/ (.*//' | sort | uniq -c
