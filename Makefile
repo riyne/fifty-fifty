@@ -140,7 +140,7 @@ bench-accuracy:
 # CI. .github/workflows/ci.yml starts Postgres, migrates, then runs `make ci`, so every
 # gate can be run on this machine first (needs `make up && make migrate-up`).
 # Not in CI: the end-to-end and stress tests, make test-controls and the benchmarks (real
-# processes, minutes, timing); lint and secret scanning (not built).
+# processes, minutes, timing); lint (not built); the secret scan is its own CI job, not part of make ci.
 ci: ci-format ci-vet ci-generate ci-test ci-vuln
 
 ci-format:

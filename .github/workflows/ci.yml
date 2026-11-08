@@ -4,7 +4,8 @@ name: ci
 # `make generate` leaves no diff, the tests against a real Postgres and a real tesseract with
 # skips for a missing database or a missing tesseract turned into failures, the whole suite again with the unsafe_controls tag and nothing
 # disabled, and govulncheck. Not here: the end-to-end and stress tests, the negative controls
-# and the benchmarks (real processes, minutes, timing), lint and secret scanning (not built).
+# and the benchmarks (real processes, minutes, timing) and lint (not built). A second job,
+# `secrets`, scans the git history with gitleaks (not part of `make ci`).
 # The same gates run on a developer machine with `make up && make migrate-up && make ci`.
 
 on:
@@ -54,3 +55,22 @@ jobs:
         run: make migrate-up
       - name: Run the gates
         run: make ci
+
+  # Secret scan over the whole git history (it needs every commit, hence fetch-depth: 0).
+  # gitleaks is a pinned release whose SHA-256 is checked before it runs. The checksum comes
+  # from the same release page, so it guards against a corrupt or later-replaced download,
+  # not against a compromised release. .gitleaksignore holds the one known false positive.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks 8.30.1
+        run: |
+          curl -fsSL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum --check
+          tar -xzf gitleaks.tar.gz gitleaks
+      - name: Scan the history
+        run: ./gitleaks git . --redact --no-banner -v

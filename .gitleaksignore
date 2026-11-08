@@ -1,0 +1,4 @@
+# One false positive in the whole history (gitleaks 8.30.1, 95 commits, 2026-11-08):
+# `secret` in TestHardenImage_StripsEverythingThatIsNotAPixel is a marker string the test
+# plants in a fake EXIF segment to check that re-encoding strips it. Not a credential.
+a15b489c54fd989cc350a96ee47d933d0bfd58a2:internal/receipts/image_test.go:generic-api-key:87
