@@ -17,6 +17,7 @@ import { api } from "../../../../../api/instance";
 import { createActionKeys } from "../../../../../api/keys";
 import { formatMoney } from "../../../../../api/money";
 import { useLoad } from "../../../../../hooks/useLoad";
+import { usePolling } from "../../../../../hooks/usePolling";
 import { LoadGate } from "../../../../../ui/LoadGate";
 
 export default function ExpenseScreen() {
@@ -38,6 +39,11 @@ export default function ExpenseScreen() {
       void reload();
     }, [reload]),
   );
+
+  // A receipt that was just uploaded is `parsing` until a worker has read it: look again every 2 s
+  // (without the refresh spinner) for up to a minute, then leave it to pull to refresh.
+  const parsing = state.status === "ready" && state.data.expense.status === "parsing";
+  const { gaveUp, restart } = usePolling(parsing, () => void reload({ silent: true }), 2000, 60_000);
 
   // One key per tap on Finalize or Void, kept while the same request is retried (see createActionKeys).
   const finalizeKeys = useRef(createActionKeys()).current;
@@ -149,13 +155,40 @@ export default function ExpenseScreen() {
           <ScrollView
             contentInsetAdjustmentBehavior="automatic"
             contentContainerStyle={styles.container}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={reload} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  restart();
+                  void reload();
+                }}
+              />
+            }
           >
             <Stack.Screen options={{ title: expense.description }} />
             <Text style={styles.title}>{formatMoney(expense.total_minor, expense.currency)}</Text>
             <Text style={styles.meta}>
               {statusLabel(expense.status)} · paid by {payerIsMe ? "you" : nameOf(expense.payer_id)}
             </Text>
+
+            {expense.status === "parsing" && (
+              <View style={styles.banner}>
+                {!gaveUp && <ActivityIndicator />}
+                <Text style={styles.bannerText}>
+                  {gaveUp
+                    ? "Still reading the receipt. Pull down to check again. If this keeps happening, the worker may not be running."
+                    : "Reading the receipt. This usually takes a few seconds."}
+                </Text>
+              </View>
+            )}
+            {expense.status === "needs_review" && (
+              <View style={styles.banner}>
+                <Text style={styles.bannerText}>
+                  {payerIsMe ? "You" : nameOf(expense.payer_id)} {payerIsMe ? "need" : "needs"} to check the items against
+                  the receipt before anyone can claim them. (Editing items is not in the app yet.)
+                </Text>
+              </View>
+            )}
 
             <Text style={styles.heading}>Items</Text>
             {expense.items.map((item) => {
@@ -246,4 +279,6 @@ const styles = StyleSheet.create({
   note: { color: "#666", fontSize: 12 },
   error: { color: "#b00020" },
   actions: { marginTop: 16 },
+  banner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 8, backgroundColor: "#eef" },
+  bannerText: { flex: 1 },
 });

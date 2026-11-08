@@ -62,6 +62,10 @@ export default function GroupScreen() {
             ))}
 
             <Text style={styles.heading}>Expenses</Text>
+            <Button
+              title="Add a receipt"
+              onPress={() => router.push({ pathname: "/groups/[id]/receipt", params: { id: group.id } })}
+            />
             {expenses.length === 0 ? (
               <Text style={styles.meta}>No expenses yet.</Text>
             ) : (

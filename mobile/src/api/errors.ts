@@ -51,6 +51,14 @@ export function describeError(error: unknown, byStatus: Partial<Record<number, s
     const custom = byStatus[error.status];
     if (custom !== undefined) return custom;
     if (error.status === 401) return "Your session ended. Sign in again.";
+    // the receipt upload's own limits (api/openapi.yaml): a daily quota whose Retry-After can be
+    // hours away, and a cap on uploads processed at once
+    if (error.code === "quota_exceeded") return "You've used today's receipt uploads. The limit resets at midnight UTC.";
+    if (error.status === 503 && error.code === "busy") {
+      return error.retryAfterSeconds === null
+        ? "The server is busy with other uploads. Try again shortly."
+        : `The server is busy with other uploads. Try again in ${error.retryAfterSeconds} s.`;
+    }
     if (error.status === 429) {
       return error.retryAfterSeconds === null
         ? "Too many requests. Try again shortly."
