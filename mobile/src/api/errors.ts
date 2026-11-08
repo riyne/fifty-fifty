@@ -40,6 +40,28 @@ function isErrorBody(body: unknown): body is { code: string; message: string } {
   );
 }
 
+/**
+ * A sentence for a person. `byStatus` replaces the text for one HTTP status where a screen
+ * knows better than the api's message (for example a join code that did not work). The api's
+ * own 4xx messages are written to be shown; 5xx and unknown failures are not.
+ */
+export function describeError(error: unknown, byStatus: Partial<Record<number, string>> = {}): string {
+  if (error instanceof NetworkError) return "Can't reach the server. Is the api running?";
+  if (error instanceof ApiError) {
+    const custom = byStatus[error.status];
+    if (custom !== undefined) return custom;
+    if (error.status === 401) return "Your session ended. Sign in again.";
+    if (error.status === 429) {
+      return error.retryAfterSeconds === null
+        ? "Too many requests. Try again shortly."
+        : `Too many requests. Try again in ${error.retryAfterSeconds} s.`;
+    }
+    if (error.status >= 500) return "The server had a problem. Try again.";
+    return error.message;
+  }
+  return "Something went wrong.";
+}
+
 /** Builds the error for a non-2xx response; `body` is whatever the response parsed to. */
 export function apiErrorFrom(response: Response, body: unknown): ApiError {
   const retryAfter = parseRetryAfter(response.headers.get("retry-after"));

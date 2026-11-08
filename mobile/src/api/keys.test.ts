@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { isValidIdempotencyKey, newIdempotencyKey } from "./keys";
+import { isValidIdempotencyKey, keyedByValue, newIdempotencyKey } from "./keys";
 
 // jest-expo's mock of expo-crypto returns one constant, so uniqueness cannot be seen through it.
 // Node's randomUUID stands in; what these tests cover is our wrapper and the api's key rule.
@@ -28,5 +28,17 @@ describe("idempotency keys", () => {
     expect(isValidIdempotencyKey("tab\t")).toBe(false);
     expect(isValidIdempotencyKey("naïve")).toBe(false);
     expect(isValidIdempotencyKey("~!")).toBe(true);
+  });
+});
+
+describe("keyedByValue", () => {
+  it("gives the same key for the same value and a new one for a different value", () => {
+    let n = 0;
+    const keyFor = keyedByValue(() => `key-${++n}`);
+    expect(keyFor("AAAA")).toBe("key-1");
+    expect(keyFor("AAAA")).toBe("key-1"); // a retry of the same request
+    expect(keyFor("BBBB")).toBe("key-2");
+    expect(keyFor("BBBB")).toBe("key-2");
+    expect(keyFor("AAAA")).toBe("key-3"); // back to an earlier value: a new action
   });
 });

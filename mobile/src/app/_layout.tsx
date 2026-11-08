@@ -24,12 +24,13 @@ export default function RootLayout() {
   return (
     <>
       <StatusBar style="auto" />
-      <Stack>
+      <Stack screenOptions={{ headerShown: false }}>
         <Stack.Protected guard={!signedIn}>
-          <Stack.Screen name="login" options={{ title: "Sign in" }} />
+          <Stack.Screen name="login" options={{ headerShown: true, title: "Sign in" }} />
         </Stack.Protected>
+        {/* Every signed-in screen lives under (app), so a new one is guarded without listing it. */}
         <Stack.Protected guard={signedIn} redirectTo="/login">
-          <Stack.Screen name="index" options={{ title: "Fifty Fifty" }} />
+          <Stack.Screen name="(app)" />
         </Stack.Protected>
       </Stack>
     </>
