@@ -56,10 +56,6 @@ import (
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
 )
 
-// maxOCRChars mirrors the worker's default cap on the text sent to the model
-// (receiptparse.Config.MaxOCRChars, 6000).
-const maxOCRChars = 6000
-
 type variant struct {
 	Name   string
 	OCR    bool
@@ -376,9 +372,9 @@ func evaluate(ctx context.Context, p evalParams, ex receiptparse.Extractor, read
 							continue
 						}
 					}
-					// What the worker does before the model sees the text (receiptparse.work).
-					redacted, counts := receipts.Redact(text)
-					redacted = strings.TrimSpace(truncateRunes(redacted, maxOCRChars))
+					// The worker's own function: redact, cut, trim (receiptparse.PrepareText, the
+					// default cap).
+					redacted, counts := receiptparse.PrepareText(text, 0)
 					t.rec.Redactions, t.rec.OCRChars = counts, utf8.RuneCountInString(redacted)
 					t.text, t.skipped = redacted, redacted == ""
 					vt[i] = t
@@ -446,16 +442,9 @@ func evaluate(ctx context.Context, p evalParams, ex receiptparse.Extractor, read
 	return recs, ctx.Err()
 }
 
-func truncateRunes(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n])
-}
-
 // extractWithRetry asks the extractor, retrying what is worth retrying: a 429, a 5xx, a
-// transport failure, an unreadable 200. A 4xx other than 429 (a bad request, a bad key)
-// is final, because repeating it only repeats the spend. It returns the number of
+// transport failure, an unreadable 200. A permanent refusal (anthropic.APIError.Permanent: a
+// bad request, a bad key) is final, because repeating it only repeats the spend. It returns the number of
 // attempts made and the duration of the answered one.
 func extractWithRetry(ctx context.Context, ex receiptparse.Extractor, text string, maxAttempts int, wait func(context.Context, time.Duration)) (receiptparse.Extraction, int, time.Duration, error) {
 	var last error

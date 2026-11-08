@@ -106,10 +106,29 @@ type Extraction struct {
 	OutputTokens int
 }
 
+// DefaultMaxOCRChars is the default cap on the text sent to the extractor.
+const DefaultMaxOCRChars = 6000
+
+// PrepareText is what the model is sent for a receipt's OCR text, and the one place that
+// decides it: card numbers, email addresses and phone numbers are redacted first, then the
+// result is cut to maxChars characters (on a character boundary; 0 or less means
+// DefaultMaxOCRChars) and trimmed. The order matters: redaction runs on the whole text,
+// so a number that straddles the cut is removed, not half sent. The counts are what was
+// redacted. The worker and the accuracy harness both call this, so the harness measures
+// the worker's path by construction.
+func PrepareText(ocrText string, maxChars int) (string, receipts.Redactions) {
+	if maxChars <= 0 {
+		maxChars = DefaultMaxOCRChars
+	}
+	redacted, counts := receipts.Redact(ocrText)
+	return strings.TrimSpace(truncateRunes(redacted, maxChars)), counts
+}
+
 // Config tunes the handler. Zero values take the defaults noted.
 type Config struct {
 	// MaxOCRChars bounds the text sent to the extractor (in characters). Receipts are a
-	// few hundred; the cap bounds the cost of a hostile image full of text. Default 6000.
+	// few hundred; the cap bounds the cost of a hostile image full of text. Default
+	// DefaultMaxOCRChars (6000).
 	MaxOCRChars int
 	// OCRTimeout and ExtractTimeout bound one call each. Defaults 30 s and 60 s. Placeholders.
 	OCRTimeout     time.Duration
@@ -118,7 +137,7 @@ type Config struct {
 
 func (c *Config) setDefaults() {
 	if c.MaxOCRChars == 0 {
-		c.MaxOCRChars = 6000
+		c.MaxOCRChars = DefaultMaxOCRChars
 	}
 	if c.OCRTimeout == 0 {
 		c.OCRTimeout = 30 * time.Second
@@ -211,8 +230,7 @@ func work(ctx context.Context, store objstore.Store, ocr OCR, ex Extractor, cfg 
 	if err != nil {
 		return result{}, &attemptError{ReasonOCRFailed, fmt.Errorf("ocr: %w", err)}
 	}
-	redacted, counts := receipts.Redact(text)
-	redacted = strings.TrimSpace(truncateRunes(redacted, cfg.MaxOCRChars))
+	redacted, counts := PrepareText(text, cfg.MaxOCRChars)
 	chars := utf8.RuneCountInString(redacted)
 	base := result{ocrChars: &chars, redactions: &counts, source: "worker"}
 	if redacted == "" {
