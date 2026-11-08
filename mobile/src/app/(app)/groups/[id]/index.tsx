@@ -1,10 +1,12 @@
-import { Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Button, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Button, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { unwrap } from "../../../../api/client";
 import { describeError } from "../../../../api/errors";
 import { api } from "../../../../api/instance";
+import { statusLabel } from "../../../../api/expenses";
+import { formatMoney } from "../../../../api/money";
 import { balanceSentence, transferSentence } from "../../../../api/sentences";
 import type { CreatedJoinCode } from "../../../../api/types";
 import { useLoad } from "../../../../hooks/useLoad";
@@ -16,12 +18,13 @@ export default function GroupScreen() {
     const path = { params: { path: { id } } };
     // one request each; balances and members come from different statements, so a member who
     // joined between the two is simply missing from one list until the next refresh
-    const [group, balances, me] = await Promise.all([
+    const [group, balances, expenses, me] = await Promise.all([
       unwrap(api.GET("/v1/groups/{id}", path)),
       unwrap(api.GET("/v1/groups/{id}/balances", path)),
+      unwrap(api.GET("/v1/groups/{id}/expenses", path)),
       unwrap(api.GET("/v1/me")),
     ]);
-    return { group, balances, me };
+    return { group, balances, expenses: expenses.expenses, me };
   });
 
   useFocusEffect(
@@ -32,7 +35,7 @@ export default function GroupScreen() {
 
   return (
     <LoadGate load={state} onRetry={reload}>
-      {({ group, balances, me }, refreshing) => {
+      {({ group, balances, expenses, me }, refreshing) => {
         const names = new Map(balances.balances.map((b) => [b.member_id, b.display_name]));
         const roles = new Map(group.members.map((m) => [m.user_id, m.role]));
         const who = (memberId: string) => ({ name: names.get(memberId) ?? "Someone", isMe: memberId === me.id });
@@ -57,6 +60,28 @@ export default function GroupScreen() {
                 <Text>{balanceSentence(b.display_name, b.member_id === me.id, b.balance_minor, balances.currency)}</Text>
               </View>
             ))}
+
+            <Text style={styles.heading}>Expenses</Text>
+            {expenses.length === 0 ? (
+              <Text style={styles.meta}>No expenses yet.</Text>
+            ) : (
+              expenses.map((e) => (
+                <Pressable
+                  key={e.id}
+                  style={styles.row}
+                  onPress={() =>
+                    router.push({ pathname: "/groups/[id]/expenses/[expenseId]", params: { id: group.id, expenseId: e.id } })
+                  }
+                >
+                  <Text style={styles.name}>
+                    {e.description} · {formatMoney(e.total_minor, e.currency)}
+                  </Text>
+                  <Text style={styles.meta}>
+                    {statusLabel(e.status)} · paid by {who(e.payer_id).isMe ? "you" : who(e.payer_id).name}
+                  </Text>
+                </Pressable>
+              ))
+            )}
 
             <Text style={styles.heading}>Suggested transfers</Text>
             {balances.suggested_transfers.length === 0 ? (

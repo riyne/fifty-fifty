@@ -7,4 +7,8 @@ export type Group = components["schemas"]["Group"];
 export type Balances = components["schemas"]["Balances"];
 export type CreatedJoinCode = components["schemas"]["CreatedJoinCode"];
 export type GroupDetail = paths["/v1/groups/{id}"]["get"]["responses"]["200"]["content"]["application/json"];
+export type Expense = components["schemas"]["Expense"];
+export type ExpenseSummary = components["schemas"]["ExpenseSummary"];
+export type ExpenseItem = components["schemas"]["ExpenseItem"];
+export type ExpenseStatus = Expense["status"];
 export type { Currency } from "./money";

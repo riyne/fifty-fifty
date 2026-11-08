@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { isValidIdempotencyKey, keyedByValue, newIdempotencyKey } from "./keys";
+import { createActionKeys, isValidIdempotencyKey, keyedByValue, newIdempotencyKey } from "./keys";
 
 // jest-expo's mock of expo-crypto returns one constant, so uniqueness cannot be seen through it.
 // Node's randomUUID stands in; what these tests cover is our wrapper and the api's key rule.
@@ -40,5 +40,23 @@ describe("keyedByValue", () => {
     expect(keyFor("BBBB")).toBe("key-2");
     expect(keyFor("BBBB")).toBe("key-2");
     expect(keyFor("AAAA")).toBe("key-3"); // back to an earlier value: a new action
+  });
+});
+
+describe("createActionKeys", () => {
+  it("keeps the key while the same request is retried and changes it when the request changes", () => {
+    let n = 0;
+    const keys = createActionKeys(() => `key-${++n}`);
+    expect(keys.keyFor("{}")).toBe("key-1");
+    expect(keys.keyFor("{}")).toBe("key-1"); // no answer came back: a retry
+    expect(keys.keyFor('{"split":["a"]}')).toBe("key-2"); // the request changed
+  });
+
+  it("gives the next tap a new key once the api has answered, even for the same request", () => {
+    let n = 0;
+    const keys = createActionKeys(() => `key-${++n}`);
+    expect(keys.keyFor("{}")).toBe("key-1");
+    keys.answered(); // for example 409 items_unclaimed: the api stores and replays that answer
+    expect(keys.keyFor("{}")).toBe("key-2");
   });
 });
