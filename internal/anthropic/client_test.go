@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -73,6 +74,28 @@ func message(text string) string {
 
 const answer = `{"items":[{"description":"Pad Thai","line_total_minor":1250}],"total_minor":1250}`
 
+// The first call to the real API failed with HTTP 400 because the client sent
+// temperature 0, which Claude Haiku 5.5 refuses (any value but its default). The mock never
+// objected. Nothing that sets sampling may be in the request: exactly these keys go out.
+func TestExtract_SendsNoSamplingParameters(t *testing.T) {
+	srv := serve(t, 200, nil, message(answer))
+	if _, err := newClient(t, srv.URL).Extract(ctx, "Pad Thai 12.50"); err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(srv.body, &body); err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for k := range body {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	if got := strings.Join(keys, ","); got != "max_tokens,messages,model,system" {
+		t.Errorf("request keys = %s; want exactly max_tokens,messages,model,system (no temperature, top_p or top_k)", got)
+	}
+}
+
 func TestExtract_SendsTheRequestTheAPIExpects(t *testing.T) {
 	srv := serve(t, 200, nil, message(answer))
 	c := newClient(t, srv.URL)
@@ -89,16 +112,15 @@ func TestExtract_SendsTheRequestTheAPIExpects(t *testing.T) {
 		}
 	}
 	var req struct {
-		Model       string  `json:"model"`
-		MaxTokens   int     `json:"max_tokens"`
-		Temperature float64 `json:"temperature"`
-		System      string  `json:"system"`
-		Messages    []struct{ Role, Content string }
+		Model     string `json:"model"`
+		MaxTokens int    `json:"max_tokens"`
+		System    string `json:"system"`
+		Messages  []struct{ Role, Content string }
 	}
 	if err := json.Unmarshal(srv.body, &req); err != nil {
 		t.Fatal(err)
 	}
-	if req.Model != "claude-haiku-5-5" || req.MaxTokens != 4096 || req.Temperature != 0 || len(req.Messages) != 1 || req.Messages[0].Role != "user" {
+	if req.Model != "claude-haiku-5-5" || req.MaxTokens != 4096 || len(req.Messages) != 1 || req.Messages[0].Role != "user" {
 		t.Errorf("request %+v", req)
 	}
 	if req.Messages[0].Content != "<receipt>\nPad Thai 12.50\nTOTAL 12.50\n</receipt>" {

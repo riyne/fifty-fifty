@@ -147,7 +147,7 @@ func (e *APIError) RetryAfter() time.Duration { return e.After }
 // Extract sends the receipt text and returns the model's answer.
 func (c *Client) Extract(ctx context.Context, text string) (receiptparse.Extraction, error) {
 	body, err := json.Marshal(request{
-		Model: c.model, MaxTokens: c.maxTokens, Temperature: 0, System: systemPrompt,
+		Model: c.model, MaxTokens: c.maxTokens, System: systemPrompt,
 		Messages: []message{{Role: "user", Content: userContent(text)}},
 	})
 	if err != nil {
@@ -196,12 +196,15 @@ func (c *Client) Extract(ctx context.Context, text string) (receiptparse.Extract
 	}, nil
 }
 
+// request deliberately has no sampling fields (temperature, top_p, top_k). The first call
+// to the real API (M9.3) was refused with HTTP 400 because this client sent temperature 0:
+// Claude Haiku 5.5 accepts only its default there, and newer API versions refuse the fields
+// outright. The mock LLM never checked. TestExtract_SendsNoSamplingParameters keeps them out.
 type request struct {
-	Model       string    `json:"model"`
-	MaxTokens   int       `json:"max_tokens"`
-	Temperature float64   `json:"temperature"`
-	System      string    `json:"system"`
-	Messages    []message `json:"messages"`
+	Model     string    `json:"model"`
+	MaxTokens int       `json:"max_tokens"`
+	System    string    `json:"system"`
+	Messages  []message `json:"messages"`
 }
 
 type message struct {

@@ -114,7 +114,7 @@ Every number quoted anywhere comes from a run recorded here, with its environmen
 **What it does not show (also printed in every result).**
 - Synthetic receipts, prompt and harness by one author, in one clean layout: not real receipts, not photographs, not other languages. Anything quoted must say so.
 - 50 receipts per variant is few: intervals are wide, and the variants reuse the same receipts, so they are not independent samples.
-- One run of one model at temperature 0; the service may change the model behind a name (the reported model string is in every record).
+- One run of one model with its default sampling (no `temperature` is sent: Claude Haiku 5.5 refuses any other value, which the first call to the real API found); a repeat can answer differently, and the service may change the model behind a name (the reported model string is in every record).
 - A wrong parse that adds up is not caught by the flag; the silent-error count is exactly that.
 - **Prompt injection is not tested.** No receipt contains instructions aimed at the model; the evaluation supports no claim of resistance to it.
 - Cost is not computed (no price is stored in the repository); token counts are, and are to be multiplied by the current price list.

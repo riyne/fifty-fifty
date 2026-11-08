@@ -514,7 +514,7 @@ func captureEnv(c *anthropic.Client, tess string) env {
 		Tesseract: tess, LoadAvg: sh("uptime"), Commit: sh("git", "rev-parse", "HEAD"),
 		Dirty:   sh("git", "status", "--porcelain", "--", ".", ":(exclude)bench/results") != "",
 		BaseURL: c.BaseURL(), Model: c.Model(), MaxTokens: anthropic.DefaultMaxTokens,
-		Note: "temperature 0 and the system prompt are fixed in internal/anthropic/client.go at the recorded commit; the model field in each record is what the service reported",
+		Note: "the system prompt is fixed in internal/anthropic/client.go at the recorded commit; no sampling parameter is sent (the model's defaults apply); the model field in each record is what the service reported",
 	}
 }
 
@@ -522,7 +522,7 @@ func statements() []string {
 	return []string{
 		"Synthetic data only. The receipts (internal/receipts/synth), the prompt (internal/anthropic) and this harness were written by one author, in one clean layout (a monospace font, item lines with a price at the right, tax, tip and total lines). A model reading real receipts, photographs, other languages or other layouts would do differently, probably worse. Nothing here is a statement about real-world accuracy.",
 		"Sample size: the receipts per variant are few, so every rate carries a wide 95% Wilson interval, which is printed. Differences between variants smaller than the intervals say nothing. The same receipts are used in every variant, so the variants are not independent samples.",
-		"One run of one model at temperature 0. That is not a guarantee of identical answers on a repeat, and the service may change the model behind a name; the model string the service reported is in every record.",
+		"One run of one model with its default sampling (no temperature is sent: Claude Haiku 5.5 refuses any other value). A repeat can give different answers, and the service may change the model behind a name; the model string the service reported is in every record.",
 		"'Correct' means the prices of the claimable units equal the receipt's, as a multiset, and tax and tip are equal (amounts_exact). A misread description does not make a parse wrong in this sense; 'exact' also requires the descriptions and the printed total. A parse that is wrong and accepted (status claiming) is a silent error. The review flag is the arithmetic check items + tax + tip = printed total, nothing else.",
 		"A wrong parse that adds up (a model that misreads a price and the total together, or misreads consistently) is not caught by the flag. The count of such parses is the silent-error figure.",
 		"Prompt injection is NOT tested: no receipt here contains instructions aimed at the model. Nothing in this evaluation supports a claim of resistance to it.",
