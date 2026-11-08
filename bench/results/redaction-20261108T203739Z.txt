@@ -1,0 +1,100 @@
+Redaction recall benchmark (synthetic receipts; regex redaction of card numbers, phone numbers and email addresses)
+started 2026-11-08T20:37:39Z, commit da9d045f77379c7681020cac5fa8ea5d4fb25c95 (working tree dirty: false), ran 245 s
+machine: Apple M3 Pro, 11 CPUs, 19327352832 bytes RAM, Darwin 25.6.0 arm64, go1.27.3
+tesseract 5.5.4, page segmentation mode 6; load average at start: 13:37  up 81 days,  9:41, 1 user, load averages: 7.17 7.25 5.87
+database: not used (this benchmark touches no database)
+receipts 1001..2000 per variant (the same receipts in every variant); 4 Tesseract processes in parallel (timing is not measured)
+leak rule: 6+ consecutive digits of a card or phone number, or 5+ consecutive characters of an email's local part, still readable after redaction, judged on the OCR line aligned with the line it was printed on (4+ digits or characters must be found there, else the value is counted as lost by OCR)
+
+== ground-truth-text: the ground-truth text of the receipt, as a perfect reader would produce it
+   receipts scored 1000, OCR failures 0
+   kind      planted  leaked   recall  95% interval (Wilson)   read as is leaked: intact leaked: garbled lost(OCR) placeholders
+   card          501       0  100.00%  [ 99.24%, 100.00%]             501              0              0         0          501
+   email         391       0  100.00%  [ 99.03%, 100.00%]             391              0              0         0          391
+   phone         954       0  100.00%  [ 99.60%, 100.00%]             954              0              0         0          954
+   all          1846       0  100.00%  [ 99.79%, 100.00%]            1846              0              0         0         1846
+
+== ocr-clean: the receipt rendered as an image (skew 0.0 degrees, Gaussian pixel noise sigma 0 gray levels), read by Tesseract
+   receipts scored 1000, OCR failures 0
+   kind      planted  leaked   recall  95% interval (Wilson)   read as is leaked: intact leaked: garbled lost(OCR) placeholders
+   card          501       1   99.80%  [ 98.88%,  99.96%]             498              0              1         0          500
+   email         391      32   91.82%  [ 88.67%,  94.14%]             108              0             32         0          386
+   phone         954      19   98.01%  [ 96.91%,  98.72%]             933              0             19         0          935
+   all          1846      52   97.18%  [ 96.32%,  97.85%]            1539              0             52         0         1821
+   first leaked values (synthetic):
+     ref 1004 email "jane.doe63@example.org" (read exactly by OCR: false) -> "jane. [EMAIL]"
+     ref 1062 email "alex.k40@example.org" (read exactly by OCR: false) -> "alex. [EMAIL]"
+     ref 1081 phone "+1 778 555 0180" (read exactly by OCR: false) -> "Customer +1 778 555 Q180"
+     ref 1083 email "chris.o49@example.com" (read exactly by OCR: false) -> "chris [EMAIL]"
+     ref 1083 phone "+1 778 555 0130" (read exactly by OCR: false) -> "Customer +1 778 555 Q130"
+     ref 1121 phone "+1 212 555 0126" (read exactly by OCR: false) -> "Customer +1 212 555 Q126"
+     ref 1137 email "alex.k93@example.org" (read exactly by OCR: false) -> "alex. [EMAIL]"
+     ref 1177 email "alex.k33@example.org" (read exactly by OCR: false) -> "alex. [EMAIL]"
+     ref 1193 phone "+1 778 555 0192" (read exactly by OCR: false) -> "Customer +1 778 555 Q192"
+     ref 1205 email "alex.k68@example.com" (read exactly by OCR: false) -> "alex. [EMAIL]"
+
+== ocr-mild: the receipt rendered as an image (skew 1.5 degrees, Gaussian pixel noise sigma 10 gray levels), read by Tesseract
+   receipts scored 1000, OCR failures 0
+   kind      planted  leaked   recall  95% interval (Wilson)   read as is leaked: intact leaked: garbled lost(OCR) placeholders
+   card          501       5   99.00%  [ 97.69%,  99.57%]             479              0              5         0          496
+   email         391      46   88.24%  [ 84.66%,  91.06%]             264              0             46         0          364
+   phone         954      21   97.80%  [ 96.66%,  98.56%]             887              0             21         3          930
+   all          1846      72   96.10%  [ 95.12%,  96.89%]            1630              0             72         3         1790
+   first leaked values (synthetic):
+     ref 1003 email "jane.doe30@example.org" (read exactly by OCR: false) -> "jane. doe3@@example.org"
+     ref 1014 email "sam_lee90@example.org" (read exactly by OCR: false) -> "sam_Lee90@@example. org"
+     ref 1020 phone "+1 778 555 0185" (read exactly by OCR: false) -> "Tel +1 778 555 @185"
+     ref 1035 email "chris.o83@example.org" (read exactly by OCR: false) -> "chris [EMAIL]"
+     ref 1042 email "chris.o30@example.org" (read exactly by OCR: false) -> "chris [EMAIL]"
+     ref 1056 email "chris.o96@example.org" (read exactly by OCR: false) -> "chris [EMAIL]"
+     ref 1062 email "alex.k40@example.org" (read exactly by OCR: false) -> "alex.k40@@example.org"
+     ref 1066 email "jane.doe40@example.com" (read exactly by OCR: false) -> "jane .doe4@@example.com"
+     ref 1091 email "alex.k55@example.com" (read exactly by OCR: false) -> "alex. [EMAIL]"
+     ref 1134 phone "+1 778 555 0187" (read exactly by OCR: false) -> "Tel +1 778 555 Q187"
+
+== ocr-moderate: the receipt rendered as an image (skew 3.0 degrees, Gaussian pixel noise sigma 25 gray levels), read by Tesseract
+   receipts scored 1000, OCR failures 0
+   kind      planted  leaked   recall  95% interval (Wilson)   read as is leaked: intact leaked: garbled lost(OCR) placeholders
+   card          501      16   96.81%  [ 94.88%,  98.02%]             377              0             16         0          485
+   email         391      94   75.96%  [ 71.48%,  79.93%]             227              0             94         0          343
+   phone         954      60   93.71%  [ 91.99%,  95.08%]             759              0             60         4          890
+   all          1846     170   90.79%  [ 89.39%,  92.03%]            1363              0            170         4         1718
+   first leaked values (synthetic):
+     ref 1003 phone "+1 778 555 0181" (read exactly by OCR: false) -> "Tel +1 778 555 @181"
+     ref 1004 email "jane.doe63@example.org" (read exactly by OCR: false) -> "Jane. [EMAIL]"
+     ref 1014 phone "+1 415 555 0160" (read exactly by OCR: false) -> "Tel +1 415 555 @160"
+     ref 1014 email "sam_lee90@example.org" (read exactly by OCR: false) -> "Sam_lee90@example. org"
+     ref 1024 email "jane.doe82@example.com" (read exactly by OCR: false) -> "jane. [EMAIL]"
+     ref 1039 phone "+1 250 555 0144" (read exactly by OCR: false) -> "Tel +1 250 555 @144"
+     ref 1043 email "jane.doe13@example.com" (read exactly by OCR: false) -> "jane. [EMAIL]"
+     ref 1056 email "chris.o96@example.org" (read exactly by OCR: false) -> "chris [EMAIL]"
+     ref 1062 email "alex.k40@example.org" (read exactly by OCR: false) -> "alex.k4@@example.org"
+     ref 1064 email "jane.doe21@example.com" (read exactly by OCR: false) -> "jane. [EMAIL]"
+
+== ocr-harsh: the receipt rendered as an image (skew 5.0 degrees, Gaussian pixel noise sigma 40 gray levels), read by Tesseract
+   receipts scored 1000, OCR failures 0
+   kind      planted  leaked   recall  95% interval (Wilson)   read as is leaked: intact leaked: garbled lost(OCR) placeholders
+   card          501      87   82.63%  [ 79.07%,  85.70%]             186              0             87         0          410
+   email         391     326   16.62%  [ 13.26%,  20.64%]               7              0            326        14           56
+   phone         954      71   92.56%  [ 90.72%,  94.06%]             365              0             71         8          869
+   all          1846     484   73.78%  [ 71.73%,  75.74%]             558              0            484        22         1335
+   first leaked values (synthetic):
+     ref 1002 card "4837 6414 7895 3159" (read exactly by OCR: false) -> "CARD 4837 6414 7g95 3159"
+     ref 1003 email "jane.doe30@example.org" (read exactly by OCR: false) -> "Jane. doe30¢example, ong"
+     ref 1004 email "jane.doe63@example.org" (read exactly by OCR: false) -> "Jane. doe63¢example, org : :"
+     ref 1005 email "sam_lee96@example.com" (read exactly by OCR: false) -> "Sam_Lee96@example. com ; : ey :"
+     ref 1006 email "sam_lee48@example.org" (read exactly by OCR: false) -> "“am_lee48@example. org : :"
+     ref 1013 card "4583-8312-9053-5516" (read exactly by OCR: false) -> "CARD 4583-8313-9953. 5516. :"
+     ref 1014 email "sam_lee90@example.org" (read exactly by OCR: false) -> "“am_lee9@@example.org"
+     ref 1015 phone "778-555-0161" (read exactly by OCR: false) -> "Tel 778-555-916,"
+     ref 1015 email "r.singh34@example.com" (read exactly by OCR: false) -> "F-Singh34@example, com : :"
+     ref 1018 email "chris.o51@example.com" (read exactly by OCR: false) -> "Chris.051@example..com"
+
+What this does and does not say:
+ - Synthetic data only: receipts, planted card numbers, phone numbers and email addresses are generated by internal/receipts/synth, by the same author as the patterns being measured.
+ - A planted value 'leaks' under the rule stated in leak_rule_*: at least digit_run consecutive digits of a card or phone number, or email_run consecutive characters of an email's local part, still readable in the redacted line of the OCR text that is aligned with the line the value was printed on. Weaker than 'no trace': an email's domain, shorter digit runs and anything around the values are not counted. A value of which fewer than 4 digits or characters survive OCR anywhere is reported as lost by OCR, and counts as not leaked.
+ - The synthetic phone numbers are all in the fictional 555-01xx block, so numbers on one receipt share digits; that is why a value is judged against the line it was printed on, found by aligning the OCR lines with the ground-truth lines, and not against the whole text.
+ - Go Mono, the font the receipts are drawn in, has a slashed zero, which Tesseract often reads as @, Q or G. That makes digits harder to read than in a typical receipt font and is a property of this synthetic data, not of receipts in general.
+ - Names and street addresses are not redacted by design and are not part of the planted values, so recall says nothing about them.
+ - The formats planted are the ones the patterns were written and tested against (6 phone layouts, 4 card layouts, plain email addresses). Spelled-out forms, digits as words and other layouts are known gaps pinned in internal/receipts/redact_test.go and are not in this sample.
+ - OCR runs on rendered text in one monospace font, upright or with small skew and Gaussian noise, which is far easier than a photograph. The OCR variants say what Tesseract does to this synthetic noise, not to real photos.
