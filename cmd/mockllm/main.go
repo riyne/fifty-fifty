@@ -1,5 +1,5 @@
 // Command mockllm is a mock of the Anthropic Messages API with simulated latency and
-// injected faults, for benchmarks and tests. See internal/mockllm for what it does and
+// injected faults, for benchmarks and tests. See internal/harness/mockllm for what it does and
 // does not simulate. It has no authentication and ignores API keys: bind it to
 // loopback or a private network only.
 //
@@ -25,7 +25,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/mockllm"
+	"github.com/riyne/fifty-fifty/internal/harness/mockllm"
 )
 
 const usage = `usage: mockllm [flags]

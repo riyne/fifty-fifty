@@ -13,7 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/riyne/fifty-fifty/internal/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/mockpay"
 	"github.com/riyne/fifty-fifty/internal/payclient"
 	"github.com/riyne/fifty-fifty/internal/queue"
 	"github.com/riyne/fifty-fifty/internal/settlements"

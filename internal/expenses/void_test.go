@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/riyne/fifty-fifty/internal/db"
-	"github.com/riyne/fifty-fifty/internal/teststack"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 )
 
 func voidURL(group, expense string) string {

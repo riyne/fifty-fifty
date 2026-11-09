@@ -14,9 +14,9 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/dbscope"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/httpx"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
 // The helpers below seed and inspect as the owner, which sees every row whatever

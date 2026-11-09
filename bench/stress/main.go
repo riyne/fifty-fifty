@@ -35,9 +35,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
-	"github.com/riyne/fifty-fifty/internal/settlerig"
-	"github.com/riyne/fifty-fifty/internal/stressrig"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/stressrig"
 )
 
 const webhookSecret = "whsec_stress"

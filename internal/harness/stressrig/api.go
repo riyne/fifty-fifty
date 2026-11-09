@@ -15,9 +15,9 @@ import (
 	"github.com/riyne/fifty-fifty/internal/auth/authtest"
 	"github.com/riyne/fifty-fifty/internal/balances"
 	"github.com/riyne/fifty-fifty/internal/db"
-	"github.com/riyne/fifty-fifty/internal/dbrole"
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
 	"github.com/riyne/fifty-fifty/internal/objstore"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
@@ -30,7 +30,7 @@ const ClientID = "stress-client"
 
 // API is the real api (the same middleware, verifier, handlers and queries as
 // cmd/api) served in this process, with tokens minted by an in-process issuer that the
-// unmodified verifier checks. It is the same arrangement as internal/teststack but does
+// unmodified verifier checks. It is the same arrangement as internal/harness/teststack but does
 // not need a *testing.T, so a benchmark program can use it. Nothing bypasses
 // authentication. It is not cmd/api's wiring: if a handler is added there it must be
 // added here (the BOLA suite and teststack have the same obligation).

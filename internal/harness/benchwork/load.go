@@ -11,8 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/riyne/fifty-fifty/internal/dbrole"
-	"github.com/riyne/fifty-fifty/internal/mockllm"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
+	"github.com/riyne/fifty-fifty/internal/harness/mockllm"
 )
 
 // LoadParams describes one throughput, latency or retry run: W real worker

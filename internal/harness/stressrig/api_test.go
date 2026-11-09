@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riyne/fifty-fifty/internal/stressrig"
-	"github.com/riyne/fifty-fifty/internal/testutil"
+	"github.com/riyne/fifty-fifty/internal/harness/stressrig"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 )
 
 // TestStartAPI shows the api can be started and given real tokens without a

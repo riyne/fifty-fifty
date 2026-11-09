@@ -32,8 +32,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
-	"github.com/riyne/fifty-fifty/internal/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
 )
 
 const webhookSecret = "whsec_bench"

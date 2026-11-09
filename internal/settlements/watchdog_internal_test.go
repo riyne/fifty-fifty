@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/queue"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
 // The window the re-check closes, forced: this sweep has listed (and locked) a stuck

@@ -14,9 +14,9 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/dbscope"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
 	"github.com/riyne/fifty-fifty/internal/queue"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
 var ctx = context.Background()

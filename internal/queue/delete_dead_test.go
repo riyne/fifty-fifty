@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/queue"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
 // makeDead enqueues a one-attempt job of kind, claims it and fails it: dead, died just now.

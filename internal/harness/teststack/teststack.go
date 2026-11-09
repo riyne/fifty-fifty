@@ -23,15 +23,15 @@ import (
 	"github.com/riyne/fifty-fifty/internal/auth/authtest"
 	"github.com/riyne/fifty-fifty/internal/balances"
 	"github.com/riyne/fifty-fifty/internal/db"
-	"github.com/riyne/fifty-fifty/internal/dbrole"
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
 	"github.com/riyne/fifty-fifty/internal/objstore"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
 	"github.com/riyne/fifty-fifty/internal/receiptapi"
 	"github.com/riyne/fifty-fifty/internal/settlements"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
 // ClientID is the audience the stack's verifier requires.

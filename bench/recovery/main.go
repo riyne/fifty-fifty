@@ -1,7 +1,7 @@
 // Command recovery runs the crash-recovery benchmark:
 // kill -9 a worker process mid-job, R times per lease setting, and record how long
 // the orphaned jobs take to finish and whether any job was lost or had its effect
-// written twice. The workload is internal/benchwork's mock.extract against the mock
+// written twice. The workload is internal/harness/benchwork's mock.extract against the mock
 // LLM; every result says "mock LLM with simulated latency of X ms".
 //
 //	go run ./bench/recovery --trials 20 --lease 3s,10s --out bench/results
@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
-	"github.com/riyne/fifty-fifty/internal/mockllm"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/mockllm"
 )
 
 type params struct {

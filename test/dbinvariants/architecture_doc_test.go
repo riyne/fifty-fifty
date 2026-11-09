@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riyne/fifty-fifty/internal/testutil"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 )
 
 // docs/ARCHITECTURE.md describes the schema. This guard keeps it from drifting: every

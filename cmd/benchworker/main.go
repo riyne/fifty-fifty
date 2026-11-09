@@ -1,5 +1,5 @@
 // Command benchworker is a worker for the benchmark workload (the mock.extract job
-// kind of internal/benchwork) and nothing else. It exists for the recovery test and
+// kind of internal/harness/benchwork) and nothing else. It exists for the recovery test and
 // the benchmarks, which start several of these as separate processes and kill them.
 // The production worker (cmd/worker) does not register this kind.
 //
@@ -19,7 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
 	"github.com/riyne/fifty-fifty/internal/worker"
 )
 

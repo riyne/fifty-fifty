@@ -116,7 +116,7 @@ The api and the worker never talk to each other: they meet in Postgres, which is
 | settlement, with one function that moves its state | `internal/settlements` (`Resolve`) |
 | row-level security and the database roles | `internal/dbscope`, `migrations/00015` to `00017` |
 | the receipt pipeline and the untrusted model | `internal/receipts`, `internal/receiptparse`, `internal/anthropic` |
-| the stress test and the switched-off protections | `internal/stressrig`, `internal/controls`, `bench/stress` |
+| the stress test and the switched-off protections | `internal/harness/stressrig`, `internal/controls`, `bench/stress` |
 | tests that attack it | `test/bola`, `test/rls`, `test/dbinvariants`, `test/e2e` |
 | the benchmarks and their raw results | `bench/`, `bench/results/` |
 | the iOS app | `mobile/` |

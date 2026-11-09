@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riyne/fifty-fifty/internal/dbrole"
-	"github.com/riyne/fifty-fifty/internal/testutil"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 )
 
 // What each database role may do to each table, spelled out. A table that is not in

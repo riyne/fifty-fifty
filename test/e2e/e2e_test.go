@@ -27,10 +27,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/riyne/fifty-fifty/internal/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/settlements"
-	"github.com/riyne/fifty-fifty/internal/settlerig"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 const webhookSecret = "whsec_e2e"

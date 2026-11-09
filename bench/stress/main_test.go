@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
-	"github.com/riyne/fifty-fifty/internal/stressrig"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/stressrig"
 )
 
 // The summary is what a reader sees of a recording, so it must say what was disabled,

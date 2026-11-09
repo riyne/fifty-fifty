@@ -16,8 +16,8 @@ import (
 	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/dbscope"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/idempotency"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 // These tests need the unsafe_controls tag (go test -tags unsafe_controls

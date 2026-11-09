@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
-	"github.com/riyne/fifty-fifty/internal/rlsbench"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/rlsbench"
 )
 
 func main() {

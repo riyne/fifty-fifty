@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
 )
 
 func render(r report) string {

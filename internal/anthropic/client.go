@@ -1,5 +1,5 @@
 // Package anthropic is a small client for the Anthropic Messages API, written against
-// net/http (no SDK) so that the real service and internal/mockllm are reached by the
+// net/http (no SDK) so that the real service and internal/harness/mockllm are reached by the
 // same code. It does one thing: turn receipt text into the model's raw answer for
 // receiptparse (the Extractor interface).
 //

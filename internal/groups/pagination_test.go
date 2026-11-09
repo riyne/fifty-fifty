@@ -11,7 +11,7 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/httpx"
 
-	"github.com/riyne/fifty-fifty/internal/teststack"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 )
 
 func idsOf(pages []teststack.ListPage) []string {

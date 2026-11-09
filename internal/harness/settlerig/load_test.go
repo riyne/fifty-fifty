@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
 )
 
 func TestArrivals(t *testing.T) {

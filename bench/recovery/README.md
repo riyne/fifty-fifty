@@ -14,7 +14,7 @@ Enqueues 24 `mock.extract` jobs (a mock LLM call, then one effect row written in
 
 - Recovery time is kill-to-success on the database clock. It contains the orphan's remaining lease (heartbeats extend a lease every lease/3, so a long job has 2/3 to all of its lease left), then up to one poll interval for a survivor to notice, then the orphan's own run, plus any older queued jobs claimed first. Results are reported per orphan and per trial (until the last orphan finished).
 - So recovery is set by the lease. A shorter lease recovers faster at the cost of more heartbeats and a higher chance that a slow-but-alive worker loses a job (the fencing token makes that safe, not free).
-- The kill point is "during the model call". The "mid-completion-transaction" kill is a correctness test (`internal/benchwork/recovery_test.go`), not part of the timed benchmark.
+- The kill point is "during the model call". The "mid-completion-transaction" kill is a correctness test (`internal/harness/benchwork/recovery_test.go`), not part of the timed benchmark.
 - Trials where the victim happened to hold no job are counted and excluded from timings.
 
 ## Limits

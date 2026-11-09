@@ -13,13 +13,13 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/objstore"
 	"github.com/riyne/fifty-fifty/internal/queue"
 	"github.com/riyne/fifty-fifty/internal/receiptapi"
 	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
-	"github.com/riyne/fifty-fifty/internal/teststack"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 	"github.com/riyne/fifty-fifty/internal/worker"
 )
 

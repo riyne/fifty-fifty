@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/settlements"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 func TestAvailable(t *testing.T) {

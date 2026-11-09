@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/riyne/fifty-fifty/internal/anthropic"
-	"github.com/riyne/fifty-fifty/internal/mockllm"
+	"github.com/riyne/fifty-fifty/internal/harness/mockllm"
 	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
 	"github.com/riyne/fifty-fifty/internal/worker"

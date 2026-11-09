@@ -19,8 +19,8 @@ import (
 
 	"github.com/riyne/fifty-fifty/internal/allocator"
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/ledger"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 func finalizeURL(group, expense string) string {

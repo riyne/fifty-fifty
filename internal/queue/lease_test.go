@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/queue"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
 // effects stands in for what a real handler writes in its transaction. It uses

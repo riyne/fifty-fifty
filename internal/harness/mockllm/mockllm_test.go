@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/mockllm"
+	"github.com/riyne/fifty-fifty/internal/harness/mockllm"
 )
 
 const validBody = `{"model":"claude-test","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`

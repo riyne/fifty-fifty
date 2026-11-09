@@ -26,13 +26,13 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/riyne/fifty-fifty/internal/db"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/objstore"
 	"github.com/riyne/fifty-fifty/internal/receiptapi"
 	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/receipts"
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
-	"github.com/riyne/fifty-fifty/internal/settlerig"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 // ---- helpers ----

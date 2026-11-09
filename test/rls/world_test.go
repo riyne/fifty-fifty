@@ -20,10 +20,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/riyne/fifty-fifty/internal/dbrole"
 	"github.com/riyne/fifty-fifty/internal/dbscope"
-	"github.com/riyne/fifty-fifty/internal/settlerig"
-	"github.com/riyne/fifty-fifty/internal/testutil"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 )
 
 var ctx = context.Background()

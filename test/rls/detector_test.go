@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riyne/fifty-fifty/internal/dbrole"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
 )
 
 // A clean result is only worth something if the checker was shown to catch the fault. On a

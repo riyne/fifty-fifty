@@ -1,6 +1,6 @@
 // Command mockpay is a mock payment provider with idempotency keys, simulated latency,
 // injected faults and signed webhooks, for building and benchmarking settlement.
-// Settlement in this project is SIMULATED: nothing here moves money. See internal/mockpay
+// Settlement in this project is SIMULATED: nothing here moves money. See internal/harness/mockpay
 // for what it does and does not simulate. It has no authentication: bind it to loopback
 // or a private network only.
 //
@@ -25,7 +25,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/mockpay"
 )
 
 const usage = `usage: mockpay [flags]

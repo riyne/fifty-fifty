@@ -16,9 +16,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/riyne/fifty-fifty/internal/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
 	"github.com/riyne/fifty-fifty/internal/settlements"
-	"github.com/riyne/fifty-fifty/internal/settlerig"
 )
 
 // Params describes one stress run. Settlement is simulated: the provider is a mock.

@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/riyne/fifty-fifty/internal/anthropic"
-	"github.com/riyne/fifty-fifty/internal/mockllm"
+	"github.com/riyne/fifty-fifty/internal/harness/mockllm"
 	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/receipts"
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"

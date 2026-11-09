@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
-	"github.com/riyne/fifty-fifty/internal/mockllm"
-	"github.com/riyne/fifty-fifty/internal/testutil"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/mockllm"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 )
 
 func loadParams(t *testing.T) benchwork.LoadParams {

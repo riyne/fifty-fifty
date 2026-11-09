@@ -1,5 +1,5 @@
 // Package payclient talks to the payment provider (in this project, the mock in
-// internal/mockpay; settlement is simulated). It has its own wire types and imports
+// internal/harness/mockpay; settlement is simulated). It has its own wire types and imports
 // nothing from the mock, so the code that talks to the mock is the code that would
 // talk to a real provider.
 //

@@ -43,13 +43,14 @@ flowchart LR
 | **Dex** | Logs users in; its tokens are the only credential the api accepts | none | `deploy/dex/` |
 | **Tesseract** | Reads the text off a receipt image (run by the worker as a child process, image on stdin) | none | `internal/ocr` |
 | **mock LLM / Anthropic** | Turns redacted receipt text into JSON items. The mock answers from the synthetic receipts' ground truth; the real API is called only by the accuracy and injection evaluations and two smoke tests, never by the demo or the tests | none | `cmd/mockllm`, `internal/anthropic` |
-| **mock payment provider** | Pretends to move money, with injectable faults and signed webhooks | none | `cmd/mockpay`, `internal/mockpay` |
+| **mock payment provider** | Pretends to move money, with injectable faults and signed webhooks | none | `cmd/mockpay`, `internal/harness/mockpay` |
 
 Things to remember:
 - **The api and the worker never talk to each other.** They communicate only through Postgres: the api inserts a job in the same transaction as the row that needs it; the worker claims it later. That is what makes a crashed worker harmless.
 - **The worker kinds** are `receipt.parse`, `settlement.execute`, `settlement.reconcile`, and the periodic `settlement.watchdog`, `receipt.sweep`, `jobs.prune`, `idempotency.cleanup`.
 - **Docker runs only Postgres and Dex** (`deploy/docker-compose.yml`). The api, the worker and the mocks run on the host, and Tesseract is installed on the host. `make demo` starts all of it.
 - The mobile client talks only to the api and Dex. It is typed from `api/openapi.yaml`.
+- **`internal/harness/` is not product code.** It holds the support for tests, the demo and the benchmarks: the stress and settlement rigs (`stressrig`, `settlerig`), the benchmark workloads (`benchwork`, `rlsbench`), the test stack (`teststack`, `testutil`, `dbrole`) and the two mocks (`mockllm`, `mockpay`). Everything else under `internal/` is the product.
 
 ## 2. The database
 

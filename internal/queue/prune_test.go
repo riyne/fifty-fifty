@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/queue"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
 // finishedJob inserts a job already in a final state, finished `age` ago, which is

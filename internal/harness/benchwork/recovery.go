@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/riyne/fifty-fifty/internal/dbrole"
-	"github.com/riyne/fifty-fifty/internal/mockllm"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
+	"github.com/riyne/fifty-fifty/internal/harness/mockllm"
 )
 
 // KillPoint says when in a job's life the victim worker is killed.

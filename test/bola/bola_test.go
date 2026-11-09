@@ -32,8 +32,8 @@ import (
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 type actor string

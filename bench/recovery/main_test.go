@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
 )
 
 func TestSummarize(t *testing.T) {

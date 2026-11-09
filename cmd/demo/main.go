@@ -38,7 +38,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/riyne/fifty-fifty/internal/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
 )
 
 const (

@@ -15,10 +15,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/receiptapi"
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
-	"github.com/riyne/fifty-fifty/internal/settlerig"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 // TestReceiptParse_RealProcessesAndARealKill reads receipts end to end with real

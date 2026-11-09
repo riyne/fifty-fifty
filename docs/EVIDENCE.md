@@ -84,7 +84,7 @@ One of 3 workers (4 jobs in flight each) is killed with SIGKILL while its jobs w
 | 3 s | 79 | 2.51 / 3.76 / 4.49 / 5.51 s |
 | 10 s | 80 | 9.78 / 10.81 / 11.51 / 12.50 s |
 
-Recovery is set by the lease. Each orphan's model call ran again (at-least-once): 79 and 80 extra calls. The checks read Postgres, not the worker's logs. Evidence: `bench/results/recovery-20261030T234900Z` (commit 621138a), and a correctness version in `internal/benchwork/recovery_test.go`. Recorded with workers on the application role, not repeated.
+Recovery is set by the lease. Each orphan's model call ran again (at-least-once): 79 and 80 extra calls. The checks read Postgres, not the worker's logs. Evidence: `bench/results/recovery-20261030T234900Z` (commit 621138a), and a correctness version in `internal/harness/benchwork/recovery_test.go`. Recorded with workers on the application role, not repeated.
 
 **Not shown:** network partitions, a killed Postgres, several simultaneous kills, a real LLM. All trials kill at one point; the kill during the completion transaction is a correctness test only. 40 trials with zero anomalies is evidence, not a guarantee.
 

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/queue"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
 func periodicRows(t *testing.T, kind string) (n int) {

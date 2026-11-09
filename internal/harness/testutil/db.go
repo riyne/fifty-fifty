@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/riyne/fifty-fifty/internal/dbrole"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
 )
 
 // UniqueSubject returns an OIDC subject that no other test run has used.

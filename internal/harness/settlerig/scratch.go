@@ -20,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/riyne/fifty-fifty/internal/dbrole"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
 )
 
 // scratchPrefix marks the databases this package may drop. Drop refuses any other name.

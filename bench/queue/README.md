@@ -18,5 +18,5 @@ Real `benchworker` processes (4 jobs in flight each, 1 s poll, 30 s lease: the w
 - All times are the database clock.
 - The throughput scenarios run the handler lean (no bookkeeping writes beyond the effect row). The latency scenarios need bookkeeping rows for queue wait, so they run instrumented.
 - The `retry` scenario ignores the 429 `retry-after` header; the recordings were made before the worker honored it.
-- The recordings ran the workers as the application database role. `internal/benchwork` now runs them as `fifty_worker`, the role of a production worker.
+- The recordings ran the workers as the application database role. `internal/harness/benchwork` now runs them as `fifty_worker`, the role of a production worker.
 - One machine, Postgres in Docker Desktop with the default `max_connections`, a mock LLM. The development database also holds old rows from other tests (the count is recorded). The harness deletes each run's rows afterwards.

@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/riyne/fifty-fifty/internal/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/paysig"
 	"github.com/riyne/fifty-fifty/internal/settlements"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 const whSecret = "whsec_test_secret"

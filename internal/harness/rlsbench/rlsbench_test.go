@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/rlsbench"
-	"github.com/riyne/fifty-fifty/internal/testutil"
+	"github.com/riyne/fifty-fifty/internal/harness/rlsbench"
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 )
 
 func params(t *testing.T) rlsbench.Params {

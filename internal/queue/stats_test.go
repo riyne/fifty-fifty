@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/queue"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 )
 
 func statsFor(t *testing.T, kind string, always ...string) (queue.KindStats, []queue.KindStats) {

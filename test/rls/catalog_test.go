@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/riyne/fifty-fifty/internal/dbrole"
+	"github.com/riyne/fifty-fifty/internal/harness/dbrole"
 )
 
 // Tables that are deliberately not under row-level security, with the reason. A table that

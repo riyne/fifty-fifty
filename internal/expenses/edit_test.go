@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/riyne/fifty-fifty/internal/teststack"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 )
 
 func expenseURL(group, expense string) string { return "/v1/groups/" + group + "/expenses/" + expense }

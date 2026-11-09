@@ -12,10 +12,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/riyne/fifty-fifty/internal/db"
-	"github.com/riyne/fifty-fifty/internal/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/stressrig"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/settlements"
-	"github.com/riyne/fifty-fifty/internal/stressrig"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 // world is a small, healthy, committed state in the shared test database: one group

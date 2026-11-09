@@ -17,10 +17,10 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/riyne/fifty-fifty/internal/harness/testutil"
 	"github.com/riyne/fifty-fifty/internal/queue"
 	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/settlements"
-	"github.com/riyne/fifty-fifty/internal/testutil"
 	"github.com/riyne/fifty-fifty/internal/worker"
 )
 

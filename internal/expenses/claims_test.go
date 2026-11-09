@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/riyne/fifty-fifty/internal/dbscope"
-	"github.com/riyne/fifty-fifty/internal/teststack"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 )
 
 func claimURL(group, expense, item string) string {

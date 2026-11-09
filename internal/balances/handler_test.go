@@ -13,7 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/riyne/fifty-fifty/internal/db"
-	"github.com/riyne/fifty-fifty/internal/teststack"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 )
 
 // env is one group whose members are named, so tests read like the scenario.

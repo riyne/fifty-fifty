@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/mockpay"
 	"github.com/riyne/fifty-fifty/internal/paysig"
 )
 

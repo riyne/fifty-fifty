@@ -15,16 +15,16 @@ import (
 	"github.com/riyne/fifty-fifty/internal/balances"
 	"github.com/riyne/fifty-fifty/internal/expenses"
 	"github.com/riyne/fifty-fifty/internal/groups"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/httpapi"
 	"github.com/riyne/fifty-fifty/internal/objstore"
 	"github.com/riyne/fifty-fifty/internal/ratelimit"
 	"github.com/riyne/fifty-fifty/internal/receiptapi"
 	"github.com/riyne/fifty-fifty/internal/settlements"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 // Integration tests for authentication and the basic group endpoints. See
-// internal/teststack for what "integration" means here.
+// internal/harness/teststack for what "integration" means here.
 
 // countUsers counts users recorded under this stack's issuer URL. The URL is a
 // random local port, and the test database is shared and never cleaned, so a port

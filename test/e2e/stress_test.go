@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/stressrig"
+	"github.com/riyne/fifty-fifty/internal/harness/stressrig"
 )
 
 // stressParams is a small, fast version of the run bench/stress will record. Settlement

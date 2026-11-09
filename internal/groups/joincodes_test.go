@@ -12,8 +12,8 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/time/rate"
 
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 	"github.com/riyne/fifty-fifty/internal/joincode"
-	"github.com/riyne/fifty-fifty/internal/teststack"
 )
 
 type codeInfo struct {

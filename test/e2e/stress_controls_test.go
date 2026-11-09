@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/riyne/fifty-fifty/internal/settlerig"
-	"github.com/riyne/fifty-fifty/internal/stressrig"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/stressrig"
 )
 
 // These are the negative controls at smoke size (make test-controls): the stress workload

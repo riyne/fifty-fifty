@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/riyne/fifty-fifty/internal/benchwork"
+	"github.com/riyne/fifty-fifty/internal/harness/benchwork"
 )
 
 func TestDistribution_NearestRank(t *testing.T) {

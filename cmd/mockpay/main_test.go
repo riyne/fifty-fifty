@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/riyne/fifty-fifty/internal/mockpay"
+	"github.com/riyne/fifty-fifty/internal/harness/mockpay"
 )
 
 func TestParse_Defaults(t *testing.T) {

@@ -39,7 +39,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/controls"
 	"github.com/riyne/fifty-fifty/internal/db"
 	"github.com/riyne/fifty-fifty/internal/dbscope"
-	"github.com/riyne/fifty-fifty/internal/settlerig"
+	"github.com/riyne/fifty-fifty/internal/harness/settlerig"
 )
 
 // Params are the knobs of a run.

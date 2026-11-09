@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/riyne/fifty-fifty/internal/teststack"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 )
 
 func (w *world) listAll(t testing.TB, token string, limit int) []teststack.ListPage {

@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/riyne/fifty-fifty/internal/teststack"
+	"github.com/riyne/fifty-fifty/internal/harness/teststack"
 )
 
 const goodBody = `{"description":"dinner","items":[{"description":"pizza","price_minor":1500},{"description":"beer","price_minor":800}],"tax_minor":300,"tip_minor":200}`
