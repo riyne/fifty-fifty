@@ -494,7 +494,7 @@ func TestChecks(t *testing.T) {
 	_, err := w.post("expense", w.g, w.finalizedExpense(t), nil, w.payer, entry{w.payer, 0}, entry{w.b, 0})
 	wantCode(t, err, codeCheck, "zero-amount entry")
 	_, err = w.post("settlement", w.g, w.finalizedExpense(t), nil, w.payer)
-	wantCode(t, err, codeCheck, "settlement kind before M4")
+	wantCode(t, err, codeCheck, "settlement kind with an expense id and no settlement id")
 	_, err = w.post("void", w.g, w.finalizedExpense(t), nil, w.payer)
 	wantCode(t, err, codeCheck, "void with no reverses_id")
 	first, err := w.post("expense", w.g, w.finalizedExpense(t), nil, w.payer, entry{w.payer, 1}, entry{w.b, -1})

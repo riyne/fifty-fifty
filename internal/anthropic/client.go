@@ -43,7 +43,7 @@ import (
 const (
 	// DefaultBaseURL is the public API.
 	DefaultBaseURL = "https://api.anthropic.com"
-	// DefaultModel is the model the project defaults to (DESIGN.md, M6 plan decision 6).
+	// DefaultModel is the model the project defaults to.
 	DefaultModel = "claude-haiku-5-5"
 	// DefaultMaxTokens bounds the answer, and with it the cost of one receipt. A receipt
 	// of a few dozen lines needs about a thousand; one that needs more is cut off, which
@@ -63,8 +63,8 @@ type Config struct {
 	APIKey    string // required, except for a loopback BaseURL (the mock ignores keys)
 	Model     string // default DefaultModel
 	MaxTokens int    // default DefaultMaxTokens
-	// PromptVersion picks the system prompt: PromptV1 (the default, the prompt every
-	// recording before M10.9 used) or PromptV2 (adds the rule about prices that cannot be
+	// PromptVersion picks the system prompt: PromptV1 (the default, the prompt the first
+	// accuracy recording used) or PromptV2 (adds the rule about prices that cannot be
 	// read). Only the accuracy harness sets it; the worker takes the default, so a prompt
 	// is switched by changing the default in code after a recording says it should be.
 	PromptVersion string
@@ -239,7 +239,7 @@ func (c *Client) Extract(ctx context.Context, text string) (receiptparse.Extract
 }
 
 // request deliberately has no sampling fields (temperature, top_p, top_k). The first call
-// to the real API (M9.3) was refused with HTTP 400 because this client sent temperature 0:
+// to the real API was refused with HTTP 400 because this client sent temperature 0:
 // Claude Haiku 5.5 accepts only its default there, and newer API versions refuse the fields
 // outright. The mock LLM never checked. TestExtract_SendsNoSamplingParameters keeps them out.
 type request struct {

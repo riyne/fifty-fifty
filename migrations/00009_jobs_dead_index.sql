@@ -1,6 +1,6 @@
 -- +goose Up
 
--- The metrics endpoint (M3.6) reports how many jobs are dead-lettered, per kind,
+-- The metrics endpoint reports how many jobs are dead-lettered, per kind,
 -- on every scrape. Without this index that count would read every finished job in
 -- the table (they are never pruned), so scrape cost would grow with history. With
 -- it, together with jobs_claim_idx, the whole stats query touches only the jobs

@@ -27,7 +27,7 @@ export class RefreshRejectedError extends Error {}
 
 export type Refresher = (refreshToken: string) => Promise<Tokens>;
 
-/** Optional refresh support (M10.21). Without it the session behaves as before: an expired ID token means a new login. */
+/** Optional refresh support. Without it the session behaves as before: an expired ID token means a new login. */
 export interface Refreshing {
   store: RefreshStore;
   refresh: Refresher;
@@ -51,7 +51,7 @@ export interface Refreshing {
  * - `expire(sent)` ends the session only if `sent` is the token currently in use, so the late
  *   401 of a request made under an old login cannot end a new one.
  *
- * With `refreshing` (M10.21) there is also a refresh token, and:
+ * With `refreshing` there is also a refresh token, and:
  * - `getTokenForRequest` returns the ID token, first refreshing it if it is within `skewSeconds`
  *   of expiry. Concurrent callers share ONE refresh (the provider rotates the refresh token, so
  *   a second refresh with the same token would be refused).

@@ -227,7 +227,7 @@ func TestReader_RefusesWrites(t *testing.T) {
 	}
 }
 
-// ---- lock timeout (M10.14) ----
+// ---- lock timeout ----
 
 // A request transaction gives up on a lock another transaction holds. An advisory lock
 // held by a raw owner transaction stands for any lock (a row lock, the unique index of

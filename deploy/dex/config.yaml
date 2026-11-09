@@ -2,8 +2,8 @@
 # All three users have the password "password". Never use this config anywhere real.
 #
 # The issuer URL must be identical from every vantage point that validates tokens
-# (see docs/DESIGN.md section 9, "OIDC issuer mismatch"). Revisit when the mobile
-# client and the containerized api are added.
+# (the iOS Simulator shares localhost with the host, so one URL serves the app and the api).
+# Revisit if the api is containerized or Android is added.
 issuer: http://localhost:5556/dex
 
 # Postgres, not memory: refresh tokens deadlock Dex's in-memory storage (see Dockerfile). The
@@ -21,7 +21,7 @@ storage:
     ssl:
       mode: disable
 
-# Short ID tokens, refresh tokens for staying signed in (M10.21). The app sends the ID token
+# Short ID tokens, refresh tokens for staying signed in. The app sends the ID token
 # to the api, so a short lifetime limits what a stolen one is worth; the refresh token is kept
 # in the iOS Keychain and rotated on every use (a used token is refused).
 expiry:
@@ -35,7 +35,7 @@ web:
 
 oauth2:
   skipApprovalScreen: true
-  # PKCE is required, and only S256 (M10.22). Without this Dex issued and exchanged a code for
+  # PKCE is required, and only S256. Without this Dex issued and exchanged a code for
   # this public client with no code_challenge at all, and accepted the `plain` method (the
   # verifier itself sent in the authorization URL). The app and scripts/dev-token.sh already
   # send S256; test/oidc/pkce_test.go checks that nothing else is accepted.
@@ -54,7 +54,7 @@ staticClients:
       # scripts/dev-token.sh (a dev login with curl; it only reads the code from the redirect,
       # the api has no such route).
       - http://localhost:8080/callback
-      # The mobile app (M8.2): the scheme in mobile/app.json and the path from
+      # The mobile app: the scheme in mobile/app.json and the path from
       # mobile/src/auth/oidc.ts. A public client must match a registered URI exactly.
       - fiftyfifty://auth
 

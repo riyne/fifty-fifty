@@ -12,7 +12,7 @@ CREATE TABLE users (
     UNIQUE (issuer, subject)
 );
 
--- One currency per group (DESIGN.md section 2).
+-- One currency per group.
 CREATE TABLE groups (
     id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     name       text        NOT NULL CHECK (char_length(name) BETWEEN 1 AND 100),

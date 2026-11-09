@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Row-level security (M7.4). The application role (fifty_app, the user-request path) can
+-- Row-level security. The application role (fifty_app, the user-request path) can
 -- see and change only the rows of groups its caller belongs to, whatever a handler's own
 -- query says. The caller is the transaction-local setting app.user_id, which the api sets
 -- as the first statement of every transaction it runs for a user (internal/dbscope). This

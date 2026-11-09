@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Settlements (DESIGN.md section 7, decision log "M4 plan decisions"): a member
+-- Settlements (docs/ARCHITECTURE.md section 7): a member
 -- records that they paid another member through the (simulated) payment provider.
 -- Same rule as 00005: whatever the database can refuse, it refuses.
 --
@@ -39,8 +39,8 @@ CREATE TABLE settlements (
 
 -- Group listing, newest first.
 CREATE INDEX settlements_group_idx ON settlements (group_id, created_at DESC, id);
--- Money that may still move: what create-settlement reserves against (4.2) and what
--- the watchdog scans (4.5). Small, because settlements leave it when they resolve.
+-- Money that may still move: what create-settlement reserves against and what
+-- the watchdog scans. Small, because settlements leave it when they resolve.
 CREATE INDEX settlements_open_idx ON settlements (group_id) WHERE status IN ('pending', 'unknown');
 
 -- The ledger learns a third kind of posting. The old CHECKs are unnamed, so they

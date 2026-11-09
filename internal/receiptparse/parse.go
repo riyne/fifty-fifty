@@ -15,7 +15,7 @@
 // cannot write the items twice. The model's answer is untrusted: it is parsed against a
 // strict schema and the decision to ask a person is arithmetic (receipts.Interpret).
 //
-// What happens to each kind of failure (DESIGN.md, "M6 plan decisions", decision 5):
+// What happens to each kind of failure:
 //
 //	the answer is invalid, or does not add up    -> needs_review at once (a retry would
 //	                                                only draw another answer), with the

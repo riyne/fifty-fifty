@@ -63,7 +63,7 @@ func analyze(path string, w io.Writer) error {
 	// The back-solving metric, for the wrong parses only: a recording keeps the answer and the
 	// text sent only for parses that were not exact, so this is a lower bound on the metric
 	// (a right answer that guessed an amount is not here) but covers every wrong parse. For a
-	// recording made since M10.9 the full figure is in its tally.
+	// recording made with the metric (prompt follow-up onward) the full figure is in its tally.
 	fmt.Fprintf(w, "\nwrong parses that contain an amount NOT printed in the text sent (recomputed here from the kept answer and text):\n")
 	fmt.Fprintf(w, "%-18s %6s | %-22s\n", "variant", "wrong", "with such an amount (acc/flag)")
 	for _, v := range order {

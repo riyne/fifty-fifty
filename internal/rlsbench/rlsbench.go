@@ -5,7 +5,7 @@
 // that each pick a random user and a random operation:
 //
 //	baseline       row-level security DISABLED, queries on the plain pool (what the api did
-//	               before M7: autocommit reads, a transaction for writes)
+//	               before row-level security: autocommit reads, a transaction for writes)
 //	identity only  row-level security DISABLED, queries through dbscope (a read is BEGIN,
 //	               set_config, the statement, COMMIT; a write is a transaction that starts
 //	               with set_config)

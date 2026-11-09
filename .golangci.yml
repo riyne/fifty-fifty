@@ -1,4 +1,4 @@
-# golangci-lint v2, pinned in tools/go.mod (M10.5). A deliberately small set: the checks that
+# golangci-lint v2, pinned in tools/go.mod. A deliberately small set: the checks that
 # find real bugs, not style. `make ci-lint` runs it for both builds (the unsafe_controls
 # build has code the production build does not).
 version: "2"

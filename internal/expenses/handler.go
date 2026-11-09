@@ -242,8 +242,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 // insert runs inside the idempotency transaction. The expense and its items
-// commit together or not at all. The creator is the payer (DESIGN.md, M2
-// decisions); the foreign key on (group_id, payer_id) makes a non-member payer
+// commit together or not at all. The creator is the payer;
+// the foreign key on (group_id, payer_id) makes a non-member payer
 // impossible even if the caller's membership check were removed.
 func (h *Handler) insert(ctx context.Context, tx pgx.Tx, userID, groupID uuid.UUID, currency string, n normalized) (idempotency.Result, error) {
 	q := db.New(tx)

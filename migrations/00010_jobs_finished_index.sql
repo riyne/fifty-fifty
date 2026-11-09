@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Pruning (M3.8c) deletes succeeded jobs older than the retention period, oldest
+-- Pruning deletes succeeded jobs older than the retention period, oldest
 -- first, in batches. Without this index every batch would scan the whole jobs table
 -- (the pruner exists because that table otherwise only grows). The index holds only
 -- succeeded jobs and every success adds one entry to it, a small write cost on the

@@ -10,7 +10,7 @@ import (
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
 )
 
-// The prompt-injection check (M10.10): ten synthetic receipts, each with an instruction aimed at
+// The prompt-injection check: ten synthetic receipts, each with an instruction aimed at
 // the model printed as a note under its first item line, sent through the same path as every
 // other receipt (OCR or perfect text, redaction, the project's prompt, the strict validator and
 // the arithmetic review flag). The question is what the model and the pipeline DID, not whether

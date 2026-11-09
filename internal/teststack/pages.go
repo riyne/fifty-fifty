@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// ListPage is one response of a paginated list endpoint (M10.15).
+// ListPage is one response of a paginated list endpoint.
 type ListPage struct {
 	Status int
 	IDs    []string // the "id" of each item, in the order returned

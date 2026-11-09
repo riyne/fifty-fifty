@@ -1,7 +1,7 @@
 -- +goose Up
 
--- Two more database roles, for the code that runs without a user (M7.2). Row-level
--- security (M7.4) will limit fifty_app, the role of the user-request path, to the
+-- Two more database roles, for the code that runs without a user. Row-level
+-- security (migration 00016) limits fifty_app, the role of the user-request path, to the
 -- caller's groups. The processes below act for no user, so each gets its own role
 -- with explicit policies, and with grants limited to the tables its statements
 -- touch. Neither role is a superuser, an owner or BYPASSRLS.

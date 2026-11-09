@@ -87,7 +87,7 @@ var ErrInvalidClaim = errors.New("invalid claim")
 // ReapExhausted moves running jobs whose lease expired on their final attempt to
 // dead, and returns their ids. A job that crashes its worker on the last attempt
 // leaves no one to report the failure, so something has to notice; the worker
-// loop calls this periodically (M3.5).
+// loop calls this periodically.
 func ReapExhausted(ctx context.Context, pool *pgxpool.Pool) ([]uuid.UUID, error) {
 	ids, err := db.New(pool).ReapExhaustedJobs(ctx)
 	if err != nil {

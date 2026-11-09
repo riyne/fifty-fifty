@@ -90,7 +90,7 @@ type record struct {
 	Reasons []string `json:"reasons,omitempty"`
 	Score   score    `json:"score"`
 	// AmountsNotInText: the amounts of the answer that are not printed in the text sent (see
-	// amountsNotInText). Computed from M10.9; absent in earlier recordings.
+	// amountsNotInText). Absent in the first recording, which did not compute it.
 	AmountsNotInText []int64 `json:"amounts_not_in_the_text_sent,omitempty"`
 	// Attack and AttackFollowed are set only in an injection run (--injection): the attack
 	// printed on this receipt and whether the answer did what its note asked (injection.go).
@@ -115,7 +115,7 @@ type env struct {
 	BaseURL     string `json:"base_url"`
 	Model       string `json:"model_requested"`
 	MaxTokens   int    `json:"max_tokens"`
-	// PromptVersion and PromptSHA256 say which system prompt the model was given (M10.9).
+	// PromptVersion and PromptSHA256 say which system prompt the model was given.
 	// Recordings made before it have neither: they used what is now PromptV1.
 	PromptVersion string `json:"prompt_version,omitempty"`
 	PromptSHA256  string `json:"prompt_sha256,omitempty"`
@@ -166,13 +166,13 @@ func run() error {
 		baseURL    = flag.String("base-url", "", "Messages API base URL (default the public API; an http loopback address, such as the mock LLM, needs no key)")
 		model      = flag.String("model", "", "model (default "+anthropic.DefaultModel+")")
 		maxTokens  = flag.Int("max-tokens", 0, "max answer tokens (default the client's)")
-		promptVer  = flag.String("prompt-version", "", "system prompt: "+anthropic.PromptV1+" (the default, what the worker uses and what every recording before M10.9 used) or "+anthropic.PromptV2+" (adds the rule about prices that cannot be read)")
+		promptVer  = flag.String("prompt-version", "", "system prompt: "+anthropic.PromptV1+" (the default, what the worker uses and what the first recording used) or "+anthropic.PromptV2+" (adds the rule about prices that cannot be read)")
 		confirm    = flag.Int("confirm-calls", 0, "required for a non-loopback base URL: must equal the number of calls about to be made")
 		out        = flag.String("out", "", "output directory for a run that is not recorded (default: a directory under the system temp dir; nothing is written into the repository)")
 		recording  = flag.Bool("record", false, "write the result into bench/results (a recording: real service, clean working tree, never with --allow-dirty or --out)")
 		allowDirty = flag.Bool("allow-dirty", false, "run with uncommitted changes (first looks and smoke runs only; do not commit the output)")
 	)
-	injection := flag.Bool("injection", false, "the prompt-injection check (M10.10): one receipt per attack (10), each with an instruction printed under its first item line, in the variants chosen (default ground-truth-text and ocr-clean); --receipts is ignored and --from defaults to 5301")
+	injection := flag.Bool("injection", false, "the prompt-injection check: one receipt per attack (10), each with an instruction printed under its first item line, in the variants chosen (default ground-truth-text and ocr-clean); --receipts is ignored and --from defaults to 5301")
 	analyzePath := flag.String("analyze", "", "read a recorded .json and print the wrong parses by kind (no calls, no spend), then exit")
 	flag.Parse()
 	if *analyzePath != "" {
@@ -576,7 +576,7 @@ func statements() []string {
 		"The text sent is what the worker would send: OCR (or the ground-truth text), redaction of cards, emails and phone numbers, trimmed and cut at 6000 characters. The synthetic receipts contain planted card numbers, emails and phone numbers; after redaction the model sees placeholders in their place.",
 		"Cost is not computed here: no price is written in this repository. The token counts are recorded; multiply by the current price list.",
 		"If the prompt or the validator is changed after seeing a result, the earlier result stays recorded and is not replaced. A prompt version other than v1 was written after seeing the first recording's errors, so a result for it on the receipts used to find them (5001-5050) is not independent evidence; the comparison that counts is on references that were not looked at (5101-5150).",
-		"'Amount not printed in the text sent' (M10.9) counts the amounts in an answer (line totals, tax, tip, total) that are not whole amount tokens of the text the model was given: it measures guessing, correct or not, and is computed from the text and the answer alone. An amount that is printed but wrong (the subtotal used as the total) is not counted. It is a property of this synthetic format, which prints every amount with two decimals.",
+		"'Amount not printed in the text sent' counts the amounts in an answer (line totals, tax, tip, total) that are not whole amount tokens of the text the model was given: it measures guessing, correct or not, and is computed from the text and the answer alone. An amount that is printed but wrong (the subtotal used as the total) is not counted. It is a property of this synthetic format, which prints every amount with two decimals.",
 	}
 }
 

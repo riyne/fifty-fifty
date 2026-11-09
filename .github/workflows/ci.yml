@@ -90,7 +90,7 @@ jobs:
       - name: Scan the history
         run: ./gitleaks git . --redact --no-banner -v
 
-  # The app's own checks (M10.6): typecheck, the generated api types are current with
+  # The app's own checks: typecheck, the generated api types are current with
   # api/openapi.yaml, and the Jest tests. Nothing here builds the app or needs a simulator;
   # `make mobile-check` runs the same thing by hand. Node 24 is what the lockfile was made with.
   mobile:

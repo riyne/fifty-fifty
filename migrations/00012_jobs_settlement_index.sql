@@ -1,6 +1,6 @@
 -- +goose Up
 
--- The settlement watchdog (M4.5) asks, for each stuck settlement, which execute jobs
+-- The settlement watchdog asks, for each stuck settlement, which execute jobs
 -- exist for it and how recent they are; the reconcile handler enqueues its own next
 -- check. Both look jobs up by the settlement id in the payload, and without this index
 -- each lookup scans the whole jobs table (which only shrinks when finished jobs are

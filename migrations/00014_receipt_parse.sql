@@ -1,6 +1,6 @@
 -- +goose Up
 
--- What the parse job (M6.7) records about a receipt. Everything here is about the run,
+-- What the parse job records about a receipt. Everything here is about the run,
 -- never the content: counts, token usage, the reasons a person has to look. The OCR text
 -- and the model's answer are not stored.
 --

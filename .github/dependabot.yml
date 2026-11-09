@@ -1,5 +1,5 @@
 # Keeps the SHA-pinned actions in .github/workflows current: one pull request per bump.
-# Go modules and npm are deliberately not listed (DESIGN decision log, "Actions pinned (M10.3)").
+# Only github-actions is listed: Go modules and npm are deliberately left out.
 version: 2
 updates:
   - package-ecosystem: github-actions

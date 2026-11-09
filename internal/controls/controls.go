@@ -1,7 +1,7 @@
 //go:build !unsafe_controls
 
-// Package controls is the seam for the negative controls (DESIGN section 5, "Negative
-// controls"). Each function below is the one place the code takes a lock or checks a
+// Package controls is the seam for the negative controls (docs/ARCHITECTURE.md, "Design
+// choices"). Each function below is the one place the code takes a lock or checks a
 // guard that a negative-control run must be able to switch off.
 //
 // This file is the production build: every function is a plain call to the sqlc query

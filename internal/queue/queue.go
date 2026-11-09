@@ -1,4 +1,4 @@
-// Package queue is the Postgres-backed job queue (DESIGN.md section 6).
+// Package queue is the Postgres-backed job queue (docs/ARCHITECTURE.md section 5).
 //
 // Jobs are rows in the jobs table. This file is the producer side: Enqueue. It
 // takes a pgx.Tx, not a pool, on purpose. The job must commit or roll back with

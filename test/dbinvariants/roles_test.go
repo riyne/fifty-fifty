@@ -14,7 +14,7 @@ import (
 // adds it, and a grant that someone widens later shows as a diff against this list.
 // Letters: S select, I insert, U update, D delete. Absent means no privilege at all.
 //
-// fifty_app is the user-request path (row-level security limits it from M7.4); the
+// fifty_app is the user-request path (row-level security limits it); the
 // ledger tables and audit_events have no UPDATE or DELETE for it (migration 00004,
 // 00005). fifty_worker and fifty_system are migration 00015 and were derived from the
 // statements each process runs (the real-process tests in test/e2e run them as these
@@ -183,7 +183,7 @@ func TestRoles_AreOnlyPlainLogins(t *testing.T) {
 	}
 }
 
-// ---- what migration 00017 took from fifty_app, tried for real (M10.16) ----
+// ---- what migration 00017 took from fifty_app, tried for real ----
 //
 // The matrix above says which privileges exist. These show the refusals happen, for the
 // statements a bug or an injected statement in the user-request path would try. The world's

@@ -1,7 +1,7 @@
 -- +goose Up
 
--- The job queue (DESIGN.md section 6). One table; workers claim rows with
--- FOR UPDATE SKIP LOCKED (M3.2). This migration is only the shape, and the shape
+-- The job queue (docs/ARCHITECTURE.md section 5). One table; workers claim rows with
+-- FOR UPDATE SKIP LOCKED. This migration is only the shape, and the shape
 -- is where the lease rules live: whatever the database can refuse, it refuses,
 -- so a bug in the claim or completion code cannot leave a job in a state that
 -- means nothing (running with no lease, finished with no finish time).
@@ -37,7 +37,7 @@ CREATE TABLE jobs (
     finished_at      timestamptz,
     -- A job never runs more than max_attempts times. The claim statement must
     -- therefore not claim an expired lease on a job that has used its last
-    -- attempt; it is moved to dead instead (M3.2/3.4).
+    -- attempt; it is moved to dead instead.
     CHECK (attempts <= max_attempts),
     -- Lease columns exist exactly while the job is running.
     CHECK ((state = 'running') = (lease_token IS NOT NULL)),
@@ -48,7 +48,7 @@ CREATE TABLE jobs (
 
 -- The two sets a claim looks at: due queued jobs, and running jobs whose lease
 -- has run out. Partial, so the index only holds rows that can still be claimed
--- and stays small however many finished jobs pile up. M3.2 checks with EXPLAIN
+-- and stays small however many finished jobs pile up. EXPLAIN shows
 -- that the claim statement uses them.
 CREATE INDEX jobs_queued_idx ON jobs (run_at) WHERE state = 'queued';
 CREATE INDEX jobs_lease_idx ON jobs (lease_expires_at) WHERE state = 'running';

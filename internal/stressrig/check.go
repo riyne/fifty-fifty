@@ -1,5 +1,5 @@
-// Package stressrig is the rig for the M5 ledger stress test: the invariant checker
-// (this file), the api started outside a test (api.go), and, from step 5.3, the workload.
+// Package stressrig is the rig for the ledger stress test: the invariant checker
+// (this file), the api started outside a test (api.go), and the workload.
 //
 // The checker recomputes every invariant from the database tables and from the payment
 // provider's own record. It never looks at an API response, because the point of a

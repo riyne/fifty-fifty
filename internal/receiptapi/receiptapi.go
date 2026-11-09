@@ -1,6 +1,6 @@
 // Package receiptapi implements receipt upload: POST /v1/groups/{id}/receipts.
 //
-// An upload is the start of the receipt pipeline (DESIGN.md section 8). It checks the
+// An upload is the start of the receipt pipeline (docs/ARCHITECTURE.md section 6). It checks the
 // caller, bounds the request, hardens the image (internal/receipts.HardenImage), puts
 // the re-encoded bytes in the object store, and then, in one idempotent transaction,
 // takes one unit of the user's daily quota, creates an expense in status `parsing`

@@ -21,7 +21,7 @@ func (h *Handler) unclaim(w http.ResponseWriter, r *http.Request) { h.setClaim(w
 
 // setClaim adds or removes the caller's own claim on one item.
 //
-// Locking (DESIGN.md section 5): the first statement takes FOR SHARE on the
+// Locking (docs/ARCHITECTURE.md section 8.2): the first statement takes FOR SHARE on the
 // expense row. Claimers share that lock, so they never block each other, but
 // finalize/void/item edits take FOR UPDATE on the same row and so wait for every
 // in-flight claim, then read a stable claim set. A claim that arrives while

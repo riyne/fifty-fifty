@@ -22,7 +22,7 @@ func idsOf(pages []teststack.ListPage) []string {
 	return out
 }
 
-// Before M10.15 the 101st group a user belonged to was silently not returned. Now the
+// Before pagination the 101st group a user belonged to was silently not returned. Now the
 // first page is the same 100 and says there is more; the next page has the rest.
 func TestListGroups_NothingIsSilentlyDropped(t *testing.T) {
 	s := teststack.New(t)

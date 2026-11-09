@@ -185,7 +185,7 @@ ci-test:
 ci-vuln:
 	go tool -modfile=tools/go.mod govulncheck ./...
 
-# Mobile client (M8). Not part of `make ci`: the workflow's separate `mobile` job (M10.6)
+# Mobile client. Not part of `make ci`: the workflow's separate `mobile` job
 # runs the same `npm ci && npm run check`. Needs `cd mobile && npm install` once.
 mobile-generate: ## regenerate mobile/src/api/schema.d.ts from api/openapi.yaml
 	cd mobile && npm run gen:api

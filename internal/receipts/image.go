@@ -69,8 +69,8 @@ const jpegQuality = 90
 //
 // Known limit: re-encoding drops the EXIF orientation tag without applying it, so a
 // phone photo taken sideways and stored with an orientation tag comes out rotated. The
-// client is expected to send upright pixels (DESIGN.md decision log, "Upload
-// hardening"); transparency in a PNG is flattened onto white.
+// client is expected to send upright pixels (docs/ARCHITECTURE.md section 10);
+// transparency in a PNG is flattened onto white.
 func HardenImage(data []byte, lim ImageLimits) (Image, error) {
 	switch {
 	case len(data) == 0:

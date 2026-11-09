@@ -124,7 +124,7 @@ func intersect(a, b map[string]int) int {
 	return n
 }
 
-// The back-solving metric (M10.9). The first recording found that, when a price was garbled and
+// The back-solving metric. The first recording found that, when a price was garbled and
 // a printed subtotal was visible, the model sometimes filled the gap so that the numbers added
 // up, which defeats the arithmetic check. A silent error is too rare to show whether an
 // instruction removes that (3 in 250), so this counts the behavior itself: an amount in the
@@ -277,7 +277,7 @@ type tally struct {
 	// The back-solving metric (see amountsNotInText): of the answers that were valid for the
 	// schema, how many contain an amount that is not printed in the text sent, how many of those
 	// the system accepted (the dangerous ones: the review flag cannot see an amount it was
-	// handed consistently) and how many were wrong anyway. Zero in recordings made before M10.9,
+	// handed consistently) and how many were wrong anyway. Zero in the first recording,
 	// which did not compute it.
 	AmountNotInText         rate `json:"answers_with_an_amount_not_in_the_text_sent"`
 	AmountNotInTextAccepted int  `json:"answers_with_an_amount_not_in_the_text_sent_accepted"`

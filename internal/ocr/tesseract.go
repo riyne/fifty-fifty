@@ -14,7 +14,7 @@
 //   - Page segmentation mode 6 ("a single uniform block of text"): chosen over the default
 //     automatic mode because the automatic mode split price columns away from their item
 //     lines on the synthetic receipts, which is the one thing the extractor needs kept
-//     together (DESIGN.md decision log, M6.9). It was chosen by looking at a handful of
+//     together. It was chosen by looking at a handful of
 //     synthetic receipts, not by a measurement, and real receipts may prefer another mode.
 //   - One OpenMP thread per process: the worker already runs several jobs at once, and an
 //     OCR process that spreads over every core makes their timing unpredictable.

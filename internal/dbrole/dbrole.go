@@ -17,7 +17,7 @@ import (
 
 // The roles, from migrations 00004 and 00015.
 const (
-	App    = "fifty_app"    // the user-request path (row-level security applies, M7.4)
+	App    = "fifty_app"    // the user-request path (row-level security applies)
 	Worker = "fifty_worker" // worker processes
 	System = "fifty_system" // the api's second pool: user provisioning and the payment webhook
 )

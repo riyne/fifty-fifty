@@ -7,7 +7,7 @@ import { RefreshRejectedError, type Tokens } from "./session";
 // is public (no secret) and must list REDIRECT_URI (deploy/dex/config.yaml).
 export const OIDC_ISSUER = process.env.EXPO_PUBLIC_OIDC_ISSUER ?? "http://localhost:5556/dex";
 const CLIENT_ID = "fifty-fifty";
-const SCOPES = ["openid", "email", "profile", "offline_access"]; // offline_access: Dex issues a refresh token (M10.21)
+const SCOPES = ["openid", "email", "profile", "offline_access"]; // offline_access: Dex issues a refresh token
 export const REDIRECT_URI = AuthSession.makeRedirectUri({ scheme: "fiftyfifty", path: "auth" });
 
 /**

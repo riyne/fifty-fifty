@@ -2,7 +2,7 @@
 
 -- 00006 gave the claim two partial indexes (due queued jobs by run_at, running jobs
 -- by lease_expires_at). Measured on 200k rows (100k finished, 50k due, 50k
--- delayed) in M3.2 the claim over those two with `OR` could not return rows in
+-- delayed) the claim over those two with `OR` could not return rows in
 -- order: the planner bitmap-ORed both, read every due row and sorted them, 11.9 ms
 -- per claim and growing with the backlog. A claim wants "the oldest few eligible
 -- jobs", which needs ONE ordered index.

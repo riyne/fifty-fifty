@@ -322,7 +322,7 @@ func TestGet_ShapeAndClaimedBy(t *testing.T) {
 		}
 	}
 
-	// Claims do not have an endpoint yet (M2.4): arrange them directly.
+	// Arrange the claims directly, without going through the claims endpoint.
 	for _, m := range []uuid.UUID{w.memberID, w.ownerID} {
 		w.s.Exec(t, `INSERT INTO claims (item_id, expense_id, group_id, member_id) VALUES ($1, $2, $3, $4)`, e.Items[0].ID, id, w.group, m)
 	}

@@ -535,9 +535,9 @@ func TestAgainstTheMock_Faults(t *testing.T) {
 	}
 }
 
-// The first accuracy recording (M9.3, commit 69368b2) is about exactly these words; this is the
+// The first accuracy recording (commit 69368b2) is about exactly these words; this is the
 // SHA-256 of the system prompt in that commit's client.go. If this test fails, PromptV1 was
-// edited: make the change a new version instead (DESIGN, M10.9).
+// edited: make the change a new version instead (see bench/accuracy/README.md).
 const promptV1SHA256 = "52d042b6545246e3f56c920e804b18b729e590af6190d65dd8dda4a6e540428b"
 
 func sentSystemPrompt(t *testing.T, mod ...func(*anthropic.Config)) (string, *anthropic.Client) {

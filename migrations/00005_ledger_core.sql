@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Expenses, items, claims and the double-entry ledger (DESIGN.md sections 4-5).
+-- Expenses, items, claims and the double-entry ledger (docs/ARCHITECTURE.md sections 4 and 8).
 --
 -- Design rule for this file: whatever the database can refuse, it refuses, so a
 -- bug in a handler (wrong group, missing check) fails loudly instead of
@@ -15,7 +15,7 @@
 -- Expenses
 -- ---------------------------------------------------------------------------
 
--- The creator is the payer (DESIGN.md M2 decisions). tax/tip are expense-level;
+-- The creator is the payer. tax/tip are expense-level;
 -- the total is derived (sum of items + tax + tip), never stored, so it cannot
 -- drift from the items.
 CREATE TABLE expenses (
@@ -26,7 +26,7 @@ CREATE TABLE expenses (
     tax_minor    bigint      NOT NULL DEFAULT 0 CHECK (tax_minor >= 0),
     tip_minor    bigint      NOT NULL DEFAULT 0 CHECK (tip_minor >= 0),
     status       text        NOT NULL CHECK (status IN ('parsing', 'needs_review', 'claiming', 'finalized', 'void')),
-    -- Optimistic lock for item edits; claims do not touch it (DESIGN.md section 5).
+    -- Optimistic lock for item edits; claims do not touch it.
     version      integer     NOT NULL DEFAULT 1,
     created_at   timestamptz NOT NULL DEFAULT now(),
     finalized_at timestamptz,
@@ -75,8 +75,8 @@ CREATE INDEX claims_expense_idx ON claims (expense_id);
 -- Ledger (append-only, double-entry)
 -- ---------------------------------------------------------------------------
 
--- One row per posting. kind 'settlement' arrives with the settlements table in M4,
--- which will extend the kind check and add its link column.
+-- One row per posting. kind 'settlement' arrives with the settlements table (migration 00011),
+-- which extends the kind check and adds its link column.
 --   expense: the finalize posting; exactly one per expense.
 --   void:    reversal of that posting; at most one per expense.
 CREATE TABLE ledger_transactions (

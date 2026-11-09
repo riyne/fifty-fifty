@@ -31,7 +31,7 @@ CREATE TABLE idempotency_keys (
     PRIMARY KEY (user_id, key)
 );
 
--- For the cleanup job (added with the queue in M3).
+-- For the cleanup job (added with the queue).
 CREATE INDEX idempotency_keys_expires_at_idx ON idempotency_keys (expires_at);
 
 -- Append-only record of authorization-relevant actions. Never put secrets

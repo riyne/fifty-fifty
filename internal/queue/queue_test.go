@@ -189,7 +189,7 @@ func TestEnqueue_RejectsInvalidJobs(t *testing.T) {
 	}
 }
 
-// The pattern M4 (settlements) and M6 (receipts) will use: the enqueue is part
+// The pattern settlements and receipts use: the enqueue is part
 // of an idempotent request, so a retried or duplicated request does not enqueue
 // a second job. Ten concurrent requests with one key must leave exactly one job.
 func TestEnqueue_InsideIdempotentRequestEnqueuesOnce(t *testing.T) {

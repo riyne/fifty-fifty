@@ -115,7 +115,7 @@ func TestVacuousAndClean(t *testing.T) {
 // exercise is on: with the claim lock off nothing is refused around a finalize, with the
 // finalize lock off the finalize does not wait for claims, and with the edit lock or the
 // version check off two edits from one version are not refused. A floor that applied to
-// those runs flagged two recorded claim_lock runs as vacuous (DESIGN section 13).
+// those runs flagged two recorded claim_lock runs as vacuous (see bench/results/README.md).
 func TestVacuous_RaceFloorsFollowTheControls(t *testing.T) {
 	base := func() Result {
 		r := Result{Locks: LockWaits{SamplesWaiting: 1}, Counts: map[string]int64{}}

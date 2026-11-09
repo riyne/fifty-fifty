@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// MaxBodyBytes caps request bodies (DESIGN.md section 9: request size limits).
+// MaxBodyBytes caps request bodies.
 const MaxBodyBytes = 1 << 20
 
 // ErrEmptyBody is returned by DecodeJSON for a zero-length body, so handlers

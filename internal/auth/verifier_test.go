@@ -76,7 +76,7 @@ func TestNewOIDCVerifier_RequiresConfig(t *testing.T) {
 	}
 }
 
-// ---- OIDC_DISCOVERY_URL: discovery at one address, tokens naming another (M10.17) ----
+// ---- OIDC_DISCOVERY_URL: discovery at one address, tokens naming another ----
 //
 // The api in a container reaches the identity provider at http://dex:5556 while the tokens (and
 // the provider's own discovery document) say http://localhost:5556. The fake provider here is

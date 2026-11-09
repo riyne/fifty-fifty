@@ -10,7 +10,7 @@ import (
 
 // The balances endpoint's suggested transfers are what can be settled right now: net of the
 // money open settlements have reserved. Each one must be a payment create-settlement
-// accepts. (Before M10.20 they came from the ledger alone, so a member with a pending
+// accepts. (Suggestions once came from the ledger alone, so a member with a pending
 // settlement was told to pay money that was already on its way and got a 409.)
 
 type balancesView struct {

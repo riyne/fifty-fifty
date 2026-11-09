@@ -228,9 +228,8 @@ func TestClaim_Unauthenticated(t *testing.T) {
 
 // ---- concurrency ----
 //
-// Finalize does not exist yet (M2.5), so a raw transaction plays its part:
-// SELECT ... FOR UPDATE on the expense row, which is exactly the lock finalize
-// will take.
+// A raw transaction plays the part of finalize: SELECT ... FOR UPDATE on the
+// expense row, which is exactly the lock finalize takes.
 
 func (w *world) begin(t testing.TB) pgx.Tx {
 	t.Helper()
@@ -382,9 +381,9 @@ func TestCreate_DuplicateBehindAStalledFirstRequestGivesUp(t *testing.T) {
 	}
 }
 
-// Item edits (M6.1) take FOR NO KEY UPDATE on the expense row, which is also what
+// Item edits take FOR NO KEY UPDATE on the expense row, which is also what
 // a plain UPDATE of it takes. FOR SHARE conflicts with that, FOR KEY SHARE would
-// not, so this pins the lock strength DESIGN.md specifies: a claim must not land
+// not, so this pins the required lock strength: a claim must not land
 // while an edit to the expense is in flight.
 func TestClaim_WaitsForAnEditInFlight(t *testing.T) {
 	w := newWorld(t)

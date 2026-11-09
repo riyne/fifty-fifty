@@ -1,6 +1,6 @@
 // Package dbscope is how request handlers reach the database on behalf of a
 // user. Every statement a handler runs goes through a transaction in which the
-// setting app.user_id holds the caller's id, so that row-level security (M7.2)
+// setting app.user_id holds the caller's id, so that row-level security
 // can tell whose request it is.
 //
 // The setting is transaction-local (set_config with is_local = true), so it

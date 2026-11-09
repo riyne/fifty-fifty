@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// Pagination for the list endpoints (M10.15). A list is newest first, ordered by
+// Pagination for the list endpoints. A list is newest first, ordered by
 // (created_at DESC, id), and a page is found by keyset: the cursor is the last row of the
 // previous page, and the query asks for the rows after it. A cursor is therefore stable
 // while rows are added or removed (an offset would skip or repeat rows), and costs the

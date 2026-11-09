@@ -55,7 +55,7 @@ func TestRedact(t *testing.T) {
 	}
 }
 
-// OCR sometimes puts one space beside a dot inside an address. Before M10.12 the pattern
+// OCR sometimes puts one space beside a dot inside an address. Before the pattern tolerated them it
 // missed these, or matched only the part after the space and left the start of the local
 // part in the text. Each case below was seen in, or is the same kind as, the leaks in
 // bench/results/redaction-20261107T044640Z.txt.
@@ -99,7 +99,7 @@ func TestRedact_SpaceToleranceDoesNotTouchOrdinaryText(t *testing.T) {
 func TestRedact_KnownLimits(t *testing.T) {
 	for _, in := range []string{
 		"jane at example dot com",
-		"jane doe @example.com", // a space beside the @ is not tolerated (M10.12 allows one beside a dot only)
+		"jane doe @example.com", // a space beside the @ is not tolerated (only one beside a dot is allowed)
 		"call six zero four five five five zero one nine nine",
 		"Jane Doe, 123 Main Street, Vancouver BC V6B 1A1",
 		"SIN 123 456 789",

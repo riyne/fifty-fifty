@@ -8,7 +8,7 @@
 -- an injected statement in that path cannot do what the code never does (delete a group,
 -- rewrite a settlement, delete a job).
 --
--- How the list was derived (M10.16): from the sqlc queries and the Go packages that call
+-- How the list was derived: from the sqlc queries and the Go packages that call
 -- them (the user path is groups, expenses, receiptapi, balances and the settlement
 -- handler, with idempotency and the job enqueue), checked by running the whole test
 -- suite against a database where fifty_app had SELECT only and reading the "permission

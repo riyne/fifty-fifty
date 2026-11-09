@@ -1,7 +1,7 @@
 -- +goose Up
 
--- Receipt uploads (M6.6, DESIGN.md section 8). An upload creates an expense in status
--- 'parsing' and one receipts row that points at the stored image; the parse job (6.7)
+-- Receipt uploads (docs/ARCHITECTURE.md section 6). An upload creates an expense in status
+-- 'parsing' and one receipts row that points at the stored image; the parse job
 -- turns it into items. The image itself is not in the database: object_key names a
 -- file in the object store (a sha256 of the re-encoded bytes).
 --

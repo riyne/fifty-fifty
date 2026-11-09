@@ -4,7 +4,7 @@
 import { fakeJwt } from "./fakeJwt";
 import { createSession, RefreshRejectedError, type RefreshStore, type Refresher, type Tokens, type TokenStore } from "./session";
 
-// The refresh rules (M10.21). The session without `refreshing` is tested in session.test.ts.
+// The refresh rules. The session without `refreshing` is tested in session.test.ts.
 
 const T0 = 1_000_000;
 // Below, T0 + 45 is a token that signIn accepts (more than 30 s left) but that is inside the 60 s refresh margin.

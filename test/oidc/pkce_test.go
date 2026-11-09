@@ -30,7 +30,7 @@ import (
 const (
 	clientID    = "fifty-fifty"
 	redirectURI = "fiftyfifty://auth"
-	scope       = "openid email profile offline_access" // offline_access since M10.21: Dex issues a refresh token
+	scope       = "openid email profile offline_access" // offline_access: Dex issues a refresh token
 )
 
 func issuer() string {
@@ -140,7 +140,7 @@ type tokenResult struct {
 	fields map[string]any
 }
 
-// tokenClient has a timeout: a Dex that stops answering (it did, in M10.21, on a refresh request)
+// tokenClient has a timeout: a Dex that stops answering (it did, on a refresh request)
 // must fail a test, not hang the suite.
 var tokenClient = &http.Client{Timeout: 15 * time.Second}
 
@@ -432,13 +432,13 @@ func TestTheRequestMatchesTheAppsSource(t *testing.T) {
 	}
 }
 
-// ---- refresh tokens (M10.21) ----
+// ---- refresh tokens ----
 //
 // The app asks for offline_access and keeps a refresh token. Dex v2.46.0 and v2.46.1 deadlocked
 // on any refresh with in-memory storage, which is why deploy/dex/config.yaml uses Postgres; these
 // tests would fail by timeout on a Dex that has that bug.
 
-// scopeWithoutRefresh is what the app asked for before M10.21.
+// scopeWithoutRefresh is what the app asked for before it used refresh tokens.
 const scopeWithoutRefresh = "openid email profile"
 
 // refreshLogin logs in as alice asking for offline_access and returns the token response.

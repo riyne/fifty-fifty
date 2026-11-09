@@ -13,7 +13,7 @@ export interface PreparedImage {
 /**
  * Makes the photo the api wants: upright pixels, a JPEG, the long side at most MAX_SIDE_PX.
  *
- * The api removes the EXIF orientation tag without applying it (DESIGN section 13), so a phone
+ * The api removes the EXIF orientation tag without applying it (docs/ARCHITECTURE.md section 10), so a phone
  * photo taken sideways would be stored sideways. Loading the image here applies the
  * orientation, and saving writes a new file whose pixels are upright and which carries no
  * orientation tag. The size comes from the loaded image, not from the picker's report.

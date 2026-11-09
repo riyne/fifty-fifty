@@ -1,4 +1,4 @@
-// The list endpoints return one page at a time (M10.15): a body with the items and, when there
+// The list endpoints return one page at a time: a body with the items and, when there
 // are more, a `next_cursor` to send back as `cursor`. This follows the cursors so a screen gets
 // the whole list, as it did when the server returned everything it had up to 100.
 

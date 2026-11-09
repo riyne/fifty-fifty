@@ -19,8 +19,8 @@
 //     path outside the directory.
 //
 // There is no delete and no garbage collection. A Put whose database transaction later
-// fails leaves a blob that nothing points at; it is harmless and not swept (DESIGN.md,
-// "M6 plan decisions"). Because identical images share a blob, a delete operation
+// fails leaves a blob that nothing points at; it is harmless and not swept
+// (docs/ARCHITECTURE.md section 10). Because identical images share a blob, a delete operation
 // would need reference counting; add it with a retention policy, not before.
 package objstore
 

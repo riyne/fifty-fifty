@@ -1,6 +1,6 @@
 -- +goose Up
 
--- Periodic jobs (M3.5): the worker's scheduler inserts "one job per period" for
+-- Periodic jobs: the worker's scheduler inserts "one job per period" for
 -- recurring work such as idempotency-key cleanup. dedupe_key makes that safe when
 -- several workers (or restarts) try at once: the key names the period, the unique
 -- constraint lets exactly one insert through, and the rest do nothing. NULL for

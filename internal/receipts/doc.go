@@ -1,4 +1,4 @@
-// Package receipts holds the pure parts of the receipt pipeline (DESIGN section 8): no
+// Package receipts holds the pure parts of the receipt pipeline (docs/ARCHITECTURE.md section 6): no
 // database, no network, no clock. Everything here treats the text of a receipt, and
 // whatever a language model says about it, as untrusted input.
 //
