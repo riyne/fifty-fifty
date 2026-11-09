@@ -172,6 +172,17 @@ Sign in as alice, bob or carol (password `password`). To add a receipt, put an i
 
 Kubernetes, Terraform and autoscaling; multi-currency; envelope encryption of receipts; push notifications; Android; a container image for the api and worker. The path from here: containerize the api and worker, put an object store behind `internal/objstore.Store` in place of the shared directory, and move the rate limiter out of process memory.
 
+## Future work
+
+Not built, and not claimed. Each is written down with its design and risk in [docs/DESIGN.md](docs/DESIGN.md) section 13; the first four exist because a recording or a caveat in [docs/CLAIMS.md](docs/CLAIMS.md) says what it does not show.
+
+- **Re-record what predates row-level security.** The negative controls (about 46 minutes), the settlement benchmark (about 20) and the queue retry scenario (about 5) were recorded before the policies and the separate worker roles; today they are re-checked as pass/fail only (`make test-controls`, `make test-e2e`). A re-recording would remove the "recorded before M7" caveats from CLAIMS rows 2, 19 and 21, and row 18's note that its recording predates honoring `retry-after`.
+- **The identity seam.** Reads run as BEGIN, a `set_config`, the statement and COMMIT, which cost about half the throughput of a local mixed workload (CLAIMS row 11). Sending a read as one pipelined batch is designed and not built.
+- **A third prompt.** The rule that stops the model from working out an unreadable price also made it leave out the required total (CLAIMS row 35). A reworded rule needs receipts nobody has looked at.
+- **The settlement benchmark's unexplained replays.** The mock provider saw 21 to 36 replayed create calls per run that the code never resends; a likely cause (Go's `net/http` retrying a keyed request) is unverified.
+- **The app.** An automated UI test (Maestro or Detox), creating an expense without a receipt, Android and the camera.
+- **Beyond a laptop:** a real payment provider, more than one api instance (the rate limiter is per process), an object store for receipt images, and a container image; see [Not built](#not-built).
+
 ## Docs
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it fits together, the database, and a guide to the four things to be able to explain (the queue, locking, idempotency, the ledger).
