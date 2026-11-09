@@ -248,7 +248,7 @@ React Native (Expo) client for the whole flow against the unchanged api: sign in
 `make demo` builds the real api and worker, makes a fresh throwaway database, runs them with Tesseract, the mock LLM (simulated latency of 1500 ms) and the mock payment provider (simulated latency of 300 ms), and drives the whole flow over HTTP as three signed-in users, killing a worker with SIGKILL partway through. It exits non-zero if a check fails: totals and unit counts equal ground truth, replays return the same ledger transaction, the sum of all ledger entries is 0, and settlements = postings = provider charges. Run by hand; no test runs it. One walkthrough shows the quickstart works, not robustness.
 
 ### 20. CI
-GitHub Actions runs three jobs, all green on the latest commit as reported by the author (run URLs are not recorded):
+GitHub Actions runs three jobs, all green on commit 93db3e7 as reported by the author (run URLs are not recorded):
 - **`ci`**: gofmt, `go vet` and golangci-lint for both builds, a check that generated code is current, the tests against a real Postgres and a real Tesseract and a real Dex (a missing one fails rather than skips), the suite again with the `unsafe_controls` tag, and `govulncheck`.
 - **`secrets`**: gitleaks over the whole history. It found one false positive, a marker string planted by a test, listed in `.gitleaksignore` with its reason. A scan cannot prove there are no secrets.
 - **`mobile`**: typecheck, the generated-types drift check, Jest.
