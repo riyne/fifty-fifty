@@ -1,0 +1,93 @@
+Receipt extraction accuracy (synthetic receipts; text through OCR, redaction, the model and the validator)
+started 2026-11-09T03:04:25Z, commit 98b25c51e434b36d90e45f5f8c2c810d8cc6a149 (working tree dirty: false), ran 141 s
+machine: Apple M3 Pro, 11 CPUs, 19327352832 bytes RAM, Darwin 25.6.0 arm64, go1.27.3; tesseract 5.5.4; load average at start: 20:04  up 81 days, 16:08, 1 user, load averages: 1.64 2.77 3.64
+model requested claude-haiku-5-5 via https://api.anthropic.com, max tokens 4096; real service: true
+system prompt v2 (sha256 e78697f824dc143df107fa49ce7233cd6fec29797fdaa3f52134aeb2fde1ad65)
+receipts 5101..5150 in each of 5 variants = 250 calls planned, 4 in parallel, up to 4 attempts each
+
+== ground-truth-text: the ground-truth text of the receipt, as a perfect reader would produce it, redacted, sent to the model
+   calls answered 50, failed 0 (calls that needed a retry 0, attempts 50); answers not valid for the schema 0
+   prices of all units right (amounts exact)  50/50  100.0% [ 92.9%, 100.0%]
+   also descriptions and printed total (exact)   50/50  100.0% [ 92.9%, 100.0%]
+   printed total read right                       50/50  100.0% [ 92.9%, 100.0%]
+   what the system did with the answers:
+     accepted (claiming) and correct              50
+     accepted (claiming) and WRONG (silent)        0   silent-error rate   0/50    0.0% [  0.0%,   7.1%]
+     flagged (needs_review) and wrong (caught)     0   catch rate of wrong parses   0/0     0.0% [  0.0%, 100.0%]
+     flagged (needs_review) but correct            0   false-alarm rate of correct parses   0/50    0.0% [  0.0%,   7.1%]
+   answers with an amount NOT printed in the text sent (guessed or invented)   0/50    0.0% [  0.0%,   7.1%]; of those 0 accepted, 0 wrong; 0 such amounts in all
+   units: strict precision 1.000 recall 1.000; on price alone precision 1.000 recall 1.000
+   review reasons: map[]
+   tokens: input 41991 (mean 840), output 17064 (mean 341); latency of an answered attempt p50 1573 ms, p99 2637 ms
+
+== ocr-clean: the receipt rendered as an image (skew 0.0 degrees, Gaussian pixel noise sigma 0 gray levels), read by Tesseract, redacted, sent to the model
+   calls answered 50, failed 0 (calls that needed a retry 0, attempts 50); answers not valid for the schema 0
+   prices of all units right (amounts exact)  49/50   98.0% [ 89.5%,  99.6%]
+   also descriptions and printed total (exact)   49/50   98.0% [ 89.5%,  99.6%]
+   printed total read right                       50/50  100.0% [ 92.9%, 100.0%]
+   what the system did with the answers:
+     accepted (claiming) and correct              49
+     accepted (claiming) and WRONG (silent)        0   silent-error rate   0/50    0.0% [  0.0%,   7.1%]
+     flagged (needs_review) and wrong (caught)     1   catch rate of wrong parses   1/1   100.0% [ 20.7%, 100.0%]
+     flagged (needs_review) but correct            0   false-alarm rate of correct parses   0/49    0.0% [  0.0%,   7.3%]
+   answers with an amount NOT printed in the text sent (guessed or invented)   1/50    2.0% [  0.4%,  10.5%]; of those 1 accepted, 0 wrong; 1 such amounts in all
+   units: strict precision 1.000 recall 1.000; on price alone precision 1.000 recall 1.000
+   review reasons: map[total_mismatch:1]
+   tokens: input 40355 (mean 807), output 17808 (mean 356); latency of an answered attempt p50 1678 ms, p99 3311 ms
+
+== ocr-mild: the receipt rendered as an image (skew 1.5 degrees, Gaussian pixel noise sigma 10 gray levels), read by Tesseract, redacted, sent to the model
+   calls answered 50, failed 0 (calls that needed a retry 0, attempts 50); answers not valid for the schema 1
+   prices of all units right (amounts exact)  36/50   72.0% [ 58.3%,  82.5%]
+   also descriptions and printed total (exact)   36/50   72.0% [ 58.3%,  82.5%]
+   printed total read right                       49/50   98.0% [ 89.5%,  99.6%]
+   what the system did with the answers:
+     accepted (claiming) and correct              36
+     accepted (claiming) and WRONG (silent)        0   silent-error rate   0/50    0.0% [  0.0%,   7.1%]
+     flagged (needs_review) and wrong (caught)    14   catch rate of wrong parses  14/14  100.0% [ 78.5%, 100.0%]
+     flagged (needs_review) but correct            0   false-alarm rate of correct parses   0/36    0.0% [  0.0%,   9.6%]
+   answers with an amount NOT printed in the text sent (guessed or invented)   2/49    4.1% [  1.1%,  13.7%]; of those 1 accepted, 1 wrong; 2 such amounts in all
+   units: strict precision 0.979 recall 0.952; on price alone precision 0.989 recall 0.961
+   review reasons: map[invalid_output:1 total_mismatch:13]
+   tokens: input 40349 (mean 807), output 20745 (mean 415); latency of an answered attempt p50 1896 ms, p99 5951 ms
+
+== ocr-moderate: the receipt rendered as an image (skew 3.0 degrees, Gaussian pixel noise sigma 25 gray levels), read by Tesseract, redacted, sent to the model
+   calls answered 50, failed 0 (calls that needed a retry 0, attempts 50); answers not valid for the schema 1
+   prices of all units right (amounts exact)  27/50   54.0% [ 40.4%,  67.0%]
+   also descriptions and printed total (exact)   26/50   52.0% [ 38.5%,  65.2%]
+   printed total read right                       48/50   96.0% [ 86.5%,  98.9%]
+   what the system did with the answers:
+     accepted (claiming) and correct              26
+     accepted (claiming) and WRONG (silent)        0   silent-error rate   0/50    0.0% [  0.0%,   7.1%]
+     flagged (needs_review) and wrong (caught)    23   catch rate of wrong parses  23/23  100.0% [ 85.7%, 100.0%]
+     flagged (needs_review) but correct            1   false-alarm rate of correct parses   1/27    3.7% [  0.7%,  18.3%]
+   answers with an amount NOT printed in the text sent (guessed or invented)   4/49    8.2% [  3.2%,  19.2%]; of those 1 accepted, 3 wrong; 5 such amounts in all
+   units: strict precision 0.986 recall 0.944; on price alone precision 0.986 recall 0.944
+   review reasons: map[invalid_output:1 total_mismatch:23]
+   tokens: input 40382 (mean 808), output 20629 (mean 413); latency of an answered attempt p50 2040 ms, p99 4445 ms
+
+== ocr-harsh: the receipt rendered as an image (skew 5.0 degrees, Gaussian pixel noise sigma 40 gray levels), read by Tesseract, redacted, sent to the model
+   calls answered 50, failed 0 (calls that needed a retry 0, attempts 50); answers not valid for the schema 2
+   prices of all units right (amounts exact)  11/50   22.0% [ 12.8%,  35.2%]
+   also descriptions and printed total (exact)    5/50   10.0% [  4.3%,  21.4%]
+   printed total read right                       39/50   78.0% [ 64.8%,  87.2%]
+   what the system did with the answers:
+     accepted (claiming) and correct              10
+     accepted (claiming) and WRONG (silent)        4   silent-error rate   4/50    8.0% [  3.2%,  18.8%]
+     flagged (needs_review) and wrong (caught)    35   catch rate of wrong parses  35/39   89.7% [ 76.4%,  95.9%]
+     flagged (needs_review) but correct            1   false-alarm rate of correct parses   1/11    9.1% [  1.6%,  37.7%]
+   answers with an amount NOT printed in the text sent (guessed or invented)   6/48   12.5% [  5.9%,  24.7%]; of those 1 accepted, 5 wrong; 6 such amounts in all
+   units: strict precision 0.766 recall 0.692; on price alone precision 0.830 recall 0.750
+   review reasons: map[invalid_output:2 total_mismatch:34]
+   tokens: input 41369 (mean 827), output 28571 (mean 571); latency of an answered attempt p50 2383 ms, p99 6935 ms
+
+What this does and does not say:
+ - Synthetic data only. The receipts (internal/receipts/synth), the prompt (internal/anthropic) and this harness were written by one author, in one clean layout (a monospace font, item lines with a price at the right, tax, tip and total lines). A model reading real receipts, photographs, other languages or other layouts would do differently, probably worse. Nothing here is a statement about real-world accuracy.
+ - Sample size: the receipts per variant are few, so every rate carries a wide 95% Wilson interval, which is printed. Differences between variants smaller than the intervals say nothing. The same receipts are used in every variant, so the variants are not independent samples.
+ - One run of one model with its default sampling (no temperature is sent: Claude Haiku 5.5 refuses any other value). A repeat can give different answers, and the service may change the model behind a name; the model string the service reported is in every record.
+ - 'Correct' means the prices of the claimable units equal the receipt's, as a multiset, and tax and tip are equal (amounts_exact). A misread description does not make a parse wrong in this sense; 'exact' also requires the descriptions and the printed total. A parse that is wrong and accepted (status claiming) is a silent error. The review flag is the arithmetic check items + tax + tip = printed total, nothing else.
+ - A wrong parse that adds up (a model that misreads a price and the total together, or misreads consistently) is not caught by the flag. The count of such parses is the silent-error figure.
+ - Prompt injection is NOT tested: no receipt here contains instructions aimed at the model. Nothing in this evaluation supports a claim of resistance to it.
+ - The text sent is what the worker would send: OCR (or the ground-truth text), redaction of cards, emails and phone numbers, trimmed and cut at 6000 characters. The synthetic receipts contain planted card numbers, emails and phone numbers; after redaction the model sees placeholders in their place.
+ - Cost is not computed here: no price is written in this repository. The token counts are recorded; multiply by the current price list.
+ - If the prompt or the validator is changed after seeing a result, the earlier result stays recorded and is not replaced. A prompt version other than v1 was written after seeing the first recording's errors, so a result for it on the receipts used to find them (5001-5050) is not independent evidence; the comparison that counts is on references that were not looked at (5101-5150).
+ - 'Amount not printed in the text sent' (M10.9) counts the amounts in an answer (line totals, tax, tip, total) that are not whole amount tokens of the text the model was given: it measures guessing, correct or not, and is computed from the text and the answer alone. An amount that is printed but wrong (the subtotal used as the total) is not counted. It is a property of this synthetic format, which prints every amount with two decimals.
