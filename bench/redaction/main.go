@@ -9,7 +9,7 @@
 // numbers flatter the system: the planted formats are the ones the patterns were built
 // for plus a few they were tested against. They say nothing about real receipts, real
 // photos or a real person's address and name, which the redaction does not touch. See
-// bench/README.md for the definitions and what is and is not claimed.
+// README.md in this directory for the definitions and what is and is not claimed.
 //
 //	go run ./bench/redaction                 # 1000 receipts, every variant
 //	go run ./bench/redaction --receipts 50 --allow-dirty   # smoke run (do not commit)

@@ -80,23 +80,23 @@ test-controls:
 test-e2e:
 	E2E=1 go test -count=1 -timeout 30m -v ./test/e2e
 
-# Crash-recovery benchmark (bench/README.md). Needs a clean working tree and writes
+# Crash-recovery benchmark (bench/recovery/README.md). Needs a clean working tree and writes
 # bench/results/recovery-*.json and .txt; commit those with the code's commit hash noted.
 bench-recovery:
 	go run ./bench/recovery
 
-# Queue benchmarks: throughput vs worker count, latency, retry behavior (bench/README.md).
+# Queue benchmarks: throughput vs worker count, latency, retry behavior (bench/queue/README.md).
 # About 30 minutes. Needs a clean working tree; writes bench/results/queue-*.json and .txt.
 bench-queue:
 	go run ./bench/queue
 
 # Settlement fault-injection benchmark: real worker and mock-provider processes, a scratch
-# database per run (bench/README.md). About 20 minutes. Needs a clean working tree; run it
+# database per run (bench/settlement/README.md). About 20 minutes. Needs a clean working tree; run it
 # as `caffeinate -ims make bench-settlement` on a quiet machine.
 bench-settlement:
 	go run ./bench/settlement
 
-# Ledger stress benchmark and its negative controls (bench/README.md): the production
+# Ledger stress benchmark and its negative controls (bench/stress/README.md): the production
 # build first (nothing disabled), then the unsafe_controls build with one protection off at
 # a time. Needs a clean git tree and a quiet machine; run as `caffeinate -ims make
 # bench-stress`. Writes bench/results/stress-production-*.{json,txt} and
@@ -105,7 +105,7 @@ bench-stress:
 	go run ./bench/stress
 	go run -tags unsafe_controls ./bench/stress
 
-# What row-level security and the identity seam cost (bench/README.md): the same seeded
+# What row-level security and the identity seam cost (bench/rls/README.md): the same seeded
 # database and closed-loop mix of the handlers' queries with RLS disabled on the plain pool,
 # disabled through the seam, and enabled through it; scratch databases; about 8 minutes.
 # Needs a clean git tree and a quiet machine; run as `caffeinate -ims make bench-rls`.
@@ -114,7 +114,7 @@ bench-rls:
 	go run ./bench/rls
 
 # Redaction recall on synthetic receipts, on ground-truth text and on Tesseract's reading of
-# rendered images (bench/README.md). Needs tesseract and a clean working tree; touches no
+# rendered images (bench/redaction/README.md). Needs tesseract and a clean working tree; touches no
 # database. Writes bench/results/redaction-*.{json,txt}.
 bench-redaction:
 	go run ./bench/redaction
@@ -130,7 +130,7 @@ demo: up
 demo-keep: up
 	go run ./cmd/demo --keep
 
-# Extraction accuracy of the real model on synthetic receipts (bench/README.md): 50 receipts
+# Extraction accuracy of the real model on synthetic receipts (bench/accuracy/README.md): 50 receipts
 # x 5 variants = 250 calls to the Anthropic API, which COSTS MONEY and needs
 # ANTHROPIC_API_KEY in this shell (read -s ANTHROPIC_API_KEY; export ANTHROPIC_API_KEY) and a
 # spend limit set in the console first. Needs tesseract and a clean working tree; touches no

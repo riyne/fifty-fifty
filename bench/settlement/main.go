@@ -1,5 +1,5 @@
-// Command settlement runs the settlement fault-injection benchmark (DESIGN.md section 10,
-// item 5): settlements arrive as a Poisson process and are executed by real worker
+// Command settlement runs the settlement fault-injection benchmark:
+// settlements arrive as a Poisson process and are executed by real worker
 // processes against a real mock-payment-provider process that loses responses, never
 // receives requests, declines, and sends duplicated, delayed, dropped and reordered
 // signed webhooks, with a worker killed with SIGKILL in one mix. After each run the

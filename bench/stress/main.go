@@ -1,4 +1,4 @@
-// Command stress runs the ledger stress benchmark (DESIGN.md section 10, item 1) and its
+// Command stress runs the ledger stress benchmark and its
 // negative controls.
 //
 // A mixed concurrent workload (create, claim, unclaim, finalize, void, balances reads,

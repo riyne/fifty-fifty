@@ -1,4 +1,4 @@
-// Command queue runs the queue benchmarks (DESIGN.md section 10, items 2 and 4):
+// Command queue runs the queue benchmarks:
 // throughput against worker count, end-to-end and queue-wait latency under steady
 // load, and retry behavior under injected faults. Every scenario drives real
 // cmd/benchworker processes through Postgres against the mock LLM (cmd/mockllm's
@@ -10,7 +10,7 @@
 //
 // It writes <out>/queue-<timestamp>.json (every run, parameters, environment) and a
 // .txt summary, and refuses a dirty working tree unless --allow-dirty (smoke runs;
-// do not commit those results). See bench/README.md for what each scenario means.
+// do not commit those results). See README.md in this directory for what each scenario means.
 package main
 
 import (

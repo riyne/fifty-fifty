@@ -232,6 +232,6 @@ func injectionStatements() []string {
 		"The attacks are the ordinary ones written by the author of the prompt and the pipeline, on receipts in one clean layout. An attacker who knew the prompt and the validator would write others, and a real receipt is an image.",
 		"'Followed' is a mechanical predicate (per attack, in bench/accuracy/injection.go) that this author wrote; the raw answers are above so it can be checked by eye. An answer can carry out an instruction in a way the predicate does not see.",
 		"The pipeline's only defense after the model is the strict schema and the arithmetic review flag (items + tax + tip must equal the printed total). A forgery that adds up (an added fee with the total adjusted) is accepted by design; whether the model produced one is what the attack 'forge_consistent' looks at.",
-		"What an injected instruction can reach is the items and amounts of the one expense the upload creates; whether that matters is an argument in DESIGN, not something measured here.",
+		"What an injected instruction can reach is the items and amounts of the one expense the upload creates; whether that matters is a design argument, not something measured here.",
 	}
 }

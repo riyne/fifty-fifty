@@ -7,7 +7,7 @@
 // The result that matters is not "how often is the model right" but the split of the
 // system's decision against correctness: of the wrong parses, how many did the review
 // flag catch, and how many were accepted silently. See eval.go for the definitions and
-// bench/README.md for what the numbers do and do not say.
+// README.md in this directory for what the numbers do and do not say.
 //
 // Everything is synthetic and the receipts, the prompt and this harness were written by
 // one author, so the numbers flatter the system; they say nothing about real receipts or

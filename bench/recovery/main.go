@@ -1,4 +1,4 @@
-// Command recovery runs the crash-recovery benchmark (DESIGN.md section 10, item 3):
+// Command recovery runs the crash-recovery benchmark:
 // kill -9 a worker process mid-job, R times per lease setting, and record how long
 // the orphaned jobs take to finish and whether any job was lost or had its effect
 // written twice. The workload is internal/benchwork's mock.extract against the mock
