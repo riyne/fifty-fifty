@@ -154,7 +154,7 @@ Screenshots from the iOS Simulator against `make demo-keep`: synthetic data, the
     curl -H "Authorization: Bearer $TOKEN" localhost:8080/v1/me
     make generate                # regenerate the sqlc code after editing migrations/ or internal/db/queries/
 
-Benchmarks (each needs a clean git tree; method in [bench/README.md](bench/README.md), raw results in `bench/results/`): `make bench-queue bench-recovery bench-settlement bench-stress bench-redaction bench-rls`. `make bench-accuracy` calls the real Anthropic API and **costs money** (about 8 US cents); it needs `ANTHROPIC_API_KEY` in the shell and refuses to start unless the call count is confirmed.
+Benchmarks (each needs a clean git tree; method in [bench/README.md](bench/README.md), raw results in `bench/results/`): `make bench-queue bench-recovery bench-settlement bench-stress bench-redaction bench-rls`. `make bench-accuracy` calls the real Anthropic API and **costs money** (about 8 US cents; `--prompt-version` and `--injection` select the prompt follow-up and the injection check, see [bench/README.md](bench/README.md)); it needs `ANTHROPIC_API_KEY` in the shell and refuses to start unless the call count is confirmed.
 
 Layout: `cmd/` the binaries (`api`, `worker`, `demo`, and the mocks `mockllm` and `mockpay`), `internal/` the packages (the ledger, queue, settlement, receipts, row-level-security seam, and the stress and settlement rigs), `migrations/` the 17 migrations, `api/openapi.yaml` the contract, `test/` the cross-package suites (BOLA, row-level security, database invariants, end to end), `bench/` the benchmarks, `mobile/` the app. The full map is in [DESIGN section 3](docs/DESIGN.md#3-architecture).
 
