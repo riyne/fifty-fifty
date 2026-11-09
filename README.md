@@ -4,7 +4,7 @@ Split a bill with friends: photograph the receipt, a language model reads the it
 
 > **What this is.** A backend-heavy portfolio project by Ryan Yap. The app is the excuse; the work is in how it is built and how hard it was tested: correctness under concurrency, a job queue that survives crashes, idempotent payments against a flaky provider, authorization, and an LLM treated as an untrusted dependency. Every number on this page comes from a recorded run and has a row in [docs/CLAIMS.md](docs/CLAIMS.md) with its method and its limits.
 >
-> **What it is not.** **Settlement is simulated**: the payment provider is a mock and no money moves. All data is synthetic. The ledger records IOUs between friends, not funds. The real language-model API was used in one evaluation and a smoke test; everything else (tests, demo, mobile) runs against a mock model. See [What this is not](#what-this-is-not).
+> **What it is not.** **Settlement is simulated**: the payment provider is a mock and no money moves. All data is synthetic. The ledger records IOUs between friends, not funds. The real language-model API was used in the accuracy evaluations, one injection check and two smoke tests (a handful of calls each); everything else (tests, demo, mobile) runs against a mock model. See [What this is not](#what-this-is-not).
 
 ## Try it
 
