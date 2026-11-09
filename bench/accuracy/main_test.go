@@ -298,11 +298,19 @@ func TestAnalyze_SplitsWrongParsesByKindAndDecision(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Every wrong parse is quantity-only and accepted, none flagged.
-	line := ""
+	line, second := "", ""
 	for _, l := range strings.Split(out.String(), "\n") {
 		if strings.HasPrefix(l, "ground-truth-text") {
-			line = l
+			if line == "" {
+				line = l // the first table: wrong parses by kind
+			} else {
+				second = l // the second: those with an amount not in the text
+			}
 		}
+	}
+	// Dropping quantities changes no amount, so none is "not in the text".
+	if wantSecond := fmt.Sprintf("%-18s %6d | %10d / %-10d", "ground-truth-text", tl.AcceptedWrong, 0, 0); second != wantSecond {
+		t.Errorf("second table row\n got: %q\nwant: %q", second, wantSecond)
 	}
 	want := fmt.Sprintf("%-18s %6d | %10d / %-10d | %10d / %-10d | %10d / %-10d", "ground-truth-text", tl.AcceptedWrong, tl.AcceptedWrong, 0, 0, 0, 0, 0)
 	if line != want {
@@ -313,5 +321,134 @@ func TestAnalyze_SplitsWrongParsesByKindAndDecision(t *testing.T) {
 	}
 	if err := analyze(filepath.Join(t.TempDir(), "missing.json"), &out); err == nil {
 		t.Error("a missing file must be an error")
+	}
+}
+
+// A model that moves a price and fixes the total so the sum still matches (the behavior the
+// first recording found) is accepted by the review flag and wrong; the metric must see it in
+// the records, the tally and the analysis, and must not see the answers left alone.
+func TestEvaluate_BackSolvingShowsInTheMetric(t *testing.T) {
+	p := params5()
+	p.N = 8
+	damaged := func(ref int) bool { return ref%2 == 0 }
+	m := &fakeModel{t: t, damage: func(a *ans, ref int) {
+		if damaged(ref) {
+			a.Items[0].LineTotal += 777
+			a.Total += 777
+		}
+	}}
+	recs, err := evaluate(context.Background(), p, m, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nDamaged := 0
+	for _, r := range recs {
+		got := len(r.AmountsNotInText)
+		switch {
+		case damaged(r.Ref):
+			nDamaged++
+			if got != 2 || r.Status != receipts.StatusClaiming || r.Score.AmountsExact {
+				t.Errorf("ref %d: %d amounts not in the text, status %s, amounts exact %v; want 2, claiming, false", r.Ref, got, r.Status, r.Score.AmountsExact)
+			}
+		case got != 0:
+			t.Errorf("ref %d was left alone but has amounts not in the text: %v", r.Ref, r.AmountsNotInText)
+		}
+	}
+	if nDamaged == 0 || nDamaged == len(recs) {
+		t.Fatalf("the test needs some damaged and some untouched answers (%d of %d)", nDamaged, len(recs))
+	}
+	tl := summarize(recs)
+	if tl.AmountNotInText.K != nDamaged || tl.AmountNotInText.N != len(recs) || tl.AmountNotInTextAccepted != nDamaged || tl.AmountNotInTextWrong != nDamaged || tl.AmountsNotInTextTotal != 2*nDamaged {
+		t.Errorf("tally: %d/%d, accepted %d, wrong %d, amounts %d; want %d/%d, %d, %d, %d", tl.AmountNotInText.K, tl.AmountNotInText.N, tl.AmountNotInTextAccepted, tl.AmountNotInTextWrong, tl.AmountsNotInTextTotal, nDamaged, len(recs), nDamaged, nDamaged, 2*nDamaged)
+	}
+
+	// The analysis recomputes it from the kept answer and text, for the wrong parses.
+	f := filepath.Join(t.TempDir(), "rec.json")
+	b, _ := json.Marshal(report{Env: env{Commit: "test"}, Records: recs})
+	if err := os.WriteFile(f, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := analyze(f, &out); err != nil {
+		t.Fatal(err)
+	}
+	second := fmt.Sprintf("%-18s %6d | %10d / %-10d", "ground-truth-text", nDamaged, nDamaged, 0)
+	if !strings.Contains(out.String(), second+"\n") {
+		t.Errorf("analysis does not contain the row %q:\n%s", second, out.String())
+	}
+	if n := strings.Count(out.String(), "(amounts not in the text:"); n != nDamaged {
+		t.Errorf("silent error lines with amounts = %d, want %d:\n%s", n, nDamaged, out.String())
+	}
+}
+
+// The recording says which prompt the model was given.
+func TestEnv_RecordsThePromptVersionAndHash(t *testing.T) {
+	for _, ver := range []string{"", anthropic.PromptV1, anthropic.PromptV2} {
+		c, err := anthropic.New(anthropic.Config{BaseURL: "http://127.0.0.1:9", PromptVersion: ver})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e := captureEnv(c, "")
+		want := ver
+		if want == "" {
+			want = anthropic.PromptV1
+		}
+		if e.PromptVersion != want || e.PromptSHA256 != c.PromptSHA256() || len(e.PromptSHA256) != 64 {
+			t.Errorf("version %q: env says %q / %q", ver, e.PromptVersion, e.PromptSHA256)
+		}
+		if txt := render(report{Env: e, Params: params{Variants: []string{"x"}}}); !strings.Contains(txt, "system prompt "+want+" (sha256 "+e.PromptSHA256+")") {
+			t.Errorf("version %q: the text report does not name the prompt:\n%s", ver, txt)
+		}
+	}
+	if _, err := anthropic.New(anthropic.Config{BaseURL: "http://127.0.0.1:9", PromptVersion: "v9"}); err == nil {
+		t.Error("an unknown prompt version must be refused before any call is made")
+	}
+}
+
+// garblingOCR stands in for Tesseract on one receipt: it "reads" the receipt's true text except
+// that one price is damaged the way OCR damages one (a letter stuck to the first digit).
+type garblingOCR struct {
+	t     *testing.T
+	text  string // what it returns
+	calls int
+}
+
+func (g *garblingOCR) Text(_ context.Context, img []byte, _ string) (string, error) {
+	if len(img) == 0 {
+		g.t.Error("the OCR was handed no image")
+	}
+	g.calls++
+	return g.text, nil
+}
+
+// The metric is computed from the text that was SENT, not from the receipt's ground truth: with
+// a price garbled in the text, a model that answers with the true price has supplied an amount
+// the text does not contain, and a model that leaves the line out has not.
+func TestEvaluate_TheMetricReadsTheTextSentNotTheGroundTruth(t *testing.T) {
+	ocrVariant := []variant{{Name: "ocr-clean", OCR: true}}
+	truth := synth.Generate(5001)
+	line := truth.Lines[0]
+	price := fmt.Sprintf("%d.%02d", line.TotalMinor/100, line.TotalMinor%100)
+	if strings.Count(truth.Text(), price) != 1 {
+		t.Skipf("price %s printed more than once", price)
+	}
+	garbled := strings.Replace(truth.Text(), price, "B"+price[1:], 1)
+	run := func(m *fakeModel) record {
+		t.Helper()
+		g := &garblingOCR{t: t, text: garbled}
+		p := params5()
+		p.First, p.N, p.Variants = 5001, 1, ocrVariant
+		recs, err := evaluate(context.Background(), p, m, g)
+		if err != nil || len(recs) != 1 || g.calls != 1 {
+			t.Fatalf("evaluate: %v, %d records, %d OCR calls", err, len(recs), g.calls)
+		}
+		return recs[0]
+	}
+	if r := run(&fakeModel{t: t}); len(r.AmountsNotInText) != 1 || r.AmountsNotInText[0] != line.TotalMinor {
+		t.Errorf("a model that supplied the garbled price: %v, want [%d]", r.AmountsNotInText, line.TotalMinor)
+	}
+	leaveOut := &fakeModel{t: t, damage: func(a *ans, _ int) { a.Items = a.Items[1:] }}
+	if r := run(leaveOut); len(r.AmountsNotInText) != 0 {
+		t.Errorf("a model that left the garbled line out: %v, want none", r.AmountsNotInText)
 	}
 }

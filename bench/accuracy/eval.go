@@ -124,6 +124,96 @@ func intersect(a, b map[string]int) int {
 	return n
 }
 
+// The back-solving metric (M10.9). The first recording found that, when a price was garbled and
+// a printed subtotal was visible, the model sometimes filled the gap so that the numbers added
+// up, which defeats the arithmetic check. A silent error is too rare to show whether an
+// instruction removes that (3 in 250), so this counts the behavior itself: an amount in the
+// answer (a line total, the tax, the tip or the total) that is not a number printed in the text
+// that was sent. It is computed from the text sent and the answer, never from the ground truth.
+//
+// "Printed" means a whole token of the text, split at white space and colons, that is an
+// amount: digits, a point, exactly two decimals, optionally thousands commas, and with the
+// punctuation around it ($, brackets, a trailing comma or point) removed. "B8.77" is not an
+// amount token (a letter is stuck to it), so a model that reads it as 8.77 has supplied a price
+// the text does not contain. The synthetic receipts print every amount this way, so a model
+// that reads what is there is never counted. What it does and does not mean:
+//   - it counts amounts the text does not contain, whatever the reason: a model that guesses a
+//     garbled price (even correctly, from context) is counted, and so is one that mistypes a
+//     clean token (copies 36.49 as 36.94), because 3694 is not in the text;
+//   - an amount that IS in the text but is the wrong one (the subtotal used as the total, a price
+//     taken from the next line) is not counted: nothing here can see it.
+func amountsNotInText(text string, raw []byte) []int64 {
+	ex, err := receipts.ParseExtraction(raw)
+	if err != nil {
+		return nil
+	}
+	printed := printedAmounts(text)
+	var missing []int64
+	check := func(v int64) {
+		if !printed[v] {
+			missing = append(missing, v)
+		}
+	}
+	for _, l := range ex.Lines {
+		check(l.LineTotalMinor)
+	}
+	// Tax and tip are optional (0 means the receipt has none); the total is the printed one.
+	for _, v := range []int64{ex.TaxMinor, ex.TipMinor, ex.TotalMinor} {
+		if v > 0 {
+			check(v)
+		}
+	}
+	return missing
+}
+
+// printedAmounts is the set of amounts (minor units) that appear as whole tokens in text.
+func printedAmounts(text string) map[int64]bool {
+	out := map[int64]bool{}
+	for _, tok := range strings.FieldsFunc(text, func(r rune) bool { return unicode.IsSpace(r) || r == ':' }) {
+		tok = strings.TrimLeft(tok, "$([*'\"")
+		tok = strings.TrimRight(tok, ")]*,;.'\"")
+		if v, ok := parseAmount(tok); ok {
+			out[v] = true
+		}
+	}
+	return out
+}
+
+// parseAmount reads "12.50" or "1,234.50" as minor units. Anything else is not an amount.
+func parseAmount(tok string) (int64, bool) {
+	dot := strings.LastIndexByte(tok, '.')
+	if dot < 1 || len(tok)-dot != 3 {
+		return 0, false
+	}
+	whole, cents := tok[:dot], tok[dot+1:]
+	if strings.Contains(whole, ",") {
+		parts := strings.Split(whole, ",")
+		if len(parts[0]) < 1 || len(parts[0]) > 3 {
+			return 0, false
+		}
+		for _, p := range parts[1:] {
+			if len(p) != 3 {
+				return 0, false
+			}
+		}
+		whole = strings.Join(parts, "")
+	}
+	if len(whole) > 12 {
+		return 0, false
+	}
+	for _, r := range whole + cents {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	w, err1 := strconv.ParseInt(whole, 10, 64)
+	c, err2 := strconv.ParseInt(cents, 10, 64)
+	if err1 != nil || err2 != nil {
+		return 0, false
+	}
+	return w*100 + c, true
+}
+
 // Wilson returns the 95% Wilson score interval for k successes in n trials.
 func Wilson(k, n int) (lo, hi float64) {
 	if n == 0 {
@@ -184,6 +274,16 @@ type tally struct {
 	AmountPrec    float64 `json:"unit_precision_amount"`
 	AmountRecall  float64 `json:"unit_recall_amount"`
 
+	// The back-solving metric (see amountsNotInText): of the answers that were valid for the
+	// schema, how many contain an amount that is not printed in the text sent, how many of those
+	// the system accepted (the dangerous ones: the review flag cannot see an amount it was
+	// handed consistently) and how many were wrong anyway. Zero in recordings made before M10.9,
+	// which did not compute it.
+	AmountNotInText         rate `json:"answers_with_an_amount_not_in_the_text_sent"`
+	AmountNotInTextAccepted int  `json:"answers_with_an_amount_not_in_the_text_sent_accepted"`
+	AmountNotInTextWrong    int  `json:"answers_with_an_amount_not_in_the_text_sent_wrong"`
+	AmountsNotInTextTotal   int  `json:"amounts_not_in_the_text_sent_total"`
+
 	Reasons map[string]int `json:"review_reasons"`
 
 	InputTokens   int     `json:"input_tokens_total"`
@@ -198,7 +298,7 @@ type tally struct {
 // summarize folds records into a tally. Records of failed calls count only as failures.
 func summarize(recs []record) tally {
 	t := tally{Reasons: map[string]int{}}
-	var truthU, readU, strict, amount int
+	var truthU, readU, strict, amount, parsed, notInText int
 	var lat []int64
 	for _, r := range recs {
 		t.AttemptsTotal += r.Attempts
@@ -225,6 +325,19 @@ func summarize(recs []record) tally {
 		for _, why := range r.Reasons {
 			t.Reasons[why]++
 		}
+		if r.Score.Parsed {
+			parsed++
+			if len(r.AmountsNotInText) > 0 {
+				notInText++
+				t.AmountsNotInTextTotal += len(r.AmountsNotInText)
+				if r.Status == receipts.StatusClaiming {
+					t.AmountNotInTextAccepted++
+				}
+				if !r.Score.AmountsExact {
+					t.AmountNotInTextWrong++
+				}
+			}
+		}
 		accepted, correct := r.Status == receipts.StatusClaiming, r.Score.AmountsExact
 		switch {
 		case accepted && correct:
@@ -241,6 +354,7 @@ func summarize(recs []record) tally {
 	wrong := t.AcceptedWrong + t.FlaggedWrong
 	right := t.AcceptedCorrect + t.FlaggedCorrect
 	t.AmountsExact = newRate(right, n)
+	t.AmountNotInText = newRate(notInText, parsed)
 	t.SilentErrorRate = newRate(t.AcceptedWrong, n)
 	t.CatchRate = newRate(t.FlaggedWrong, wrong)
 	t.FalseAlarmRate = newRate(t.FlaggedCorrect, right)

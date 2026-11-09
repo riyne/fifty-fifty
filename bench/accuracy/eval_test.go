@@ -2,9 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/riyne/fifty-fifty/internal/receiptparse"
 	"github.com/riyne/fifty-fifty/internal/receipts"
 	"github.com/riyne/fifty-fifty/internal/receipts/synth"
 )
@@ -247,5 +250,138 @@ func TestClassify_WhatKindOfWrong(t *testing.T) {
 	}
 	if got := classify(r, nil); got != kindUnparsed {
 		t.Errorf("no answer: %q", got)
+	}
+}
+
+func TestParseAmount_OnlyWholeAmountTokensCount(t *testing.T) {
+	good := map[string]int64{"36.49": 3649, "0.05": 5, "1,234.50": 123450, "12,345,678.00": 1234567800, "100.00": 10000}
+	for tok, want := range good {
+		if got, ok := parseAmount(tok); !ok || got != want {
+			t.Errorf("parseAmount(%q) = %d, %v; want %d", tok, got, ok, want)
+		}
+	}
+	for _, tok := range []string{"", "B8.77", "8.7", "8.777", "12", ".50", "1,23.00", "1234,567.00", "12,34.5", "x2", "36.4O", "-5.00", "+5.00", "--", "36.49.", "3 6.49", "1,2345.00", "1234567890123.00"} {
+		if got, ok := parseAmount(tok); ok {
+			t.Errorf("parseAmount(%q) = %d, true; want not an amount", tok, got)
+		}
+	}
+}
+
+func TestPrintedAmounts_TokensAndPunctuation(t *testing.T) {
+	text := "Spring Rolls : 36.49\n2 Pizza:48.02\nSide ($5.00)\nB8.77 and 8.7 and 9.999\nTax 1,234.50, Tip 3.00.\n*7.25*\n"
+	got := printedAmounts(text)
+	for _, v := range []int64{3649, 4802, 500, 123450, 300, 725} {
+		if !got[v] {
+			t.Errorf("amount %d is printed and was not found (found %v)", v, got)
+		}
+	}
+	for _, v := range []int64{877, 87, 8, 870, 999, 9999} {
+		if got[v] {
+			t.Errorf("amount %d is not printed as a whole amount token but was found", v)
+		}
+	}
+}
+
+// Whatever a perfect reader sends, a perfect answer contains no amount that is not printed: the
+// metric cannot fire on the faithful case, on the text the worker would send (redacted).
+func TestAmountsNotInText_AFaithfulAnswerHasNone(t *testing.T) {
+	for ref := 5001; ref < 7000; ref++ {
+		r := synth.Generate(ref)
+		text, _ := receiptparse.PrepareText(r.Text(), 0)
+		if m := amountsNotInText(text, []byte(r.Answer())); len(m) != 0 {
+			t.Fatalf("ref %d: a faithful answer has amounts not in the text: %v\n%s", ref, m, text)
+		}
+	}
+}
+
+// The behavior the metric exists for: a price the text does not contain, whether the model
+// guessed it, computed it from the subtotal or invented it.
+func TestAmountsNotInText_CountsWhatIsSuppliedNotWhatIsRead(t *testing.T) {
+	r := receiptWith(t, func(r synth.Receipt) bool { return r.TaxMinor > 0 && r.TipMinor > 0 && len(r.Lines) >= 3 })
+	text := r.Text()
+	price := fmt.Sprintf("%d.%02d", r.Lines[1].TotalMinor/100, r.Lines[1].TotalMinor%100)
+	if strings.Count(text, price) != 1 {
+		t.Skipf("price %s is printed more than once; pick another receipt", price)
+	}
+	garbled := strings.Replace(text, price, "B"+price[1:], 1)
+	full := truthAnswer(r)
+
+	// 1. The model reads the garbled price correctly from context: counted (it was not printed).
+	if m := amountsNotInText(garbled, marshal(t, full)); len(m) != 1 || m[0] != r.Lines[1].TotalMinor {
+		t.Errorf("a guessed price: %v, want exactly [%d]", m, r.Lines[1].TotalMinor)
+	}
+	// 2. It leaves the line out, as the v2 prompt asks: nothing is supplied, nothing counted.
+	left := truthAnswer(r)
+	left.Items = append(append([]ansItem{}, left.Items[:1]...), left.Items[2:]...)
+	if m := amountsNotInText(garbled, marshal(t, left)); len(m) != 0 {
+		t.Errorf("a line left out: %v, want none", m)
+	}
+	// 3. It back-solves a different value to make the sum match: counted.
+	bs := truthAnswer(r)
+	bs.Items[1].LineTotal += 3000
+	if m := amountsNotInText(garbled, marshal(t, bs)); len(m) != 1 || m[0] != r.Lines[1].TotalMinor+3000 {
+		t.Errorf("a back-solved price: %v", m)
+	}
+	// 4. An unreadable printed total filled with the sum: counted, like a price.
+	noTotal := regexpTotalLine.ReplaceAllString(text, "TOTAL : ???")
+	if m := amountsNotInText(noTotal, marshal(t, full)); len(m) != 1 || m[0] != r.TotalMinor {
+		t.Errorf("an unreadable total filled in: %v, want [%d]", m, r.TotalMinor)
+	}
+	// 4b. The same for an unreadable tax and an unreadable tip (when the value is printed
+	// nowhere else, so removing the line really removes it from the text).
+	for _, c := range []struct {
+		name string
+		re   *regexp.Regexp
+		v    int64
+	}{{"tax", regexp.MustCompile(`(?m)^Tax.*$`), r.TaxMinor}, {"tip", regexp.MustCompile(`(?m)^Tip.*$`), r.TipMinor}} {
+		if c.v == 0 {
+			continue
+		}
+		cut := c.re.ReplaceAllString(text, c.name+" : ???")
+		if printedAmounts(cut)[c.v] {
+			continue // the value is also printed on another line of this receipt
+		}
+		if m := amountsNotInText(cut, marshal(t, full)); len(m) != 1 || m[0] != c.v {
+			t.Errorf("an unreadable %s filled in: %v, want [%d]", c.name, m, c.v)
+		}
+	}
+	// 5. Documented limit: a printed amount used where another belongs (the subtotal as a line
+	// price) is not counted, because the text does contain it.
+	sub := truthAnswer(r)
+	var subtotal int64
+	for _, l := range r.Lines {
+		subtotal += l.TotalMinor
+	}
+	sub.Items[1].LineTotal = subtotal
+	if m := amountsNotInText(text, marshal(t, sub)); len(m) != 0 {
+		t.Errorf("a wrong but printed amount was counted: %v", m)
+	}
+	// 6. Not an answer: nothing to count.
+	if m := amountsNotInText(text, []byte("not json")); m != nil {
+		t.Errorf("an unusable answer: %v", m)
+	}
+}
+
+var regexpTotalLine = regexp.MustCompile(`(?m)^TOTAL.*$`)
+
+func TestSummarize_AmountNotInTextCounts(t *testing.T) {
+	mk := func(status string, exact, parsed bool, amounts ...int64) record {
+		r := rec(status, exact)
+		r.Score.Parsed = parsed
+		r.AmountsNotInText = amounts
+		return r
+	}
+	got := summarize([]record{
+		mk(receipts.StatusClaiming, false, true, 100),         // accepted, wrong, has one
+		mk(receipts.StatusNeedsReview, false, true, 200, 300), // flagged, wrong, has two
+		mk(receipts.StatusNeedsReview, true, true, 400),       // flagged, correct, has one (a correct guess)
+		mk(receipts.StatusClaiming, true, true),               // clean
+		mk(receipts.StatusNeedsReview, false, false),          // not valid for the schema: not in the denominator
+	})
+	if got.AmountNotInText.K != 3 || got.AmountNotInText.N != 4 {
+		t.Errorf("rate %d/%d, want 3/4", got.AmountNotInText.K, got.AmountNotInText.N)
+	}
+	if got.AmountNotInTextAccepted != 1 || got.AmountNotInTextWrong != 2 || got.AmountsNotInTextTotal != 4 {
+		t.Errorf("accepted %d wrong %d total %d, want 1, 2, 4", got.AmountNotInTextAccepted, got.AmountNotInTextWrong, got.AmountsNotInTextTotal)
 	}
 }

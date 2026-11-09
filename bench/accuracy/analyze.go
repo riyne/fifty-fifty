@@ -56,11 +56,38 @@ func analyze(path string, w io.Writer) error {
 		q, a, u := counts[kindQuantityOnly], counts[kindAmounts], counts[kindUnparsed]
 		fmt.Fprintf(w, "%-18s %6d | %10d / %-10d | %10d / %-10d | %10d / %-10d\n", v, wrong, q[0], q[1], a[0], a[1], u[0], u[1])
 	}
+	// The back-solving metric, for the wrong parses only: a recording keeps the answer and the
+	// text sent only for parses that were not exact, so this is a lower bound on the metric
+	// (a right answer that guessed an amount is not here) but covers every wrong parse. For a
+	// recording made since M10.9 the full figure is in its tally.
+	fmt.Fprintf(w, "\nwrong parses that contain an amount NOT printed in the text sent (recomputed here from the kept answer and text):\n")
+	fmt.Fprintf(w, "%-18s %6s | %-22s\n", "variant", "wrong", "with such an amount (acc/flag)")
+	for _, v := range order {
+		var wrong, acc, flag int
+		for _, r := range byVariant[v] {
+			if r.CallError != "" || r.Score.AmountsExact {
+				continue
+			}
+			wrong++
+			if len(amountsNotInText(r.InputText, []byte(r.Answer))) > 0 {
+				if r.Status == receipts.StatusClaiming {
+					acc++
+				} else {
+					flag++
+				}
+			}
+		}
+		fmt.Fprintf(w, "%-18s %6d | %10d / %-10d\n", v, wrong, acc, flag)
+	}
 	var silent []string
 	for _, v := range order {
 		for _, r := range byVariant[v] {
 			if r.CallError == "" && !r.Score.AmountsExact && r.Status == receipts.StatusClaiming {
-				silent = append(silent, fmt.Sprintf("  %s ref %d: %s", v, r.Ref, classify(synth.Generate(r.Ref), []byte(r.Answer))))
+				note := ""
+				if m := amountsNotInText(r.InputText, []byte(r.Answer)); len(m) > 0 {
+					note = fmt.Sprintf(" (amounts not in the text: %v)", m)
+				}
+				silent = append(silent, fmt.Sprintf("  %s ref %d: %s%s", v, r.Ref, classify(synth.Generate(r.Ref), []byte(r.Answer)), note))
 			}
 		}
 	}

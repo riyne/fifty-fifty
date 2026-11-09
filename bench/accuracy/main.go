@@ -89,6 +89,9 @@ type record struct {
 	Status  string   `json:"status"` // what the system chose: claiming or needs_review
 	Reasons []string `json:"reasons,omitempty"`
 	Score   score    `json:"score"`
+	// AmountsNotInText: the amounts of the answer that are not printed in the text sent (see
+	// amountsNotInText). Computed from M10.9; absent in earlier recordings.
+	AmountsNotInText []int64 `json:"amounts_not_in_the_text_sent,omitempty"`
 
 	// Kept only for answers that are not Exact, to study what went wrong. Synthetic data.
 	Answer    string `json:"answer,omitempty"`
@@ -108,7 +111,11 @@ type env struct {
 	BaseURL     string `json:"base_url"`
 	Model       string `json:"model_requested"`
 	MaxTokens   int    `json:"max_tokens"`
-	Note        string `json:"note"`
+	// PromptVersion and PromptSHA256 say which system prompt the model was given (M10.9).
+	// Recordings made before it have neither: they used what is now PromptV1.
+	PromptVersion string `json:"prompt_version,omitempty"`
+	PromptSHA256  string `json:"prompt_sha256,omitempty"`
+	Note          string `json:"note"`
 }
 
 type params struct {
@@ -154,6 +161,7 @@ func run() error {
 		baseURL    = flag.String("base-url", "", "Messages API base URL (default the public API; an http loopback address, such as the mock LLM, needs no key)")
 		model      = flag.String("model", "", "model (default "+anthropic.DefaultModel+")")
 		maxTokens  = flag.Int("max-tokens", 0, "max answer tokens (default the client's)")
+		promptVer  = flag.String("prompt-version", "", "system prompt: "+anthropic.PromptV1+" (the default, what the worker uses and what every recording before M10.9 used) or "+anthropic.PromptV2+" (adds the rule about prices that cannot be read)")
 		confirm    = flag.Int("confirm-calls", 0, "required for a non-loopback base URL: must equal the number of calls about to be made")
 		out        = flag.String("out", "", "output directory for a run that is not recorded (default: a directory under the system temp dir; nothing is written into the repository)")
 		recording  = flag.Bool("record", false, "write the result into bench/results (a recording: real service, clean working tree, never with --allow-dirty or --out)")
@@ -188,7 +196,7 @@ func run() error {
 		return err
 	}
 
-	client, err := anthropic.New(anthropic.Config{BaseURL: *baseURL, APIKey: os.Getenv("ANTHROPIC_API_KEY"), Model: *model, MaxTokens: *maxTokens})
+	client, err := anthropic.New(anthropic.Config{BaseURL: *baseURL, APIKey: os.Getenv("ANTHROPIC_API_KEY"), Model: *model, MaxTokens: *maxTokens, PromptVersion: *promptVer})
 	if err != nil {
 		return err
 	}
@@ -416,6 +424,7 @@ func evaluate(ctx context.Context, p evalParams, ex receiptparse.Extractor, read
 					r.LatencyMS, r.Model, r.InputTokens, r.OutputTokens = lat.Milliseconds(), got.Model, got.InputTokens, got.OutputTokens
 					r.Status, r.Reasons = out.Status, out.Reasons
 					r.Score = scoreAnswer(t.truth, got.Answer)
+					r.AmountsNotInText = amountsNotInText(t.text, got.Answer)
 					if !r.Score.Exact {
 						r.Answer = string(got.Answer)
 					}
@@ -509,7 +518,8 @@ func captureEnv(c *anthropic.Client, tess string) env {
 		Tesseract: tess, LoadAvg: sh("uptime"), Commit: sh("git", "rev-parse", "HEAD"),
 		Dirty:   sh("git", "status", "--porcelain", "--", ".", ":(exclude)bench/results") != "",
 		BaseURL: c.BaseURL(), Model: c.Model(), MaxTokens: anthropic.DefaultMaxTokens,
-		Note: "the system prompt is fixed in internal/anthropic/client.go at the recorded commit; no sampling parameter is sent (the model's defaults apply); the model field in each record is what the service reported",
+		PromptVersion: c.PromptVersion(), PromptSHA256: c.PromptSHA256(),
+		Note: "the system prompt (the version and hash above) is fixed in internal/anthropic/client.go at the recorded commit; no sampling parameter is sent (the model's defaults apply); the model field in each record is what the service reported",
 	}
 }
 
@@ -523,7 +533,8 @@ func statements() []string {
 		"Prompt injection is NOT tested: no receipt here contains instructions aimed at the model. Nothing in this evaluation supports a claim of resistance to it.",
 		"The text sent is what the worker would send: OCR (or the ground-truth text), redaction of cards, emails and phone numbers, trimmed and cut at 6000 characters. The synthetic receipts contain planted card numbers, emails and phone numbers; after redaction the model sees placeholders in their place.",
 		"Cost is not computed here: no price is written in this repository. The token counts are recorded; multiply by the current price list.",
-		"If the prompt or the validator is changed after seeing a result, the earlier result stays recorded and is not replaced.",
+		"If the prompt or the validator is changed after seeing a result, the earlier result stays recorded and is not replaced. A prompt version other than v1 was written after seeing the first recording's errors, so a result for it on the receipts used to find them (5001-5050) is not independent evidence; the comparison that counts is on references that were not looked at (5101-5150).",
+		"'Amount not printed in the text sent' (M10.9) counts the amounts in an answer (line totals, tax, tip, total) that are not whole amount tokens of the text the model was given: it measures guessing, correct or not, and is computed from the text and the answer alone. An amount that is printed but wrong (the subtotal used as the total) is not counted. It is a property of this synthetic format, which prints every amount with two decimals.",
 	}
 }
 
@@ -538,6 +549,9 @@ func render(rep report) string {
 	fmt.Fprintf(&b, "started %s, commit %s (working tree dirty: %v), ran %.0f s\n", rep.StartedAt.Format(time.RFC3339), e.Commit, e.Dirty, rep.DurationS)
 	fmt.Fprintf(&b, "machine: %s, %d CPUs, %s bytes RAM, %s, %s; %s; load average at start: %s\n", e.Machine, e.CPUs, e.MemoryBytes, e.OS, e.GoVersion, orDefault(e.Tesseract, "no Tesseract (no OCR variant)"), e.LoadAvg)
 	fmt.Fprintf(&b, "model requested %s via %s, max tokens %d; real service: %v\n", e.Model, e.BaseURL, e.MaxTokens, rep.Params.RealModel)
+	if e.PromptVersion != "" {
+		fmt.Fprintf(&b, "system prompt %s (sha256 %s)\n", e.PromptVersion, e.PromptSHA256)
+	}
 	fmt.Fprintf(&b, "receipts %d..%d in each of %d variants = %d calls planned, %d in parallel, up to %d attempts each\n\n",
 		rep.Params.FirstRef, rep.Params.FirstRef+rep.Params.Receipts-1, len(rep.Params.Variants), rep.Params.Calls, rep.Params.Workers, rep.Params.Attempts)
 	for _, v := range rep.Variants {
@@ -552,6 +566,7 @@ func render(rep report) string {
 		fmt.Fprintf(&b, "     accepted (claiming) and WRONG (silent)      %3d   silent-error rate %s\n", t.AcceptedWrong, pct(t.SilentErrorRate))
 		fmt.Fprintf(&b, "     flagged (needs_review) and wrong (caught)   %3d   catch rate of wrong parses %s\n", t.FlaggedWrong, pct(t.CatchRate))
 		fmt.Fprintf(&b, "     flagged (needs_review) but correct          %3d   false-alarm rate of correct parses %s\n", t.FlaggedCorrect, pct(t.FalseAlarmRate))
+		fmt.Fprintf(&b, "   answers with an amount NOT printed in the text sent (guessed or invented) %s; of those %d accepted, %d wrong; %d such amounts in all\n", pct(t.AmountNotInText), t.AmountNotInTextAccepted, t.AmountNotInTextWrong, t.AmountsNotInTextTotal)
 		fmt.Fprintf(&b, "   units: strict precision %.3f recall %.3f; on price alone precision %.3f recall %.3f\n", t.UnitPrecision, t.UnitRecall, t.AmountPrec, t.AmountRecall)
 		fmt.Fprintf(&b, "   review reasons: %v\n", t.Reasons)
 		fmt.Fprintf(&b, "   tokens: input %d (mean %.0f), output %d (mean %.0f); latency of an answered attempt p50 %d ms, p99 %d ms\n\n", t.InputTokens, t.MeanInput, t.OutputTokens, t.MeanOutput, t.LatencyP50ms, t.LatencyP99ms)

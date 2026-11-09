@@ -2,6 +2,8 @@ package anthropic_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -530,5 +532,84 @@ func TestAgainstTheMock_Faults(t *testing.T) {
 	defer cancel()
 	if _, err := newClient(t, url).Extract(cctx, "x"); err == nil {
 		t.Error("a held connection returned an answer")
+	}
+}
+
+// The first accuracy recording (M9.3, commit 69368b2) is about exactly these words; this is the
+// SHA-256 of the system prompt in that commit's client.go. If this test fails, PromptV1 was
+// edited: make the change a new version instead (DESIGN, M10.9).
+const promptV1SHA256 = "52d042b6545246e3f56c920e804b18b729e590af6190d65dd8dda4a6e540428b"
+
+func sentSystemPrompt(t *testing.T, mod ...func(*anthropic.Config)) (string, *anthropic.Client) {
+	t.Helper()
+	srv := serve(t, 200, nil, message(answer))
+	c := newClient(t, srv.URL, mod...)
+	if _, err := c.Extract(ctx, "x"); err != nil {
+		t.Fatal(err)
+	}
+	var req struct{ System string }
+	if err := json.Unmarshal(srv.body, &req); err != nil {
+		t.Fatal(err)
+	}
+	return req.System, c
+}
+
+func sha(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+func TestPrompt_DefaultAndV1AreTheRecordedPromptByteForByte(t *testing.T) {
+	for name, mod := range map[string][]func(*anthropic.Config){
+		"default":  nil,
+		"explicit": {func(c *anthropic.Config) { c.PromptVersion = anthropic.PromptV1 }},
+	} {
+		got, c := sentSystemPrompt(t, mod...)
+		if sha(got) != promptV1SHA256 {
+			t.Errorf("%s: the system prompt sent is not the recorded v1 prompt (sha256 %s)", name, sha(got))
+		}
+		if c.PromptVersion() != anthropic.PromptV1 || c.PromptSHA256() != promptV1SHA256 {
+			t.Errorf("%s: client says version %q hash %s", name, c.PromptVersion(), c.PromptSHA256())
+		}
+	}
+}
+
+func TestPrompt_V2IsV1PlusOneRuleAboutUnreadablePrices(t *testing.T) {
+	v1, _ := sentSystemPrompt(t)
+	v2, c := sentSystemPrompt(t, func(c *anthropic.Config) { c.PromptVersion = anthropic.PromptV2 })
+	if c.PromptVersion() != anthropic.PromptV2 || c.PromptSHA256() != sha(v2) || sha(v2) == promptV1SHA256 {
+		t.Fatalf("v2 client: version %q, hash %s", c.PromptVersion(), c.PromptSHA256())
+	}
+	// Remove the one added bullet and the rest must be v1, word for word.
+	start := strings.Index(v2, "- Report prices exactly as printed.")
+	end := strings.Index(v2, "- Do not add any other field.")
+	if start < 0 || end < start || strings.Count(v2, "- Report prices exactly as printed.") != 1 {
+		t.Fatalf("the v2 rule is not present exactly once:\n%s", v2)
+	}
+	if v2[:start]+v2[end:] != v1 {
+		t.Errorf("v2 differs from v1 by more than the one rule")
+	}
+	rule := v2[start:end]
+	for _, want := range []string{"cannot be read", "leave that line out", "Never work out a price", "never change a price you can read", "not to add up"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("the rule does not say %q:\n%s", want, rule)
+		}
+	}
+	// The prompt's own example still passes the validator under v2.
+	i := strings.Index(v2, `{"items":[{"description":"...","quantity":1,`)
+	if i < 0 {
+		t.Fatal("no example in the v2 prompt")
+	}
+	example := strings.Replace(v2[i:i+strings.Index(v2[i:], "\n")], `"..."`, `"Pad Thai"`, 1)
+	if _, err := receipts.ParseExtraction([]byte(example)); err != nil {
+		t.Errorf("the v2 prompt's example is refused by the validator: %v", err)
+	}
+}
+
+func TestNew_UnknownPromptVersionIsRefused(t *testing.T) {
+	for _, v := range []string{"v3", "V1", "1", " v1", "latest"} {
+		if _, err := anthropic.New(anthropic.Config{APIKey: key, PromptVersion: v}); err == nil {
+			t.Errorf("prompt version %q accepted", v)
+		}
 	}
 }
