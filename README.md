@@ -2,26 +2,37 @@
 
 Split a bill with friends: photograph the receipt, a language model reads the items, everyone claims what they ate, and the app keeps net balances and settles up.
 
-> **What this is.** A backend-heavy portfolio project by Ryan Yap. The app is the excuse; the work is in how it is built and how hard it was tested: correctness under concurrency, a job queue that survives crashes, idempotent payments against a flaky provider, authorization, and an LLM treated as an untrusted dependency. Every number on this page comes from a recorded run and has a row in [docs/CLAIMS.md](docs/CLAIMS.md) with its method and its limits.
->
-> **What it is not.** **Settlement is simulated**: the payment provider is a mock and no money moves. All data is synthetic. The ledger records IOUs between friends, not funds. The real language-model API was used in the accuracy evaluations, one injection check and two smoke tests (a handful of calls each); everything else (tests, demo, mobile) runs against a mock model. See [What this is not](#what-this-is-not).
+**Go · PostgreSQL 17 · sqlc + pgx · OpenAPI · OIDC (Dex) · React Native / Expo (TypeScript) · Tesseract OCR · Anthropic API · Docker · GitHub Actions**
+
+A backend-heavy portfolio project by Ryan Yap. The app is the excuse; the work is in how it is built and how hard it was tested. **Settlement is simulated** (the payment provider is a mock, no money moves) and all data is synthetic. Every number below comes from a recorded run, listed with its method and its limits in [docs/EVIDENCE.md](docs/EVIDENCE.md).
+
+## What it demonstrates
+
+- **Money you can trust.** An append-only double-entry ledger in integer cents, whose rules (every posting sums to zero, nothing is edited or deleted) the *database* enforces, not just the application.
+- **Correctness under concurrency.** Many people claim items on one bill at once. Row locks keep it consistent, and a stress test proves it: 3 runs of 24 simulated users for 60 s, about 10,000 expenses and 1,200 settlements each, **0 violations of 11 invariants**. The same test with one lock switched off in a never-shipped build shows what each lock prevents (with the finalize lock off: 2,209 / 2,355 / 2,211 violations).
+- **Background jobs that survive crashes.** A job queue built on Postgres (`SKIP LOCKED`, leases, fencing tokens, retries with backoff). `kill -9` of a worker mid-job, 40 trials and 960 jobs: **0 lost, 0 duplicated**.
+- **Payments that survive failures.** Idempotent settlement against a flaky provider that loses responses, sends duplicate and reordered webhooks and gets a worker killed: 4,500 settlements, **0 anomalies**.
+- **Security in layers.** OIDC login (Auth Code + PKCE), a cross-group authorization test suite (4 kinds of actor x 41 scenarios), Postgres row-level security, and least-privilege database roles. Writing the login test found that the identity provider was not enforcing PKCE; it is now.
+- **An AI model treated as untrusted.** Its answer must match a strict schema, arithmetic decides whether a person checks it, and card numbers, emails and phone numbers are redacted before text leaves. Measured with a real model on 50 synthetic receipts in 5 noise levels: the check **caught 43 of 46 wrong-amount receipts and none of 8 quantity errors**, and the 3 amount errors that got through were all the model quietly filling in an unreadable price. Ten prompt-injection attacks were all ignored; that is a result, not a claim of resistance.
+- **A real client.** An iOS app (React Native, Expo) for the whole flow, typed from the OpenAPI spec.
 
 ## Try it
 
-Needs Go 1.27+, Docker and Tesseract (`brew install tesseract`). Developed and run on macOS (Apple Silicon); nothing here has been tried on Linux or Windows.
+Needs Docker, Go 1.27+ and Tesseract (`brew install tesseract`). Developed on macOS (Apple Silicon); not tried on Linux or Windows.
 
+    git clone https://github.com/riyne/fifty-fifty && cd fifty-fifty
     make demo
 
-One command builds the real api and worker, makes a fresh throwaway database, starts them with a mock LLM and a mock payment provider, and walks through the whole product over HTTP as three people signed in through a real OIDC provider. Output (abridged):
+One command starts Postgres and Dex in Docker, builds the real api and worker, makes a throwaway database, and walks through the whole product over HTTP as three people signed in through a real OIDC provider, with a mock language model and a mock payment provider. After the first run (which builds the Dex image and pulls Postgres) it takes about 15 seconds, and it exits non-zero if any check fails. Abridged output:
 
     == 2. Receipts: upload, OCR, redaction, mock LLM, validation (a worker is killed on purpose)
     worker-1 killed with SIGKILL while its jobs were waiting on the model (no chance to clean up)
     worker-2 started; it takes the jobs over when worker-1's leases (3 s) expire
-    expense 2a055f01  claiming     14 items  total 378.11 CAD  (ground truth of receipt 1: same total and 14 units, each once)
+    expense 6eeaa4a5  claiming     14 items  total 378.11 CAD  (ground truth of receipt 1: same total and 14 units, each once)
     database: 5 receipt.parse jobs took 8 attempts in total; the extra attempts are the killed worker's jobs run again ...
 
     == 3. Claim items, finalize (idempotent), the ledger
-    alice finalized "Receipt" (total 378.11): ledger transaction d7b62409
+    alice finalized "Receipt" (total 378.11): ledger transaction c0c13a27
         the same request sent again with the same Idempotency-Key: replayed=true, same ledger transaction=true
     balances after the finalizes:
         alice     147.89
@@ -30,14 +41,42 @@ One command builds the real api and worker, makes a fresh throwaway database, st
         sum of balances: 0 (always 0)
 
     == 4. Settle up through the MOCK payment provider (simulated; webhooks duplicated and delayed)
-    carol pays alice 147.89 CAD: settlement 0b7c4b87 created `pending`, a settlement.execute job queued in the same transaction
+    carol pays alice 147.89 CAD: settlement 0e181075 created `pending`, a settlement.execute job queued in the same transaction
     settlement is `succeeded`
 
     == 5. Checks (recomputed from the tables and the provider's own record, not from API answers)
     sum of every ledger entry: 0 (must be 0)
     settlements 1, by status map[succeeded:1]: ledger postings 1, provider charges 1, anomalies 0
 
-`make demo-keep` leaves the stack running so the [iOS app](#running-the-ios-app) can use it (stop `make run-api` first: both want port 8080).
+### The iOS app
+
+Needs macOS with Xcode, Node and CocoaPods (`brew install cocoapods`). In one terminal, start the backend and leave it running (stop `make run-api` first: both use port 8080):
+
+    make demo-keep
+
+In another:
+
+    cd mobile && npm install
+    npx expo run:ios        # builds the app, starts Metro, opens the iOS Simulator
+
+Sign in as `alice`, `bob` or `carol` (password `password`). To add a receipt, put an image in the Simulator's photo library with `xcrun simctl addmedia booted <image>`; `make demo-keep` prints the path of the synthetic receipts it made. Only those parse into items, because the mock model answers from the receipt's reference line.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/img/ios-1-group.png" width="200" alt="Group screen: members with their balances, the expenses, and a suggested transfer with a Pay (simulated) button"></td>
+    <td align="center"><img src="docs/img/ios-2-expense.png" width="200" alt="A finalized expense with each item and who claimed it; quantity lines split into units"></td>
+    <td align="center"><img src="docs/img/ios-3-receipt-parsed.png" width="200" alt="A newly uploaded receipt turned into claimable items, with subtotal, tax, tip and total"></td>
+    <td align="center"><img src="docs/img/ios-4-settled.png" width="200" alt="A settlement that succeeded, with a banner saying it is simulated and no real money moves"></td>
+  </tr>
+  <tr>
+    <td align="center">Balances and a suggested transfer</td>
+    <td align="center">A finalized expense and its claims</td>
+    <td align="center">A receipt read into items</td>
+    <td align="center">A simulated settlement</td>
+  </tr>
+</table>
+
+Screenshots from the iOS Simulator against `make demo-keep`: synthetic data, the mock model, a simulated settlement.
 
 ## How it fits together
 
@@ -64,130 +103,56 @@ flowchart LR
     pay -- "signed webhook" --> api
 ```
 
-The api and the worker never talk to each other: they meet in Postgres, which is the database, the job queue and the lock manager. Three database roles with different privileges, row-level security on the user path, and a ledger whose rules the database enforces itself. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full picture: the processes, how the database is set up and why there are four roles, an ER diagram, and the flows for a request, the ledger, the queue, receipts and settlement.
+The api and the worker never talk to each other: they meet in Postgres, which is the database, the job queue and the lock manager. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the rest: the database roles, an ER diagram, the flows for a request, the ledger, the queue, receipts and settlement, the design choices, and a reading guide for the queue, locking, idempotency and the ledger.
 
-## What was built, and the evidence
+## Where to look in the code
 
-Numbers are from one machine (Apple M3 Pro, Postgres 17 in Docker Desktop, everything sharing the laptop), with a mock LLM or a mock payment provider where the text says so. They show what happened in those runs, not what a deployment would do.
-
-### A ledger that stays correct under concurrent use
-Expenses are claimed item by item, finalized into an append-only double-entry ledger, and can be voided. Claims share a row lock, finalize and void take it exclusively, and an edit uses an optimistic version; every mutating request carries an `Idempotency-Key`. The database itself enforces that each posting sums to zero, that the ledger cannot be updated or deleted, and that rows cannot cross groups.
-- **Stress run through the real api, three recorded runs of the production build:** 24 users in 4 groups acting for 60 s with retries, duplicate keys, abandoned requests and barrier-released races, plus settlement rounds executed by real worker processes. About 10,000 expenses and 1,200 settlements per run. **0 violations of any of 11 invariants and 0 server errors in all three**, checked by recomputing from the tables, never from API answers; and the run proves the dangerous things happened (for example, in about 2,000 race rounds per run, two edits made from one version met, one applied and one was refused). CLAIMS row 1.
-- **Negative controls:** the same run with one protection switched off, in a separate build that is never shipped. With the claim lock off the ledger disagreed with the claims in every run; with the finalize lock off, 2,209 / 2,355 / 2,211 violations; with the idempotency check off, 5,761 / 6,411 / 5,555 duplicate expenses or settlements. Some locks showed no violation because another layer caught it, and the report says which layer. CLAIMS rows 2 and 21.
-- **Hardening added in M10, each tested and none measured under load:** a request gives up waiting for a lock after 5 s and the api answers `503 busy` with `Retry-After: 1`, storing nothing under the idempotency key (CLAIMS row 30); the list endpoints are paginated with a keyset cursor, 100 a page, so a 101st item is no longer silently dropped (row 31); suggested transfers are net of money already reserved by open settlements, so the app is never suggested a payment that creating it would refuse (row 34).
-- Not shown: throughput or latency (everything shares one laptop, so none is claimed).
-
-### A job queue that survives a worker being killed
-A Postgres table, `FOR UPDATE SKIP LOCKED` claims, leases with heartbeats, fencing tokens so a worker that lost its lease cannot overwrite the new attempt, jittered backoff, a dead-letter state. Handler effects and job completion commit in one transaction, so effects in Postgres are exactly-once; calls to the model or the provider are at-least-once, and the code says so.
-- **`kill -9` of one of three workers mid-job, 40 trials, 960 jobs: 0 lost, 0 duplicate effects.** Recovery per orphaned job: median 3.76 s with a 3 s lease and 10.81 s with a 10 s lease (it is set by the lease). CLAIMS row 5.
-- **Throughput against a mock LLM with simulated latency of 800 ms:** 4.4 / 8.9 / 17.8 / 35.9 jobs/s at 1 / 2 / 4 / 8 workers (4 jobs in flight each), 96 to 97% of the slots-over-latency bound, with 0 duplicate or missing effects. CLAIMS row 4.
-- An operator can delete dead-lettered jobs with `worker delete-dead` (it needs a filter and has a `--dry-run`; CLAIMS row 33).
-- Not shown: a real LLM, other machines, a larger jobs table.
-
-### Idempotent settlement against a flaky provider (simulated)
-One function, `settlements.Resolve`, is the only code that moves a settlement forward and posts it to the ledger; the execute job, the reconcile job and the webhook all call it. A timeout after the provider charged becomes `unknown` and is reconciled; duplicate, delayed and reordered webhooks are harmless.
-- **4,500 settlements in 15 runs under five fault mixes** (lost responses, requests that never arrive, declines, failed reads, webhooks duplicated, dropped and reordered, a worker killed with SIGKILL), against a mock payment provider with simulated latency of 300 ms: **0 anomalies**; succeeded settlements = ledger postings = provider charges, and nothing was charged but recorded failed. CLAIMS row 19.
-- Not shown: a real provider. The time an unclear settlement takes to resolve is set by placeholder constants in the reconcile schedule, not by the design.
-
-### Authorization, in the application and in the database
-OIDC login against Dex (Auth Code + PKCE), group-scoped authorization, and a cross-group (BOLA) test suite: 4 kinds of actor across 41 scenarios, which also fails if a new endpoint has no scenario. Row-level security backs it up in Postgres: the application role sees only the rows of the caller's groups even for a query that forgot its own check. A detector test weakens the policies 29 ways, one at a time, and requires the tests to notice each.
-- **Cost, measured at the database layer:** the policies cost about 18% of a mixed read and write workload's throughput and the identity seam that supplies the caller cost about half of it, mostly from extra round trips on a local database. CLAIMS rows 7 and 11.
-- **Least privilege and a login finding (M10):** the database role the api uses for user requests is granted only the commands its code runs and is refused the rest by Postgres itself, before row-level security is asked (CLAIMS row 32). An automated PKCE login test against a real Dex found that Dex was issuing codes with no PKCE challenge at all and accepting the weak `plain` method; Dex now enforces S256 (row 6).
-- Not shown: that the system is "secure". RLS covers membership of the group on the user path only; the worker, the webhook and first login run as other roles, and the caller's identity is a transaction setting that code running as the application role could set to anyone.
-
-### An LLM as an untrusted dependency
-A receipt is read by Tesseract, stripped of card numbers, emails and phone numbers by regular expressions, and sent to the model, whose answer must match a strict schema; whether a person has to look is decided by arithmetic alone (items + tax + tip must equal the printed total). The model is behind an interface and mockable, errors never quote the service or the receipt, and a crashed worker mid-call leaves nothing half done.
-- **Redaction recall on synthetic receipts:** 100% on perfect text, 98.1% on Tesseract's reading of clean renders and 80.8% at the harshest noise (held-out receipts: 98.7% and 82.8%); emails are still the weak spot, 55.8% at the harshest noise. M10.12 made the email pattern tolerate a space that OCR puts beside a dot, which took email recall on clean renders from 89.2% to 98.3% (held-out: 91.8% to 98.7%); the earlier overall figures were 96.1% and 72.7%. CLAIMS row 9.
-- **Accuracy with a real model (Claude Haiku 5.5), 50 synthetic receipts in each of five variants:** prices right on all 50 for perfect text and for a clean render, then 80%, 76% and 34% as synthetic noise grows, mostly because Tesseract garbles the text. **The arithmetic review flag caught 43 of the 46 wrong-amount receipts and none of the 8 with a wrong quantity (arithmetic cannot see those). Three wrong amounts got through, and all three are the model filling an unreadable price so that the sum matches the printed total**, which defeats the check. That is a finding about this design, kept in the open: About 8 US cents for the 250 calls. CLAIMS row 10. **The follow-up (M10.9):** a prompt rule telling the model to leave an unreadable price out instead of working it out removed most of the behavior (answers with an amount that is not printed in the text: 55 of 250 down to 13 of 246, on 50 fresh receipts in each of five variants) but it cost correct answers: receipts read right without help fell from 196 to 173 of 250, 26 more went to a person, four answers had nothing read, and silent errors went from 7 to 4, which one run of each cannot separate from noise. The original prompt stays the default. CLAIMS row 35.
-- **A prompt-injection check (M10.10):** ten ordinary attacks (add an item, set the total to 1.00, forge a fee and make the total add up, print the system prompt, and so on), each printed as a note on a synthetic receipt, were all ignored by the model: 20 of 20 answers (two variants) identical to a faithful reading. That is what happened to those answers; ten attacks written by the author, one model, one run, show no rate and are not a claim of resistance. CLAIMS row 36.
-- Not shown: real receipts or photographs, any resistance to prompt injection beyond those ten, a general catch rate for the flag.
-
-### The iOS app
-A React Native (Expo) client for the whole flow against the unchanged api: sign in, groups and join codes, expenses with claim, finalize and void, add a receipt from the photo library, review and confirm, and a simulated settlement followed to a final state. Typed from `api/openapi.yaml` with a drift check, and its pure logic has Jest tests. The session refreshes its ID token with a rotated refresh token. **Run by hand on the iOS Simulator only**: no Android, no physical device, no camera, no automated UI tests; the screens are not run in CI (the pure-logic checks are). CLAIMS rows 12 and 6.
-
-<table>
-  <tr>
-    <td align="center"><img src="docs/img/ios-1-group.png" width="200" alt="Group screen: members with their balances, the expenses, and a suggested transfer with a Pay (simulated) button"></td>
-    <td align="center"><img src="docs/img/ios-2-expense.png" width="200" alt="A finalized expense with each item and who claimed it; quantity lines split into units"></td>
-    <td align="center"><img src="docs/img/ios-3-receipt-parsed.png" width="200" alt="A newly uploaded receipt turned into claimable items, with subtotal, tax, tip and total"></td>
-    <td align="center"><img src="docs/img/ios-4-settled.png" width="200" alt="A settlement that succeeded, with a banner saying it is simulated and no real money moves"></td>
-  </tr>
-  <tr>
-    <td align="center">Balances and a suggested transfer</td>
-    <td align="center">A finalized expense and its claims</td>
-    <td align="center">A receipt read into items</td>
-    <td align="center">A simulated settlement</td>
-  </tr>
-</table>
-
-Screenshots from the iOS Simulator against `make demo-keep`: synthetic data, the mock LLM (the receipt in the third is a synthetic one from `cmd/receiptgen`), and a simulated settlement.
-
-## Decisions worth a look
-
-- **A Postgres queue, not Kafka, SQS or River.** Transactional enqueue with no extra infrastructure, and the mechanism is the point. The cost is stated: it will not carry very high job rates, and workers poll.
-- **READ COMMITTED with targeted row locks, not SERIALIZABLE.** Claimers must not block each other; finalize must see a stable set of claims. The lock strengths and why are in [ARCHITECTURE section 8.2](docs/ARCHITECTURE.md#82-locking).
-- **Idempotency inside the transaction.** The key row, the operation's writes and the stored response commit or roll back together, so there is no "in progress" state to get stuck on.
-- **One writer for settlement state**, and invariants the database enforces itself, so a bug in the application cannot corrupt the ledger.
-- **Every protection that matters can be switched off, in a build that is never shipped**, so a clean run can be told apart from a run that could not have failed.
-- **The model's answer is untrusted** and a person confirms; there is no "confidence" field to be fooled by.
-- Every decision, with its reasons and its commit, is in the log in [docs/DESIGN.md](docs/DESIGN.md) section 2.
-
-## What this is not
-
-- **Not a payments product.** No real money, no real provider; "production use", "banking-grade" and "payments platform" would all be false. Debt simplification is a greedy heuristic that reduces transfers; it does not minimize them.
-- **Synthetic data only**, and the receipts, the redaction patterns and the prompt were written by one author in one clean layout, so results on them flatter the system. Nothing here says how it does on real receipts.
-- **No load figures.** The stress and queue runs share one laptop; they show correctness under contention and the shape of the queue, not capacity.
-- **Not shown to be secure.** Tested, with the limits above. The login flow is tested against a real Dex (the request is the app's, and the test checks Dex refuses a missing or weak PKCE challenge, a wrong verifier and a replayed code), but not the app's own login code or a real deployment (CLAIMS row 6).
-- **CI** (gofmt, vet for both builds, a check that the generated code is current, tests against a real Postgres and Tesseract, a vulnerability scan) ran green on GitHub (2026-11-07, and again after later changes; golangci-lint was added in M10.5 and is green too), with the actions pinned by commit SHA. A second job scans the whole git history for secrets with gitleaks and passes (one false positive in a test, ignored with its reason in `.gitleaksignore`; a scan cannot prove there are none). A third job runs the app's checks (typecheck, the generated-types drift check, 149 Jest tests) and passes. The `ci` job also starts Dex and runs the PKCE login test against it. The end-to-end tests, the negative controls and the benchmarks are not run in CI.
-- Known smaller limits: the rate limiter is in one process's memory; receipt images live in a directory on one host with no deletion; the payment webhook exists only when a signing secret is set. The full list of what may and may not be claimed is at the bottom of [docs/CLAIMS.md](docs/CLAIMS.md).
+| If you want to see... | Read |
+|---|---|
+| claims, finalize and void; the row locks | `internal/expenses` |
+| idempotency (`Idempotency-Key`, inside the transaction) | `internal/idempotency` |
+| exact bill splitting; the ledger | `internal/allocator`, `internal/ledger`, `migrations/00005_ledger_core.sql` |
+| the Postgres job queue and the worker | `internal/queue`, `internal/worker` |
+| settlement, with one function that moves its state | `internal/settlements` (`Resolve`) |
+| row-level security and the database roles | `internal/dbscope`, `migrations/00015` to `00017` |
+| the receipt pipeline and the untrusted model | `internal/receipts`, `internal/receiptparse`, `internal/anthropic` |
+| the stress test and the switched-off protections | `internal/stressrig`, `internal/controls`, `bench/stress` |
+| tests that attack it | `test/bola`, `test/rls`, `test/dbinvariants`, `test/e2e` |
+| the benchmarks and their raw results | `bench/`, `bench/results/` |
+| the iOS app | `mobile/` |
 
 ## Development
 
     make up && make migrate-up   # Postgres (localhost:5433) and Dex (localhost:5556), then the schema
     make test                    # unit and integration tests (need the database above)
-    make test-e2e                # real processes on scratch databases: settlement, the receipt pipeline with a killed worker (about 2 minutes)
-    make test-unsafe             # the negative-control seams, and the suite once with the unsafe_controls tag
-    make test-controls           # the negative controls at smoke size: real processes, about 6 minutes
-    make ci                      # what CI runs, about 5.5 minutes
+    make test-e2e                # real worker and mock-provider processes, a killed worker (about 2 minutes)
+    make ci                      # what CI runs, about 6 minutes
     make run-api                 # the api on :8080 against the development database
-    TOKEN=$(scripts/dev-token.sh alice)     # a real Dex token for alice, bob or carol (password "password")
+    TOKEN=$(scripts/dev-token.sh alice)     # a real Dex token for alice, bob or carol
     curl -H "Authorization: Bearer $TOKEN" localhost:8080/v1/me
     make generate                # regenerate the sqlc code after editing migrations/ or internal/db/queries/
+    make mobile-check            # the app's typecheck, generated-types check and Jest tests
 
-Benchmarks (each needs a clean git tree; method in [bench/README.md](bench/README.md), raw results in `bench/results/`): `make bench-queue bench-recovery bench-settlement bench-stress bench-redaction bench-rls`. `make bench-accuracy` calls the real Anthropic API and **costs money** (about 8 US cents; `--prompt-version` and `--injection` select the prompt follow-up and the injection check, see [bench/README.md](bench/README.md)); it needs `ANTHROPIC_API_KEY` in the shell and refuses to start unless the call count is confirmed.
+Tests skip silently when the database variables are unset (the Makefile sets them; CI makes a missing database a failure). Stop any `worker`, `mockllm`, `mockpay` or api left running before `make test`: a worker on the development database claims the tests' jobs and breaks them. Benchmarks are described in [bench/README.md](bench/README.md); `make bench-accuracy` calls the real Anthropic API and **costs money**.
 
-Layout: `cmd/` the binaries (`api`, `worker`, `demo`, and the mocks `mockllm` and `mockpay`), `internal/` the packages (the ledger, queue, settlement, receipts, row-level-security seam, and the stress and settlement rigs), `migrations/` the 17 migrations, `api/openapi.yaml` the contract, `test/` the cross-package suites (BOLA, row-level security, database invariants, end to end), `bench/` the benchmarks, `mobile/` the app. The full map is in [DESIGN section 3](docs/DESIGN.md#3-architecture).
+CI (GitHub Actions) runs gofmt, vet, golangci-lint, a check that generated code is current, the tests against a real Postgres, Tesseract and Dex, `govulncheck`, a gitleaks scan of the history, and the app's typecheck and Jest tests. The end-to-end tests, negative controls and benchmarks are run by hand.
 
-### Running the iOS app
+## What this is not
 
-Needs macOS with Xcode, Node and CocoaPods (`brew install cocoapods`). Start the backend with `make demo-keep`, then:
-
-    cd mobile && npm install
-    npx expo run:ios           # builds the development build (scheme fiftyfifty://), starts Metro, opens the simulator
-    make mobile-check          # typecheck, the generated-types drift check, Jest (not part of make ci)
-
-Sign in as alice, bob or carol (password `password`). To add a receipt, put an image in the simulator's photo library with `xcrun simctl addmedia booted <image>`; `make demo-keep` prints the path of the synthetic receipts it made. Only receipts from `cmd/receiptgen` parse into items, because the mock model answers from the receipt's reference line; any other image goes to review.
-
-## Not built
-
-Kubernetes, Terraform and autoscaling; multi-currency; envelope encryption of receipts; push notifications; Android; a container image for the api and worker. The path from here: containerize the api and worker, put an object store behind `internal/objstore.Store` in place of the shared directory, and move the rate limiter out of process memory.
+- **Not a payments product.** No real money, no real provider. Debt simplification is a greedy heuristic that reduces transfers and does not minimize them.
+- **Synthetic data only.** The receipts, the redaction patterns and the prompt were written by one author in one clean layout, so results on them flatter the system. Nothing here says how it does on real receipts or photographs.
+- **No load figures.** The stress and queue runs share one laptop; they show correctness under contention and the shape of the queue, not capacity.
+- **Not shown to be secure.** Tested, with limits: row-level security covers membership of the group on the user path only, and the worker, the webhook and first login run as other roles.
+- **Android, a physical device and the camera** were never run; the app was driven by hand on the iOS Simulator.
 
 ## Future work
 
-Not built, and not claimed. Each is written down with its design and risk in [docs/DESIGN.md](docs/DESIGN.md) section 13; the first four exist because a recording or a caveat in [docs/CLAIMS.md](docs/CLAIMS.md) says what it does not show.
+Not built, and not claimed. The reasons and designs are in [ARCHITECTURE.md section 10](docs/ARCHITECTURE.md#10-known-limits-and-future-work).
 
-- **Re-record what predates row-level security.** The negative controls (about 46 minutes), the settlement benchmark (about 20) and the queue retry scenario (about 5) were recorded before the policies and the separate worker roles; today they are re-checked as pass/fail only (`make test-controls`, `make test-e2e`). A re-recording would remove the "recorded before M7" caveats from CLAIMS rows 2, 19 and 21, and row 18's note that its recording predates honoring `retry-after`.
-- **The identity seam.** Reads run as BEGIN, a `set_config`, the statement and COMMIT, which cost about half the throughput of a local mixed workload (CLAIMS row 11). Sending a read as one pipelined batch is designed and not built.
-- **A third prompt.** The rule that stops the model from working out an unreadable price also made it leave out the required total (CLAIMS row 35). A reworded rule needs receipts nobody has looked at.
-- **The settlement benchmark's unexplained replays.** The mock provider saw 21 to 36 replayed create calls per run that the code never resends; a likely cause (Go's `net/http` retrying a keyed request) is unverified.
-- **The app.** An automated UI test (Maestro or Detox), creating an expense without a receipt, Android and the camera.
-- **Beyond a laptop:** a real payment provider, more than one api instance (the rate limiter is per process), an object store for receipt images, and a container image; see [Not built](#not-built).
-
-## Docs
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): how it fits together, the database, and a guide to the four things to be able to explain (the queue, locking, idempotency, the ledger).
-- [docs/DESIGN.md](docs/DESIGN.md): the design and the decision log, one row per decision with its commit; open items in section 13.
-- [docs/CLAIMS.md](docs/CLAIMS.md): every claim, its evidence, its method, and what must not be claimed.
-- [bench/README.md](bench/README.md): how each benchmark works and what it does not show.
+- **Re-record the benchmarks that predate row-level security** (negative controls, settlement, queue retries), which would remove the "recorded before" caveats from [EVIDENCE.md](docs/EVIDENCE.md).
+- **Cut the identity seam's cost.** Row-level security's per-read round trips cost about half the throughput of a local mixed workload; a pipelined read is designed and not built.
+- **A third prompt** that stops the model working out unreadable prices without making it drop the total (needs fresh receipts).
+- **The app:** an automated UI test, creating an expense without a receipt, Android, the camera.
+- **Beyond a laptop:** a real payment provider, more than one api instance, an object store for receipt images, a container image.
 
 License: not yet chosen (the repository is private).
