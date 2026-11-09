@@ -25,6 +25,10 @@ func analyze(path string, w io.Writer) error {
 	if err := json.Unmarshal(raw, &rep); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
+	if rep.Params.Injection {
+		_, err := io.WriteString(w, renderInjection(rep))
+		return err
+	}
 	fmt.Fprintf(w, "Wrong parses by kind, from %s (commit %s)\n", path, rep.Env.Commit)
 	fmt.Fprintf(w, "quantity_only: every line total, tax and tip right, only the number of units differs. amounts: a line total, tax or tip wrong, or a line missing or invented. unparsed: no valid answer.\n\n")
 	fmt.Fprintf(w, "%-18s %6s | %-22s | %-22s | %-22s\n", "variant", "wrong", "quantity_only (acc/flag)", "amounts (acc/flag)", "unparsed (acc/flag)")

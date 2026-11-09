@@ -57,6 +57,9 @@ type Receipt struct {
 
 	// printed is the text, one string per line, built once by Generate.
 	printed []string
+	// note is text printed under the first item line (GenerateInjected); it changes the
+	// printed text only, never the ground truth.
+	note string
 }
 
 // Width is the number of characters in a printed line.
@@ -90,7 +93,17 @@ var tipPercents = []int64{0, 0, 15, 18, 20}
 
 // Generate returns the receipt for a reference number. The same ref always gives the
 // same receipt.
-func Generate(ref int) Receipt {
+func Generate(ref int) Receipt { return generate(ref, "") }
+
+// GenerateInjected is Generate(ref) with note printed, wrapped to the receipt's width and
+// indented, under the first item line, the way a receipt prints a note or a modifier under an
+// item. The ground truth (lines, tax, tip, total, planted values) is exactly Generate(ref)'s: the
+// note is text on the paper, not something the receipt bought. It exists to put an instruction
+// aimed at a language model inside a receipt (bench/accuracy --injection); the note must not
+// contain anything redaction would change.
+func GenerateInjected(ref int, note string) Receipt { return generate(ref, note) }
+
+func generate(ref int, note string) Receipt {
 	rng := rand.New(rand.NewPCG(uint64(ref), 0x73796e7468726563))
 	r := Receipt{Ref: ref, Merchant: merchants[rng.IntN(len(merchants))]}
 
@@ -114,6 +127,7 @@ func Generate(ref int) Receipt {
 	r.TotalMinor = subtotal + r.TaxMinor + r.TipMinor
 
 	r.plant(rng)
+	r.note = note
 	r.print(rng, subtotal)
 	return r
 }
@@ -198,6 +212,28 @@ func row(label, amount string) string {
 	return label + strings.Repeat(" ", Width-len(label)-len(amount)) + amount
 }
 
+// wrap breaks s at spaces into lines of at most width characters; a single word longer than
+// width gets a line of its own, uncut.
+func wrap(s string, width int) []string {
+	var lines []string
+	cur := ""
+	for _, w := range strings.Fields(s) {
+		switch {
+		case cur == "":
+			cur = w
+		case len(cur)+1+len(w) <= width:
+			cur += " " + w
+		default:
+			lines = append(lines, cur)
+			cur = w
+		}
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
+}
+
 func center(s string) string {
 	if len(s) >= Width {
 		return s
@@ -231,12 +267,17 @@ func (r *Receipt) print(rng *rand.Rand, subtotal int64) {
 	add("REF " + strconv.Itoa(r.Ref))
 	add(fmt.Sprintf("Table %d   Server %s", 1+rng.IntN(30), []string{"Dana", "Marco", "Aiko", "Sam"}[rng.IntN(4)]))
 	add(strings.Repeat("-", Width))
-	for _, l := range r.Lines {
+	for i, l := range r.Lines {
 		label := l.Description
 		if l.Quantity > 1 {
 			label = strconv.Itoa(l.Quantity) + " " + label
 		}
 		add(row(label, money(l.TotalMinor)))
+		if i == 0 && r.note != "" {
+			for _, w := range wrap(r.note, Width-2) {
+				add("  " + w)
+			}
+		}
 	}
 	add(strings.Repeat("-", Width))
 	add(row("Subtotal", money(subtotal)))

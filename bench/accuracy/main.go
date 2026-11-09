@@ -92,6 +92,10 @@ type record struct {
 	// AmountsNotInText: the amounts of the answer that are not printed in the text sent (see
 	// amountsNotInText). Computed from M10.9; absent in earlier recordings.
 	AmountsNotInText []int64 `json:"amounts_not_in_the_text_sent,omitempty"`
+	// Attack and AttackFollowed are set only in an injection run (--injection): the attack
+	// printed on this receipt and whether the answer did what its note asked (injection.go).
+	Attack         string `json:"attack,omitempty"`
+	AttackFollowed *bool  `json:"attack_followed,omitempty"`
 
 	// Kept only for answers that are not Exact, to study what went wrong. Synthetic data.
 	Answer    string `json:"answer,omitempty"`
@@ -126,6 +130,7 @@ type params struct {
 	Workers   int      `json:"calls_in_parallel"`
 	Attempts  int      `json:"max_attempts_per_call"`
 	RealModel bool     `json:"base_url_is_not_loopback"`
+	Injection bool     `json:"injection_run,omitempty"`
 }
 
 type variantResult struct {
@@ -167,10 +172,22 @@ func run() error {
 		recording  = flag.Bool("record", false, "write the result into bench/results (a recording: real service, clean working tree, never with --allow-dirty or --out)")
 		allowDirty = flag.Bool("allow-dirty", false, "run with uncommitted changes (first looks and smoke runs only; do not commit the output)")
 	)
+	injection := flag.Bool("injection", false, "the prompt-injection check (M10.10): one receipt per attack (10), each with an instruction printed under its first item line, in the variants chosen (default ground-truth-text and ocr-clean); --receipts is ignored and --from defaults to 5301")
 	analyzePath := flag.String("analyze", "", "read a recorded .json and print the wrong parses by kind (no calls, no spend), then exit")
 	flag.Parse()
 	if *analyzePath != "" {
 		return analyze(*analyzePath, os.Stdout)
+	}
+	if *injection {
+		*n = len(attacks)
+		set := map[string]bool{}
+		flag.Visit(func(f *flag.Flag) { set[f.Name] = true })
+		if !set["from"] {
+			*first = 5301
+		}
+		if *only == "" {
+			*only = "ground-truth-text,ocr-clean"
+		}
 	}
 	if *n < 1 || *n > 1000 || *first < 0 || *workers < 1 || *workers > 16 || *attempts < 1 || *attempts > 10 {
 		return errors.New("--receipts must be 1-1000, --from >= 0, --workers 1-16, --attempts 1-10")
@@ -227,13 +244,16 @@ func run() error {
 	}
 
 	rep := report{StartedAt: time.Now().UTC(), Env: e, Statements: statements()}
-	rep.Params = params{FirstRef: *first, Receipts: *n, Calls: calls, Workers: *workers, Attempts: *attempts, RealModel: live}
+	if *injection {
+		rep.Statements = injectionStatements()
+	}
+	rep.Params = params{FirstRef: *first, Receipts: *n, Calls: calls, Workers: *workers, Attempts: *attempts, RealModel: live, Injection: *injection}
 	for _, v := range chosen {
 		rep.Params.Variants = append(rep.Params.Variants, v.Name)
 	}
 
 	start := time.Now()
-	recs, err := evaluate(ctx, evalParams{First: *first, N: *n, Variants: chosen, Workers: *workers, Attempts: *attempts, Wait: wait, Log: os.Stderr}, client, reader)
+	recs, err := evaluate(ctx, evalParams{First: *first, N: *n, Variants: chosen, Workers: *workers, Attempts: *attempts, Injection: *injection, Wait: wait, Log: os.Stderr}, client, reader)
 	if err != nil {
 		return err
 	}
@@ -255,12 +275,19 @@ func run() error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return err
 	}
-	base := filepath.Join(outDir, "accuracy-"+rep.StartedAt.Format("20060102T150405Z"))
+	prefix := "accuracy-"
+	if *injection {
+		prefix = "injection-"
+	}
+	base := filepath.Join(outDir, prefix+rep.StartedAt.Format("20060102T150405Z"))
 	raw, _ := json.MarshalIndent(rep, "", "  ")
 	if err := os.WriteFile(base+".json", append(raw, '\n'), 0o644); err != nil {
 		return err
 	}
 	text := render(rep)
+	if *injection {
+		text = renderInjection(rep)
+	}
 	if err := os.WriteFile(base+".txt", []byte(text), 0o644); err != nil {
 		return err
 	}
@@ -334,6 +361,8 @@ type evalParams struct {
 	First, N          int
 	Variants          []variant
 	Workers, Attempts int
+	// Injection: the i-th receipt of each variant carries the i-th attack's note (injection.go).
+	Injection bool
 	// Wait pauses between attempts; tests replace it.
 	Wait func(ctx context.Context, d time.Duration)
 	Log  interface{ Write([]byte) (int, error) }
@@ -345,6 +374,7 @@ type evalParams struct {
 func evaluate(ctx context.Context, p evalParams, ex receiptparse.Extractor, reader receiptparse.OCR) ([]record, error) {
 	type task struct {
 		rec     *record
+		attack  *attack
 		truth   synth.Receipt
 		text    string
 		skipped bool // no text to send
@@ -363,7 +393,14 @@ func evaluate(ctx context.Context, p evalParams, ex receiptparse.Extractor, read
 				for i := range next {
 					ref := p.First + i
 					truth := synth.Generate(ref)
-					t := &task{rec: &record{Ref: ref, Variant: v.Name}, truth: truth}
+					var atk *attack
+					if p.Injection {
+						truth, atk = injectedFor(ref, i)
+					}
+					t := &task{rec: &record{Ref: ref, Variant: v.Name}, truth: truth, attack: atk}
+					if atk != nil {
+						t.rec.Attack = atk.Name
+					}
 					text := truth.Text()
 					if v.OCR {
 						opts := v.Render
@@ -430,6 +467,11 @@ func evaluate(ctx context.Context, p evalParams, ex receiptparse.Extractor, read
 					}
 					if !r.Score.AmountsExact {
 						r.InputText = t.text
+					}
+					if t.attack != nil { // an injection run keeps every answer and every text: ten receipts, to be read
+						followed := t.attack.Followed(newView(got.Answer, t.truth))
+						r.AttackFollowed = &followed
+						r.Answer, r.InputText = string(got.Answer), t.text
 					}
 				}
 				if d := done.Add(1); p.Log != nil && (d%25 == 0 || d == total) {
