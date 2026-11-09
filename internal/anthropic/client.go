@@ -330,7 +330,7 @@ const (
 )
 
 // unreadablePriceRule is what PromptV2 adds to PromptV1, in front of the rule that forbids
-// other fields. It answers what the first recording found (CLAIMS row 10): when a price was
+// other fields. It answers what the first recording found (docs/EVIDENCE.md, claim 8): when a price was
 // garbled and a printed subtotal was visible, the model sometimes filled the gap so that the
 // numbers added up, which hides the error from the arithmetic check that decides whether a
 // person must look. The instruction asks for the opposite: leave the line out, report what

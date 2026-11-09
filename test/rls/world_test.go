@@ -1,4 +1,4 @@
-// Package rls_test is the evidence for row-level security (M7.4, CLAIMS row 11): with the
+// Package rls_test is the evidence for row-level security (docs/EVIDENCE.md, claim 15): with the
 // policies of migration 00016 applied, the application role, acting for one user, cannot
 // see or change another group's rows even with a query that has no membership check of
 // its own. It runs on a scratch database (created, migrated, dropped), so the counts are
@@ -83,7 +83,7 @@ func newWorld(t *testing.T) *world {
 	// scratch database only, the privileges migration 00017 took from it (the state of 00004
 	// and 00005: the ledger and the audit log stay append-only). With them removed the
 	// statements would be refused one layer earlier, by the grant, and the policy would never be
-	// asked: the defense in depth (CLAIMS row 11) would be untested. What the real role may do
+	// asked: the defense in depth would be untested. What the real role may do
 	// is test/dbinvariants/roles_test.go.
 	for _, g := range []string{
 		`GRANT INSERT, UPDATE, DELETE ON users TO fifty_app`,

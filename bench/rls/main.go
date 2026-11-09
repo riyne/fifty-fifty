@@ -1,7 +1,7 @@
-// Command rls measures what row-level security and the identity seam cost (DESIGN.md
-// section 10, item 7; CLAIMS row 11): the same seeded database and the same closed-loop
-// mix of the handlers' queries, run with row-level security disabled on the plain pool
-// (the pre-M7 access path), disabled through the identity seam, and enabled through it.
+// Command rls measures what row-level security and the identity seam cost (docs/EVIDENCE.md,
+// claim 10): the same seeded database and the same closed-loop mix of the handlers'
+// queries, run with row-level security disabled on the plain pool (the access path before
+// the policies existed), disabled through the identity seam, and enabled through it.
 // The first difference is the cost of the seam, the second the cost of the policies.
 //
 //	go run ./bench/rls --reps 6 --out bench/results
