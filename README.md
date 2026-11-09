@@ -133,6 +133,8 @@ The api and the worker never talk to each other: they meet in Postgres, which is
     make generate                # regenerate the sqlc code after editing migrations/ or internal/db/queries/
     make mobile-check            # the app's typecheck, generated-types check and Jest tests
 
+The database and Dex credentials in `deploy/` and the Makefile (`fifty`, `password`) are throwaway values for local development only, and all data is synthetic.
+
 Tests skip silently when the database variables are unset (the Makefile sets them; CI makes a missing database a failure). Stop any `worker`, `mockllm`, `mockpay` or api left running before `make test`: a worker on the development database claims the tests' jobs and breaks them. Benchmarks are described in [bench/README.md](bench/README.md); `make bench-accuracy` calls the real Anthropic API and **costs money**.
 
 CI (GitHub Actions) runs gofmt, vet, golangci-lint, a check that generated code is current, the tests against a real Postgres, Tesseract and Dex, `govulncheck`, a gitleaks scan of the history, and the app's typecheck and Jest tests. The end-to-end tests, negative controls and benchmarks are run by hand.
@@ -155,4 +157,4 @@ Not built, and not claimed. The reasons and designs are in [ARCHITECTURE.md sect
 - **The app:** an automated UI test, creating an expense without a receipt, Android, the camera.
 - **Beyond a laptop:** a real payment provider, more than one api instance, an object store for receipt images, a container image.
 
-License: not yet chosen (the repository is private).
+License: [MIT](LICENSE).
