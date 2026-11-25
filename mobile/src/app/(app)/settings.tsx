@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { chooseAppearance, storedAppearance } from "../../appearance";
@@ -19,9 +19,20 @@ export default function Settings() {
     chooseAppearance(choice);
   }
 
+  // The sheet closes first and the session ends once it is gone: signing out removes every screen
+  // here, and a close still on its way would then find nothing to go back to.
+  const leaving = useRef(false);
+  useEffect(
+    () => () => {
+      if (leaving.current) void session.signOut();
+    },
+    [],
+  );
+
   function signOut() {
-    router.back(); // close the sheet first: the screens under it are replaced by the sign-in screen
-    void session.signOut();
+    if (leaving.current) return;
+    leaving.current = true;
+    router.back();
   }
 
   return (

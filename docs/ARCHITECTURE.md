@@ -522,9 +522,10 @@ Each is a choice with its cost. The reasoning for the first four is in the readi
 - **Settlements** cannot be cancelled while `pending` or `unknown`; one stuck in `unknown` past the reconcile deadline needs an operator.
 - **Balances** are computed per request from the group's ledger entries. A cached running balance would need the zero-sum and derived-by-SUM invariants re-proved.
 - **Names and addresses are not redacted.** Only card numbers, emails and phone numbers are replaced before text leaves the system: they have a fixed shape, so regular expressions suit them. Finding names needs a named-entity-recognition model (a local one such as spaCy or Presidio) with its own evaluation, since a name filter can also delete dish and merchant names the parser needs. Not built.
-- **Quantity digits lost by OCR** are invisible to the arithmetic check (8 of the 11 silent errors in [EVIDENCE.md](EVIDENCE.md) claim 8). A person fixing units is the expected path.
+- **Quantity digits lost by OCR** are invisible to the arithmetic check (8 of the 11 silent errors in [EVIDENCE.md](EVIDENCE.md) claim 8). A person fixing units is the expected path: the payer can fix items in the app until the expense is finalized.
 - **Dead jobs** are the dead-letter record and are never deleted unattended, so an ignored dead-letter queue grows. Alert on the `fifty_queue_jobs{state="dead"}` gauge; clear with `worker delete-dead` (needs a filter, has `--dry-run`) or retry with `worker requeue`.
 - **Sign-out cannot revoke a refresh token** (Dex has no revocation endpoint here); it only deletes the token from the device.
+- **One device per account.** Dex keeps one refresh token per user and client, so a sign-in on a second device replaces the first device's. The first is asked to sign in again once its ID token (1 hour) expires.
 - **A list longer than 5,000 items** shows only 5,000 in the app.
 - **A claim whose client cancels mid-flight** (a worker shutting down) can lease jobs that nobody runs; they are retried after the lease expires, with the attempt counted. The same outcome as a crash.
 - **Roles are cluster-wide in Postgres.** The Down migrations of `00004` and `00015` drop them and fail if another database in the cluster still has privileges for them, and `ALTER ROLE fifty_app` affects every database.

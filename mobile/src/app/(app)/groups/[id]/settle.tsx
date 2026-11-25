@@ -72,7 +72,7 @@ export default function Settle() {
             contentContainerStyle={styles.container}
           >
             <View style={styles.payee}>
-              <Avatar id={to} name={payee} size={64} />
+              <Avatar id={to} index={balances.balances.findIndex((b) => b.member_id === to)} name={payee} size={64} />
               <Txt variant="title">You pay {payee}</Txt>
             </View>
             <Field

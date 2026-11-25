@@ -1,9 +1,11 @@
 import { Stack } from "expo-router";
+import { useColorScheme } from "react-native";
 
 import { useColors } from "../../ui/theme";
 
 export default function AppLayout() {
   const colors = useColors();
+  const dark = useColorScheme() === "dark";
   // a sheet as tall as what it shows
   const sheet = {
     presentation: "formSheet",
@@ -15,6 +17,8 @@ export default function AppLayout() {
   return (
     <Stack
       screenOptions={{
+        // left to itself the status bar follows the phone, and is unreadable when the app is set to the other theme
+        statusBarStyle: dark ? "light" : "dark",
         headerBackButtonDisplayMode: "minimal", // only the arrow: a long previous title pushed this one off centre
         headerTintColor: colors.accent,
         headerTitleStyle: { color: colors.text },

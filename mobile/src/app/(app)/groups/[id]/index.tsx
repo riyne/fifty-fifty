@@ -162,14 +162,14 @@ export default function GroupScreen() {
               </Section>
 
               <Section title="Members">
-                {balances.balances.map((b) => {
+                {balances.balances.map((b, index) => {
                   const parts = balanceParts(false, b.balance_minor, currency);
                   return (
                     <Row
                       key={b.member_id}
                       title={b.member_id === me.id ? `${b.display_name} (you)` : b.display_name}
                       subtitle={roles.get(b.member_id) === "owner" ? "Owner" : undefined}
-                      leading={<Avatar id={b.member_id} name={b.display_name} />}
+                      leading={<Avatar id={b.member_id} index={index} name={b.display_name} />}
                       trailing={
                         <>
                           <Txt variant="small" tone="secondary">
@@ -196,7 +196,13 @@ export default function GroupScreen() {
                     <Row
                       key={`${t.from_member_id}-${t.to_member_id}`}
                       title={transferSentence(who(t.from_member_id), who(t.to_member_id), t.amount_minor, currency)}
-                      leading={<Avatar id={t.from_member_id} name={who(t.from_member_id).name} />}
+                      leading={
+                        <Avatar
+                          id={t.from_member_id}
+                          index={balances.balances.findIndex((b) => b.member_id === t.from_member_id)}
+                          name={who(t.from_member_id).name}
+                        />
+                      }
                     />
                   ))}
                 </Section>

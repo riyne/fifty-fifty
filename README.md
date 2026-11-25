@@ -63,16 +63,16 @@ Sign in as `alice`, `bob` or `carol` (password `password`). To add a receipt, pu
 
 <table>
   <tr>
-    <td align="center"><img src="docs/img/ios-1-group.png" width="200" alt="Group screen: members with their balances, the expenses, and a suggested transfer with a Pay (simulated) button"></td>
-    <td align="center"><img src="docs/img/ios-2-expense.png" width="200" alt="A finalized expense with each item and who claimed it; quantity lines split into units"></td>
-    <td align="center"><img src="docs/img/ios-3-receipt-parsed.png" width="200" alt="A newly uploaded receipt turned into claimable items, with subtotal, tax, tip and total"></td>
-    <td align="center"><img src="docs/img/ios-4-settled.png" width="200" alt="A settlement that succeeded, with a banner saying it is simulated and no real money moves"></td>
+    <td align="center"><img src="docs/img/ios-3-receipt-parsed.png" width="200" alt="A newly uploaded receipt drawn as a paper slip: five items to claim, with subtotal, tax, tip and total"></td>
+    <td align="center"><img src="docs/img/ios-2-claims.png" width="200" alt="The same receipt with each item claimed; a half-filled circle marks an item two people share"></td>
+    <td align="center"><img src="docs/img/ios-1-group.png" width="200" alt="Group screen: what you owe with a pay button, the expenses with their status, and the members with their balances"></td>
+    <td align="center"><img src="docs/img/ios-4-settled.png" width="200" alt="A payment that succeeded, with a note saying it is simulated and no real money moves"></td>
   </tr>
   <tr>
-    <td align="center">Balances and a suggested transfer</td>
-    <td align="center">A finalized expense and its claims</td>
     <td align="center">A receipt read into items</td>
-    <td align="center">A simulated settlement</td>
+    <td align="center">Claiming, with a shared item</td>
+    <td align="center">Balances and what to pay</td>
+    <td align="center">A simulated payment</td>
   </tr>
 </table>
 

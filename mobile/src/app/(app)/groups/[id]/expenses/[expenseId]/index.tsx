@@ -124,6 +124,7 @@ export default function ExpenseScreen() {
         const memberIds = balances.balances.map((b) => b.member_id);
         const open = unclaimedCount(expense);
         const claiming = canClaim(expense);
+        const unread = expense.status === "needs_review" && expense.items.length === 0;
 
         function confirmFinalize() {
           const text =
@@ -271,9 +272,9 @@ export default function ExpenseScreen() {
             >
               <Receipt>
                 <View style={styles.head}>
-                  {expense.status === "parsing" ? (
+                  {expense.status === "parsing" || unread ? (
                     <Txt variant="title" style={styles.centered}>
-                      Reading the receipt
+                      {unread ? "No items could be read" : "Reading the receipt"}
                     </Txt>
                   ) : (
                     <Txt variant="display" numberOfLines={1} adjustsFontSizeToFit style={expense.status === "void" && styles.voided}>
@@ -299,8 +300,8 @@ export default function ExpenseScreen() {
                 {expense.status === "needs_review" && (
                   <View style={styles.message}>
                     <Txt tone="secondary" style={styles.centered}>
-                      {payerIsMe ? "You need" : `${nameOf(expense.payer_id)} needs`} to check the items against the receipt
-                      before anyone can claim them.
+                      {payerIsMe ? "You need" : `${nameOf(expense.payer_id)} needs`} to{" "}
+                      {unread ? "add the items" : "check the items against the receipt"} before anyone can claim them.
                     </Txt>
                   </View>
                 )}
@@ -329,7 +330,7 @@ export default function ExpenseScreen() {
                             showClaims ? (
                               <View style={styles.claimers}>
                                 {claimers.map((memberId) => (
-                                  <Avatar key={memberId} id={memberId} name={nameOf(memberId)} size={18} />
+                                  <Avatar key={memberId} id={memberId} index={memberIds.indexOf(memberId)} name={nameOf(memberId)} size={18} />
                                 ))}
                                 <Txt variant="small" tone="secondary" style={styles.sentence}>
                                   {sentence}
@@ -370,7 +371,7 @@ export default function ExpenseScreen() {
               <Footer>
                 <Button
                   grow
-                  title="Review the items"
+                  title={unread ? "Add the items" : "Review the items"}
                   onPress={openReview}
                 />
               </Footer>

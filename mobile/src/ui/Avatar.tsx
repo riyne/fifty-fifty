@@ -4,10 +4,14 @@ import { StyleSheet, Text, View } from "react-native";
 // a light tint in both appearances.
 const TINTS = ["#CFE3DA", "#DAD9EC", "#EFDCCB", "#CFE0EA", "#E9D6DE", "#E2E4C8"];
 
-/** A person's initial on a tint that depends only on their id, so it is the same on every screen. */
-export function Avatar({ id, name, size = 36 }: { id: string; name: string; size?: number }) {
-  let sum = 0;
-  for (const char of id) sum += char.charCodeAt(0);
+/**
+ * An initial on a tint. For a person, `index` is their place among the group's members: the same on
+ * every screen of the group, and different for each of the first six. Without it the tint comes
+ * from the id.
+ */
+export function Avatar({ id, index, name, size = 36 }: { id: string; index?: number; name: string; size?: number }) {
+  let sum = index !== undefined && index >= 0 ? index : 0;
+  if (index === undefined) for (const char of id) sum += char.charCodeAt(0);
   return (
     <View
       accessible={false}

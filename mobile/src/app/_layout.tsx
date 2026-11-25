@@ -12,7 +12,8 @@ applyStoredAppearance(); // once, before the first screen is drawn
 export default function RootLayout() {
   const state = useSession();
   const colors = useColors();
-  const base = useColorScheme() === "dark" ? DarkTheme : DefaultTheme;
+  const dark = useColorScheme() === "dark";
+  const base = dark ? DarkTheme : DefaultTheme;
 
   useEffect(() => {
     void session.restore(); // reads the Keychain once; the state leaves "loading"
@@ -34,7 +35,7 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={navigation}>
       <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false, statusBarStyle: dark ? "light" : "dark" }}>
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="login" options={{ animation: "fade" }} />
         </Stack.Protected>

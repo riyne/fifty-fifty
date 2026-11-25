@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
+      "icon": { "light": "./assets/icon.png", "dark": "./assets/icon-dark.png" },
       "supportsTablet": true,
       "bundleIdentifier": "com.riyne.fiftyfifty"
     },
