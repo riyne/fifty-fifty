@@ -13,6 +13,9 @@ export type Load<T> =
  * to the screen). While reloading, the old data stays on screen. A failed load replaces it
  * with the error. Answers that arrive late or after unmount are dropped.
  *
+ * `reload({ spinner: false })` is for coming back to a screen and after an action: nothing moves
+ * while it loads, and a failure is still shown, so old amounts are never left on screen as current.
+ *
  * `reload({ silent: true })` is for polling: it does not show the refresh spinner, and a failed
  * attempt keeps the data on screen (the next tick tries again) instead of replacing it with an error.
  */
@@ -23,11 +26,12 @@ export function useLoad<T>(fetcher: () => Promise<T>) {
   const latest = useRef(createLatest()).current;
 
   const reload = useCallback(
-    async (options?: { silent?: boolean }) => {
+    async (options?: { silent?: boolean; spinner?: boolean }) => {
       const silent = options?.silent === true;
       const ticket = latest.next();
       if (!silent) {
-        setState((previous) => (previous.status === "ready" ? { ...previous, refreshing: true } : { status: "loading" }));
+        const refreshing = options?.spinner !== false;
+        setState((previous) => (previous.status === "ready" ? { ...previous, refreshing } : { status: "loading" }));
       }
       try {
         const data = await fetcherRef.current();

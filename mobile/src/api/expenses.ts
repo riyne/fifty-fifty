@@ -19,6 +19,22 @@ export function statusLabel(status: ExpenseStatus): string {
   }
 }
 
+/** The status as one or two words for a list row. */
+export function statusShort(status: ExpenseStatus): string {
+  switch (status) {
+    case "parsing":
+      return "Reading";
+    case "needs_review":
+      return "Needs review";
+    case "claiming":
+      return "Open to claim";
+    case "finalized":
+      return "Finalized";
+    case "void":
+      return "Voided";
+  }
+}
+
 export function canClaim(expense: Pick<Expense, "status">): boolean {
   return expense.status === "claiming";
 }

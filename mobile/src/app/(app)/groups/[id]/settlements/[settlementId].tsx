@@ -1,13 +1,17 @@
 import { useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback } from "react";
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
 import { unwrap } from "../../../../../api/client";
 import { api } from "../../../../../api/instance";
-import { isOpen, settlementTitle, statusLine } from "../../../../../api/settlements";
+import { isOpen, settlementTitle, statusLine, statusWord } from "../../../../../api/settlements";
 import { useLoad } from "../../../../../hooks/useLoad";
 import { usePolling } from "../../../../../hooks/usePolling";
+import { Icon } from "../../../../../ui/Icon";
 import { LoadGate } from "../../../../../ui/LoadGate";
+import { Card } from "../../../../../ui/Section";
+import { space } from "../../../../../ui/theme";
+import { Txt } from "../../../../../ui/Txt";
 
 // Where one settlement stands. A settlement is `pending` until the (simulated) provider answers,
 // and `unknown` when the answer was unclear: both still reserve the money and can still change,
@@ -26,7 +30,7 @@ export default function SettlementScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void reload();
+      void reload({ spinner: false });
     }, [reload]),
   );
 
@@ -52,18 +56,35 @@ export default function SettlementScreen() {
               />
             }
           >
-            <Text style={styles.title}>
-              {settlementTitle(settlement, me.id, (m) => names.get(m) ?? "Someone", settlement.currency)}
-            </Text>
-            <View style={[styles.banner, settlement.status === "failed" && styles.bannerFailed]}>
-              {!final && !gaveUp && <ActivityIndicator />}
-              <Text style={styles.bannerText}>
-                {!final && gaveUp ? "Still waiting. Pull down to check again." : statusLine(settlement)}
-              </Text>
-            </View>
-            <Text style={styles.note}>Settlement is simulated: a mock payment provider answers, and no real money moves.</Text>
+            <Card padded>
+              <View style={styles.status}>
+                {final ? (
+                  <Icon
+                    name={settlement.status === "succeeded" ? "checkmark.circle.fill" : "xmark.circle.fill"}
+                    size={56}
+                    tone={settlement.status === "succeeded" ? "accent" : "danger"}
+                  />
+                ) : gaveUp ? (
+                  <Icon name="clock" size={56} tone="owe" />
+                ) : (
+                  <ActivityIndicator size="large" />
+                )}
+                <Txt variant="title">{statusWord(settlement.status)}</Txt>
+                <Txt variant="heading" style={styles.centered}>
+                  {settlementTitle(settlement, me.id, (m) => names.get(m) ?? "Someone", settlement.currency)}
+                </Txt>
+                <Txt tone="secondary" style={styles.centered}>
+                  {!final && gaveUp ? "Still waiting. Pull down to check again." : statusLine(settlement)}
+                </Txt>
+              </View>
+            </Card>
+            <Txt variant="small" tone="secondary" style={styles.centered}>
+              Simulated: a mock payment provider answers, and no real money moves.
+            </Txt>
             {settlement.resolved_at !== null && (
-              <Text style={styles.note}>Resolved {new Date(settlement.resolved_at).toLocaleString()}</Text>
+              <Txt variant="small" tone="secondary" style={styles.centered}>
+                Resolved {new Date(settlement.resolved_at).toLocaleString()}
+              </Txt>
             )}
           </ScrollView>
         );
@@ -73,10 +94,7 @@ export default function SettlementScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 12 },
-  title: { fontSize: 22, fontWeight: "700" },
-  banner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 8, backgroundColor: "#eef" },
-  bannerFailed: { backgroundColor: "#fee" },
-  bannerText: { flex: 1 },
-  note: { color: "#666", fontSize: 12 },
+  container: { padding: space.l, gap: space.m },
+  status: { alignItems: "center", gap: space.m, paddingVertical: space.l },
+  centered: { textAlign: "center" },
 });

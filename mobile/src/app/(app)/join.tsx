@@ -1,11 +1,15 @@
 import { router } from "expo-router";
 import { useRef, useState } from "react";
-import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ScrollView, StyleSheet } from "react-native";
 
 import { unwrap } from "../../api/client";
 import { describeError } from "../../api/errors";
 import { api } from "../../api/instance";
 import { keyedByValue } from "../../api/keys";
+import { Button } from "../../ui/Button";
+import { Field } from "../../ui/Field";
+import { space } from "../../ui/theme";
+import { Txt } from "../../ui/Txt";
 
 export default function Join() {
   const [text, setText] = useState("");
@@ -41,25 +45,25 @@ export default function Join() {
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.container}
     >
-      <Text style={styles.label}>Code from the group's owner</Text>
-      <TextInput
-        style={styles.input}
+      <Txt tone="secondary">Ask the group's owner for their invite code.</Txt>
+      <Field
+        label="Invite code"
+        style={styles.code}
         value={text}
         onChangeText={setText}
         placeholder="ABCD-EFGH-JKMN"
         autoCapitalize="characters"
         autoCorrect={false}
+        autoFocus
         editable={!busy}
       />
-      {busy ? <ActivityIndicator /> : <Button title="Join" onPress={join} disabled={code === ""} />}
-      {error !== null && <Text style={styles.error}>{error}</Text>}
+      {error !== null && <Txt tone="danger">{error}</Txt>}
+      <Button title="Join" onPress={() => void join()} busy={busy} disabled={code === ""} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, gap: 12 },
-  label: { color: "#444" },
-  input: { borderWidth: 1, borderColor: "#bbb", borderRadius: 8, padding: 12, fontSize: 17, backgroundColor: "#fff" },
-  error: { color: "#b00020" },
+  container: { padding: space.l, gap: space.l },
+  code: { fontFamily: "ui-monospace", fontSize: 20, textAlign: "center", minHeight: 56 },
 });

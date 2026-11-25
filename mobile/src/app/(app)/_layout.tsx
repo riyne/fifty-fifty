@@ -1,16 +1,37 @@
 import { Stack } from "expo-router";
 
+import { useColors } from "../../ui/theme";
+
 export default function AppLayout() {
+  const colors = useColors();
   return (
-    <Stack>
-      <Stack.Screen name="index" options={{ title: "Groups" }} />
+    <Stack
+      screenOptions={{
+        headerBackButtonDisplayMode: "minimal", // only the arrow: a long previous title pushed this one off centre
+        headerTintColor: colors.accent,
+        headerTitleStyle: { color: colors.text },
+        headerShadowVisible: false,
+      }}
+    >
+      <Stack.Screen name="index" options={{ title: "Groups", headerLargeTitleEnabled: true }} />
       <Stack.Screen name="groups/new" options={{ title: "New group" }} />
       <Stack.Screen name="join" options={{ title: "Join a group" }} />
-      <Stack.Screen name="groups/[id]/index" options={{ title: "Group" }} />
+      <Stack.Screen name="groups/[id]/index" options={{ title: "" }} />
+      <Stack.Screen
+        name="groups/[id]/invite"
+        options={{
+          title: "Invite",
+          presentation: "formSheet",
+          sheetAllowedDetents: "fitToContents",
+          sheetGrabberVisible: true,
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.card },
+        }}
+      />
       <Stack.Screen name="groups/[id]/receipt" options={{ title: "Add a receipt" }} />
-      <Stack.Screen name="groups/[id]/settle" options={{ title: "Pay (simulated)" }} />
-      <Stack.Screen name="groups/[id]/settlements/[settlementId]" options={{ title: "Settlement" }} />
-      <Stack.Screen name="groups/[id]/expenses/[expenseId]/index" options={{ title: "Expense" }} />
+      <Stack.Screen name="groups/[id]/settle" options={{ title: "Pay" }} />
+      <Stack.Screen name="groups/[id]/settlements/[settlementId]" options={{ title: "Payment" }} />
+      <Stack.Screen name="groups/[id]/expenses/[expenseId]/index" options={{ title: "" }} />
       <Stack.Screen name="groups/[id]/expenses/[expenseId]/review" options={{ title: "Review items" }} />
     </Stack>
   );

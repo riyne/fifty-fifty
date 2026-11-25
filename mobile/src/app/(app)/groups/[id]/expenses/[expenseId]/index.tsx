@@ -1,6 +1,7 @@
+import * as Haptics from "expo-haptics";
 import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Button, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
 import { unwrap } from "../../../../../../api/client";
 import { ApiError, describeError } from "../../../../../../api/errors";
@@ -11,15 +12,30 @@ import {
   canVoid,
   claimSentence,
   finalizeBody,
-  statusLabel,
+  statusShort,
   unclaimedCount,
 } from "../../../../../../api/expenses";
 import { api } from "../../../../../../api/instance";
 import { createActionKeys } from "../../../../../../api/keys";
-import { formatMoney } from "../../../../../../api/money";
+import { formatMinor, formatMoney } from "../../../../../../api/money";
 import { useLoad } from "../../../../../../hooks/useLoad";
 import { usePolling } from "../../../../../../hooks/usePolling";
+import type { Expense } from "../../../../../../api/types";
+import { Avatar } from "../../../../../../ui/Avatar";
+import { Button } from "../../../../../../ui/Button";
+import { ClaimMark } from "../../../../../../ui/ClaimMark";
+import { ErrorBar } from "../../../../../../ui/ErrorBar";
+import { Footer } from "../../../../../../ui/Footer";
 import { LoadGate } from "../../../../../../ui/LoadGate";
+import { Pill, type PillTone } from "../../../../../../ui/Pill";
+import { Dashes, Receipt, ReceiptLine, TotalLine } from "../../../../../../ui/Receipt";
+import { space } from "../../../../../../ui/theme";
+import { Txt } from "../../../../../../ui/Txt";
+
+function statusTone(expense: Expense, meId: string): PillTone {
+  if (expense.status === "claiming") return "active";
+  return canReview(expense, meId) ? "attention" : "quiet";
+}
 
 export default function ExpenseScreen() {
   const { id, expenseId } = useLocalSearchParams<{ id: string; expenseId: string }>();
@@ -37,7 +53,7 @@ export default function ExpenseScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void reload();
+      void reload({ spinner: false });
     }, [reload]),
   );
 
@@ -49,24 +65,53 @@ export default function ExpenseScreen() {
   // One key per tap on Finalize or Void, kept while the same request is retried (see createActionKeys).
   const finalizeKeys = useRef(createActionKeys()).current;
   const voidKeys = useRef(createActionKeys()).current;
-  const [busy, setBusy] = useState<string | null>(null); // an item id, "finalize" or "void"
+  const [busy, setBusy] = useState<"finalize" | "void" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  /** Runs one action, shows its failure, and reloads whatever the outcome (the screen may be stale). */
-  async function perform(what: string, call: () => Promise<unknown>, answered?: () => void) {
+  /** Runs finalize or void, shows its failure, and reloads whatever the outcome (the screen may be stale). */
+  async function perform(what: "finalize" | "void", call: () => Promise<unknown>, answered: () => void) {
     setBusy(what);
     setError(null);
     try {
       await call();
-      answered?.();
+      answered();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (e) {
       // A stored answer (anything below 500) is replayed for the same key: a new tap needs a new key.
       // No answer at all, or a 5xx (never stored), is retried with the same key.
-      if (e instanceof ApiError && e.status < 500) answered?.();
+      if (e instanceof ApiError && e.status < 500) answered();
       setError(describeError(e));
     } finally {
+      await reload({ spinner: false });
       setBusy(null);
-      await reload();
+    }
+  }
+
+  // Claims are drawn as soon as they are tapped, and several can be on their way at once. `drawn`
+  // (item id -> mine or not) covers the loaded answer until every one of them has been answered and
+  // the screen reloaded: the newest reload then started after all of them, so it has them all.
+  const [drawn, setDrawn] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const inFlight = useRef(new Set<string>()).current;
+
+  async function toggleClaim(itemId: string, mine: boolean) {
+    if (inFlight.has(itemId)) return;
+    if (inFlight.size === 0) setError(null);
+    inFlight.add(itemId);
+    setDrawn((previous) => new Map(previous).set(itemId, !mine));
+    void Haptics.selectionAsync().catch(() => {});
+    const path = { params: { path: { id, expenseId, itemId } } };
+    try {
+      if (mine) {
+        await unwrap(api.DELETE("/v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", path));
+      } else {
+        await unwrap(api.PUT("/v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", path));
+      }
+    } catch (e) {
+      setError(e instanceof ApiError && e.status === 409 ? "This expense is no longer open for claims." : describeError(e));
+    } finally {
+      await reload({ spinner: false });
+      inFlight.delete(itemId);
+      if (inFlight.size === 0) setDrawn(new Map());
     }
   }
 
@@ -76,9 +121,9 @@ export default function ExpenseScreen() {
         const names = new Map(balances.balances.map((b) => [b.member_id, b.display_name]));
         const nameOf = (memberId: string) => names.get(memberId) ?? "Someone";
         const payerIsMe = expense.payer_id === me.id;
-        const path = (itemId: string) => ({ params: { path: { id, expenseId, itemId } } });
         const memberIds = balances.balances.map((b) => b.member_id);
         const open = unclaimedCount(expense);
+        const claiming = canClaim(expense);
 
         function confirmFinalize() {
           const text =
@@ -135,133 +180,148 @@ export default function ExpenseScreen() {
           );
         }
 
-        function toggleClaim(itemId: string, mine: boolean) {
-          void perform(itemId, async () => {
-            try {
-              if (mine) {
-                await unwrap(api.DELETE("/v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", path(itemId)));
-              } else {
-                await unwrap(api.PUT("/v1/groups/{id}/expenses/{expenseId}/items/{itemId}/claim", path(itemId)));
-              }
-            } catch (e) {
-              if (e instanceof ApiError && e.status === 409) {
-                throw new ApiError(409, e.code, "This expense is no longer open for claims.");
-              }
-              throw e;
-            }
-          });
-        }
+        /** Who the item is drawn as claimed by: the api's answer, with this person's own taps on top. */
+        const claimersOf = (item: Expense["items"][number]) => {
+          const mine = drawn.get(item.id);
+          if (mine === undefined || mine === item.claimed_by.includes(me.id)) return item.claimed_by;
+          return mine ? [...item.claimed_by, me.id] : item.claimed_by.filter((memberId) => memberId !== me.id);
+        };
+        const drawnOpen = expense.items.filter((item) => claimersOf(item).length === 0).length;
 
         return (
-          <ScrollView
-            contentInsetAdjustmentBehavior="automatic"
-            contentContainerStyle={styles.container}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={() => {
-                  restart();
-                  void reload();
-                }}
-              />
-            }
-          >
+          <>
             <Stack.Screen options={{ title: expense.description }} />
-            <Text style={styles.title}>{formatMoney(expense.total_minor, expense.currency)}</Text>
-            <Text style={styles.meta}>
-              {statusLabel(expense.status)} · paid by {payerIsMe ? "you" : nameOf(expense.payer_id)}
-            </Text>
-
-            {expense.status === "parsing" && (
-              <View style={styles.banner}>
-                {!gaveUp && <ActivityIndicator />}
-                <Text style={styles.bannerText}>
-                  {gaveUp
-                    ? "Still reading the receipt. Pull down to check again. If this keeps happening, the worker may not be running."
-                    : "Reading the receipt. This usually takes a few seconds."}
-                </Text>
-              </View>
-            )}
-            {expense.status === "needs_review" && (
-              <View style={styles.banner}>
-                <Text style={styles.bannerText}>
-                  {payerIsMe ? "You" : nameOf(expense.payer_id)} {payerIsMe ? "need" : "needs"} to check the items against
-                  the receipt before anyone can claim them.
-                </Text>
-              </View>
-            )}
-
-            <Text style={styles.heading}>Items</Text>
-            {expense.items.map((item) => {
-              const mine = item.claimed_by.includes(me.id);
-              return (
-                <View key={item.id} style={styles.row}>
-                  <View style={styles.itemText}>
-                    <Text style={styles.name}>
-                      {item.description} · {formatMoney(item.price_minor, expense.currency)}
-                    </Text>
-                    <Text style={styles.meta}>{claimSentence(item, me.id, nameOf)}</Text>
-                  </View>
-                  {canClaim(expense) &&
-                    (busy === item.id ? (
-                      <ActivityIndicator />
-                    ) : (
-                      <Button
-                        title={mine ? "Not mine" : "Mine"}
-                        onPress={() => toggleClaim(item.id, mine)}
-                        disabled={busy !== null}
-                      />
-                    ))}
+            <ScrollView
+              contentInsetAdjustmentBehavior="automatic"
+              contentContainerStyle={styles.container}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing}
+                  onRefresh={() => {
+                    restart();
+                    void reload();
+                  }}
+                />
+              }
+            >
+              <Receipt>
+                <View style={styles.head}>
+                  {expense.status === "parsing" ? (
+                    <Txt variant="title" style={styles.centered}>
+                      Reading the receipt
+                    </Txt>
+                  ) : (
+                    <Txt variant="display" numberOfLines={1} adjustsFontSizeToFit style={expense.status === "void" && styles.voided}>
+                      {formatMoney(expense.total_minor, expense.currency)}
+                    </Txt>
+                  )}
+                  <Txt tone="secondary" style={styles.centered}>
+                    Paid by {payerIsMe ? "you" : nameOf(expense.payer_id)}
+                  </Txt>
+                  <Pill text={statusShort(expense.status)} tone={statusTone(expense, me.id)} />
                 </View>
-              );
-            })}
 
-            <View style={styles.totals}>
-              <Text>Subtotal {formatMoney(expense.subtotal_minor, expense.currency)}</Text>
-              <Text>Tax {formatMoney(expense.tax_minor, expense.currency)}</Text>
-              <Text>Tip {formatMoney(expense.tip_minor, expense.currency)}</Text>
-              <Text style={styles.name}>Total {formatMoney(expense.total_minor, expense.currency)}</Text>
-            </View>
-            {expense.status === "claiming" && (
-              <Text style={styles.note}>
-                Tax and tip are shared in proportion to what each person claimed. The payer finalizes when everyone has
-                claimed their items.
-              </Text>
-            )}
+                {expense.status === "parsing" && (
+                  <View style={styles.message}>
+                    {!gaveUp && <ActivityIndicator />}
+                    <Txt tone="secondary" style={styles.centered}>
+                      {gaveUp
+                        ? "Still reading the receipt. Pull down to check again. If this keeps happening, the worker may not be running."
+                        : "This usually takes a few seconds."}
+                    </Txt>
+                  </View>
+                )}
+                {expense.status === "needs_review" && (
+                  <View style={styles.message}>
+                    <Txt tone="secondary" style={styles.centered}>
+                      {payerIsMe ? "You need" : `${nameOf(expense.payer_id)} needs`} to check the items against the receipt
+                      before anyone can claim them.
+                    </Txt>
+                  </View>
+                )}
 
-            {error !== null && <Text style={styles.error}>{error}</Text>}
+                {expense.items.length > 0 && (
+                  <>
+                    <Dashes />
+                    {claiming && (
+                      <Txt variant="small" tone="secondary" style={styles.hint}>
+                        {drawnOpen === 0
+                          ? "Tap what you had. Everything is claimed."
+                          : `Tap what you had. ${drawnOpen} ${drawnOpen === 1 ? "item is" : "items are"} still unclaimed.`}
+                      </Txt>
+                    )}
+                    {expense.items.map((item) => {
+                      const claimers = claimersOf(item);
+                      const mine = claimers.includes(me.id);
+                      const sentence = claimSentence({ claimed_by: claimers }, me.id, nameOf);
+                      const showClaims = claiming || claimers.length > 0;
+                      return (
+                        <ReceiptLine
+                          key={item.id}
+                          mark={showClaims ? <ClaimMark share={mine ? 1 / claimers.length : 0} /> : undefined}
+                          title={item.description}
+                          detail={
+                            showClaims ? (
+                              <View style={styles.claimers}>
+                                {claimers.map((memberId) => (
+                                  <Avatar key={memberId} id={memberId} name={nameOf(memberId)} size={18} />
+                                ))}
+                                <Txt variant="small" tone="secondary" style={styles.sentence}>
+                                  {sentence}
+                                </Txt>
+                              </View>
+                            ) : undefined
+                          }
+                          price={formatMinor(item.price_minor)}
+                          checked={mine}
+                          accessibilityLabel={`${item.description}, ${formatMoney(item.price_minor, expense.currency)}${showClaims ? `, ${sentence}` : ""}`}
+                          onPress={claiming && busy === null ? () => void toggleClaim(item.id, mine) : undefined}
+                        />
+                      );
+                    })}
+                    <Dashes />
+                    <TotalLine label="Subtotal" amount={formatMinor(expense.subtotal_minor)} />
+                    <TotalLine label="Tax" amount={formatMinor(expense.tax_minor)} />
+                    <TotalLine label="Tip" amount={formatMinor(expense.tip_minor)} />
+                    <TotalLine strong label="TOTAL" amount={formatMoney(expense.total_minor, expense.currency)} />
+                  </>
+                )}
+              </Receipt>
 
+              {claiming && (
+                <Txt variant="small" tone="secondary" style={styles.note}>
+                  Items with more than one person are split evenly. Tax and tip are shared in proportion to what each person
+                  claimed. {payerIsMe ? "Finalize" : `${nameOf(expense.payer_id)} finalizes`} when everyone has claimed.
+                </Txt>
+              )}
+              {canVoid(expense, me.id, group.role) && (
+                <Button kind="danger" title="Void this expense" onPress={confirmVoid} busy={busy === "void"} disabled={busy !== null} />
+              )}
+            </ScrollView>
+
+            {/* outside the scroll, so a claim that failed is seen wherever the list is scrolled to */}
+            {error !== null && <ErrorBar text={error} />}
             {canReview(expense, me.id) && (
-              <View style={styles.actions}>
+              <Footer>
                 <Button
+                  grow
                   title="Review the items"
                   onPress={() => router.push({ pathname: "/groups/[id]/expenses/[expenseId]/review", params: { id, expenseId } })}
                 />
-              </View>
+              </Footer>
             )}
             {canFinalize(expense, me.id) && (
-              <View style={styles.actions}>
-                {busy === "finalize" ? (
-                  <ActivityIndicator />
-                ) : (
-                  <Button
-                    title={open === 0 ? "Finalize" : `Finalize (${open} unclaimed)`}
-                    onPress={confirmFinalize}
-                    disabled={busy !== null}
-                  />
-                )}
-              </View>
+              <Footer>
+                <Button
+                  grow
+                  title={drawnOpen === 0 ? "Finalize" : `Finalize (${drawnOpen} unclaimed)`}
+                  onPress={confirmFinalize}
+                  busy={busy === "finalize"}
+                  disabled={busy !== null || drawn.size > 0} // the request is built from loaded claims, so wait for them
+                />
+              </Footer>
             )}
-            {canVoid(expense, me.id, group.role) && (
-              <View style={styles.actions}>
-                {busy === "void" ? (
-                  <ActivityIndicator />
-                ) : (
-                  <Button title="Void this expense" color="#b00020" onPress={confirmVoid} disabled={busy !== null} />
-                )}
-              </View>
-            )}
-          </ScrollView>
+          </>
         );
       }}
     </LoadGate>
@@ -269,25 +329,13 @@ export default function ExpenseScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 8 },
-  title: { fontSize: 28, fontWeight: "700" },
-  heading: { fontSize: 18, fontWeight: "600", marginTop: 16 },
-  meta: { color: "#666" },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: "#ccc",
-  },
-  itemText: { flex: 1, gap: 2 },
-  name: { fontWeight: "600" },
-  totals: { marginTop: 8, gap: 2 },
-  note: { color: "#666", fontSize: 12 },
-  error: { color: "#b00020" },
-  actions: { marginTop: 16 },
-  banner: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 8, backgroundColor: "#eef" },
-  bannerText: { flex: 1 },
+  container: { padding: space.l, gap: space.l },
+  head: { alignItems: "center", gap: space.xs, paddingHorizontal: space.l, paddingVertical: space.s },
+  centered: { textAlign: "center" },
+  voided: { textDecorationLine: "line-through" },
+  message: { gap: space.m, padding: space.l, paddingBottom: space.s },
+  hint: { textAlign: "center", paddingHorizontal: space.l, paddingBottom: space.s },
+  claimers: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: space.xs },
+  sentence: { flexShrink: 1 },
+  note: { paddingHorizontal: space.l },
 });

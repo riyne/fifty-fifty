@@ -1,11 +1,16 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ScrollView, StyleSheet } from "react-native";
 
 import { unwrap } from "../../../api/client";
 import { describeError } from "../../../api/errors";
 import { api } from "../../../api/instance";
 import type { Currency } from "../../../api/types";
+import { Button } from "../../../ui/Button";
+import { Choice } from "../../../ui/Choice";
+import { Field } from "../../../ui/Field";
+import { space } from "../../../ui/theme";
+import { Txt } from "../../../ui/Txt";
 
 export default function NewGroup() {
   const [name, setName] = useState("");
@@ -32,36 +37,23 @@ export default function NewGroup() {
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.container}
     >
-      <Text style={styles.label}>Name</Text>
-      <TextInput
-        style={styles.input}
+      <Field
+        label="Name"
         value={name}
         onChangeText={setName}
         placeholder="Lisbon trip"
         maxLength={100}
+        autoFocus
+        returnKeyType="done"
         editable={!busy}
       />
-      <Text style={styles.label}>Currency (one per group, cannot be changed)</Text>
-      <View style={styles.choices}>
-        {(["CAD", "USD"] as const).map((code) => (
-          <Button
-            key={code}
-            title={currency === code ? `✓ ${code}` : code}
-            onPress={() => setCurrency(code)}
-            disabled={busy}
-          />
-        ))}
-      </View>
-      {busy ? <ActivityIndicator /> : <Button title="Create group" onPress={create} disabled={trimmed === ""} />}
-      {error !== null && <Text style={styles.error}>{error}</Text>}
+      <Choice label="Currency (cannot be changed later)" options={["CAD", "USD"]} value={currency} onChange={setCurrency} disabled={busy} />
+      {error !== null && <Txt tone="danger">{error}</Txt>}
+      <Button title="Create group" onPress={() => void create()} busy={busy} disabled={trimmed === ""} />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, gap: 12 },
-  label: { color: "#444" },
-  input: { borderWidth: 1, borderColor: "#bbb", borderRadius: 8, padding: 12, fontSize: 17, backgroundColor: "#fff" },
-  choices: { flexDirection: "row", gap: 24 },
-  error: { color: "#b00020" },
+  container: { padding: space.l, gap: space.l },
 });

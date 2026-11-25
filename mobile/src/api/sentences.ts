@@ -21,3 +21,14 @@ export function transferSentence(
   const payee = to.isMe ? "you" : to.name;
   return `${payer} ${payee} ${formatMoney(amountMinor, currency)}`;
 }
+
+/** The same fact in two parts for a row or a headline; `amount` is null when there is nothing to show. */
+export function balanceParts(
+  isMe: boolean,
+  minor: number,
+  currency: Currency,
+): { label: string; amount: string | null; tone: "accent" | "owe" | "secondary" } {
+  if (minor > 0) return { label: isMe ? "You are owed" : "Is owed", amount: formatMoney(minor, currency), tone: "accent" };
+  if (minor < 0) return { label: isMe ? "You owe" : "Owes", amount: formatMoney(-minor, currency), tone: "owe" };
+  return { label: isMe ? "You are settled up" : "Settled up", amount: null, tone: "secondary" };
+}

@@ -1,4 +1,4 @@
-import { canClaim, canFinalize, canReview, canVoid, claimSentence, finalizeBody, statusLabel, unclaimedCount } from "./expenses";
+import { canClaim, canFinalize, canReview, canVoid, claimSentence, finalizeBody, statusLabel, statusShort, unclaimedCount } from "./expenses";
 import type { ExpenseStatus } from "./types";
 
 const item = (...claimed_by: string[]) => ({ claimed_by });
@@ -73,5 +73,12 @@ describe("claimSentence", () => {
     expect(claimSentence(item("a", "b", "c"), "c", nameOf)).toBe("You, Alice and Bob");
     expect(claimSentence(item("a", "b", "c"), "x", nameOf)).toBe("Alice, Bob and Carol");
     expect(claimSentence(item("z"), "a", nameOf)).toBe("Someone");
+  });
+});
+
+describe("statusShort", () => {
+  it("has a different short word for every status", () => {
+    const statuses: ExpenseStatus[] = ["parsing", "needs_review", "claiming", "finalized", "void"];
+    expect(statuses.map(statusShort)).toEqual(["Reading", "Needs review", "Open to claim", "Finalized", "Voided"]);
   });
 });

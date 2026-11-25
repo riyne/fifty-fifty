@@ -1,8 +1,13 @@
 import { useState } from "react";
-import { ActivityIndicator, Button, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { session } from "../auth";
 import { signInWithOidc } from "../auth/oidc";
+import { Button } from "../ui/Button";
+import { ClaimMark } from "../ui/ClaimMark";
+import { space } from "../ui/theme";
+import { Txt } from "../ui/Txt";
 
 export default function Login() {
   const [busy, setBusy] = useState(false);
@@ -22,24 +27,39 @@ export default function Login() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Fifty Fifty</Text>
-      <Text style={styles.note}>Split a receipt with friends. Settlement is simulated.</Text>
-      {busy ? <ActivityIndicator /> : <Button title="Sign in" onPress={onSignIn} />}
-      {error !== null && <Text style={styles.error}>{error}</Text>}
-      {__DEV__ && (
-        <Text style={styles.small}>
-          Development accounts: alice@example.com, bob@example.com, carol@example.com (password: password)
-        </Text>
-      )}
-    </View>
+    <SafeAreaView style={styles.screen}>
+      <View style={styles.intro}>
+        <ClaimMark share={0.5} size={84} />
+        <Txt variant="display" accessibilityRole="header">
+          Fifty Fifty
+        </Txt>
+        <Txt tone="secondary" style={styles.centered}>
+          Photograph the receipt, tap what you had, and everyone pays their share.
+        </Txt>
+      </View>
+      <View style={styles.actions}>
+        {error !== null && (
+          <Txt tone="danger" style={styles.centered}>
+            {error}
+          </Txt>
+        )}
+        <Button title="Sign in" onPress={() => void onSignIn()} busy={busy} />
+        <Txt variant="small" tone="secondary" style={styles.centered}>
+          Settlement is simulated. No real money moves.
+        </Txt>
+        {__DEV__ && (
+          <Txt variant="small" tone="secondary" style={styles.centered}>
+            Development accounts: alice@example.com, bob@example.com, carol@example.com (password: password)
+          </Txt>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, padding: 24 },
-  title: { fontSize: 28, fontWeight: "600" },
-  note: { textAlign: "center", color: "#444" },
-  error: { color: "#b00020", textAlign: "center" },
-  small: { fontSize: 12, color: "#666", textAlign: "center" },
+  screen: { flex: 1, paddingHorizontal: space.xl },
+  intro: { flex: 1, alignItems: "center", justifyContent: "center", gap: space.l },
+  actions: { gap: space.m, paddingBottom: space.l },
+  centered: { textAlign: "center" },
 });

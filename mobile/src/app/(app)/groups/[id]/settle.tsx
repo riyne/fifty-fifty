@@ -1,6 +1,7 @@
+import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Button, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 
 import { unwrap } from "../../../../api/client";
 import { ApiError, describeError } from "../../../../api/errors";
@@ -9,7 +10,12 @@ import { createActionKeys } from "../../../../api/keys";
 import { formatMoney } from "../../../../api/money";
 import { minorToInput, parseMinor } from "../../../../api/review";
 import { useLoad } from "../../../../hooks/useLoad";
+import { Avatar } from "../../../../ui/Avatar";
+import { Button } from "../../../../ui/Button";
+import { Field } from "../../../../ui/Field";
 import { LoadGate } from "../../../../ui/LoadGate";
+import { space } from "../../../../ui/theme";
+import { Txt } from "../../../../ui/Txt";
 
 // Pay another member through the SIMULATED payment provider. Arrives from a suggested transfer
 // with the payee and the suggested amount; the amount can be changed, and the api refuses more
@@ -45,6 +51,7 @@ export default function Settle() {
         }),
       );
       keys.answered();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       router.replace({ pathname: "/groups/[id]/settlements/[settlementId]", params: { id, settlementId: settlement.id } });
     } catch (e) {
       // A stored answer (anything below 500, a 409 included) is replayed for the same key.
@@ -64,25 +71,34 @@ export default function Settle() {
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.container}
           >
-            <Text style={styles.title}>You pay {payee}</Text>
-            <View style={styles.banner}>
-              <Text>Simulated: a mock payment provider answers, and no real money moves.</Text>
+            <View style={styles.payee}>
+              <Avatar id={to} name={payee} size={64} />
+              <Txt variant="title">You pay {payee}</Txt>
             </View>
-
-            <Text style={styles.label}>Amount ({balances.currency})</Text>
-            <TextInput
-              style={styles.input}
+            <Field
+              label={`Amount (${balances.currency})`}
+              style={styles.amount}
               value={text}
               onChangeText={setText}
               keyboardType="decimal-pad"
               editable={!busy}
             />
             {Number.isSafeInteger(suggested) && suggested > 0 && (
-              <Text style={styles.note}>Suggested: {formatMoney(suggested, balances.currency)}</Text>
+              <Txt variant="small" tone="secondary" style={styles.centered}>
+                Suggested: {formatMoney(suggested, balances.currency)}
+              </Txt>
             )}
-            {text !== "" && !valid && <Text style={styles.error}>Enter an amount above zero, like 12.50.</Text>}
-            {error !== null && <Text style={styles.error}>{error}</Text>}
-            {busy ? <ActivityIndicator /> : <Button title="Pay (simulated)" onPress={pay} disabled={!valid} />}
+            {text !== "" && !valid && <Txt tone="danger">Enter an amount above zero, like 12.50.</Txt>}
+            {error !== null && <Txt tone="danger">{error}</Txt>}
+            <Button
+              title={valid ? `Pay ${formatMoney(minor, balances.currency)} (simulated)` : "Pay (simulated)"}
+              onPress={() => void pay()}
+              busy={busy}
+              disabled={!valid}
+            />
+            <Txt variant="small" tone="secondary" style={styles.centered}>
+              Simulated: a mock payment provider answers, and no real money moves.
+            </Txt>
           </ScrollView>
         );
       }}
@@ -91,11 +107,8 @@ export default function Settle() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, gap: 12 },
-  title: { fontSize: 22, fontWeight: "700" },
-  banner: { padding: 12, borderRadius: 8, backgroundColor: "#eef" },
-  label: { color: "#444" },
-  input: { borderWidth: 1, borderColor: "#bbb", borderRadius: 8, padding: 12, fontSize: 17, backgroundColor: "#fff" },
-  note: { color: "#666", fontSize: 12 },
-  error: { color: "#b00020" },
+  container: { padding: space.l, gap: space.l },
+  payee: { alignItems: "center", gap: space.m, paddingVertical: space.l },
+  amount: { fontSize: 32, fontWeight: "700", textAlign: "center", minHeight: 68 },
+  centered: { textAlign: "center" },
 });
