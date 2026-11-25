@@ -1,12 +1,13 @@
 import * as Haptics from "expo-haptics";
 import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
 import { unwrap } from "../../../../../../api/client";
 import { ApiError, describeError } from "../../../../../../api/errors";
 import {
   canClaim,
+  canEdit,
   canFinalize,
   canReview,
   canVoid,
@@ -26,6 +27,7 @@ import { Button } from "../../../../../../ui/Button";
 import { ClaimMark } from "../../../../../../ui/ClaimMark";
 import { ErrorBar } from "../../../../../../ui/ErrorBar";
 import { Footer } from "../../../../../../ui/Footer";
+import { Icon } from "../../../../../../ui/Icon";
 import { LoadGate } from "../../../../../../ui/LoadGate";
 import { Pill, type PillTone } from "../../../../../../ui/Pill";
 import { Dashes, Receipt, ReceiptLine, TotalLine } from "../../../../../../ui/Receipt";
@@ -62,14 +64,15 @@ export default function ExpenseScreen() {
   const parsing = state.status === "ready" && state.data.expense.status === "parsing";
   const { gaveUp, restart } = usePolling(parsing, () => void reload({ silent: true }), 2000, 60_000);
 
-  // One key per tap on Finalize or Void, kept while the same request is retried (see createActionKeys).
+  // One key per tap on Finalize, Void or Rename, kept while the same request is retried (see createActionKeys).
   const finalizeKeys = useRef(createActionKeys()).current;
   const voidKeys = useRef(createActionKeys()).current;
-  const [busy, setBusy] = useState<"finalize" | "void" | null>(null);
+  const renameKeys = useRef(createActionKeys()).current;
+  const [busy, setBusy] = useState<"finalize" | "void" | "rename" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  /** Runs finalize or void, shows its failure, and reloads whatever the outcome (the screen may be stale). */
-  async function perform(what: "finalize" | "void", call: () => Promise<unknown>, answered: () => void) {
+  /** Runs finalize, void or rename, shows its failure, and reloads whatever the outcome (the screen may be stale). */
+  async function perform(what: "finalize" | "void" | "rename", call: () => Promise<unknown>, answered: () => void) {
     setBusy(what);
     setError(null);
     try {
@@ -180,6 +183,39 @@ export default function ExpenseScreen() {
           );
         }
 
+        function askName() {
+          Alert.prompt(
+            "Rename",
+            undefined,
+            (typed) => {
+              const description = typed.trim();
+              if (description === "" || description === expense.description) return;
+              const body = { version: expense.version, description };
+              void perform(
+                "rename",
+                async () => {
+                  try {
+                    await unwrap(
+                      api.PATCH("/v1/groups/{id}/expenses/{expenseId}", {
+                        params: { path: { id, expenseId }, header: { "Idempotency-Key": renameKeys.keyFor(JSON.stringify(body)) } },
+                        body,
+                      }),
+                    );
+                  } catch (e) {
+                    if (e instanceof ApiError && e.code === "version_conflict") {
+                      throw new ApiError(e.status, e.code, "This expense was changed somewhere else, so it was not renamed. Try again.");
+                    }
+                    throw e;
+                  }
+                },
+                renameKeys.answered,
+              );
+            },
+            "plain-text",
+            expense.description,
+          );
+        }
+
         /** Who the item is drawn as claimed by: the api's answer, with this person's own taps on top. */
         const claimersOf = (item: Expense["items"][number]) => {
           const mine = drawn.get(item.id);
@@ -190,7 +226,25 @@ export default function ExpenseScreen() {
 
         return (
           <>
-            <Stack.Screen options={{ title: expense.description }} />
+            <Stack.Screen
+              options={{
+                title: expense.description,
+                headerRight: !canEdit(expense, me.id)
+                  ? undefined
+                  : () => (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Rename"
+                        hitSlop={8}
+                        style={styles.headerButton}
+                        disabled={busy !== null}
+                        onPress={askName}
+                      >
+                        <Icon name="pencil" size={20} tone="accent" />
+                      </Pressable>
+                    ),
+              }}
+            />
             <ScrollView
               contentInsetAdjustmentBehavior="automatic"
               contentContainerStyle={styles.container}
@@ -330,6 +384,7 @@ export default function ExpenseScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: space.l, gap: space.l },
+  headerButton: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   head: { alignItems: "center", gap: space.xs, paddingHorizontal: space.l, paddingVertical: space.s },
   centered: { textAlign: "center" },
   voided: { textDecorationLine: "line-through" },

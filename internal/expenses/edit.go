@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/riyne/fifty-fifty/internal/auth"
 	"github.com/riyne/fifty-fifty/internal/controls"
@@ -35,24 +36,27 @@ type itemUpdate struct {
 }
 
 type editRequest struct {
-	Version  *int32        `json:"version"` // pointer: a missing version is an error
-	Update   []itemUpdate  `json:"update"`
-	Remove   []uuid.UUID   `json:"remove"`
-	Add      []itemRequest `json:"add"`
-	TaxMinor *int64        `json:"tax_minor"`
-	TipMinor *int64        `json:"tip_minor"`
+	Version     *int32        `json:"version"`     // pointer: a missing version is an error
+	Description *string       `json:"description"` // the expense's name
+	Update      []itemUpdate  `json:"update"`
+	Remove      []uuid.UUID   `json:"remove"`
+	Add         []itemRequest `json:"add"`
+	TaxMinor    *int64        `json:"tax_minor"`
+	TipMinor    *int64        `json:"tip_minor"`
 }
 
 // normEdit is a validated edit with text trimmed and the order-insensitive lists
 // sorted. It is also what gets fingerprinted. Add keeps its order (it decides the
-// new items' positions).
+// new items' positions). Description is left out when absent, so an edit without one
+// has the fingerprint it had before the field existed (keys live for 24 hours).
 type normEdit struct {
-	Version  int32        `json:"version"`
-	Update   []normUpdate `json:"update"`
-	Remove   []uuid.UUID  `json:"remove"`
-	Add      []normItem   `json:"add"`
-	TaxMinor *int64       `json:"tax_minor"`
-	TipMinor *int64       `json:"tip_minor"`
+	Version     int32        `json:"version"`
+	Description *string      `json:"description,omitempty"`
+	Update      []normUpdate `json:"update"`
+	Remove      []uuid.UUID  `json:"remove"`
+	Add         []normItem   `json:"add"`
+	TaxMinor    *int64       `json:"tax_minor"`
+	TipMinor    *int64       `json:"tip_minor"`
 }
 
 type normUpdate struct {
@@ -72,8 +76,15 @@ func (req editRequest) normalize() (normEdit, error) {
 	if len(req.Update) > maxItems || len(req.Remove) > maxItems || len(req.Add) > maxItems {
 		return n, fmt.Errorf("update, remove and add each take at most %d entries", maxItems)
 	}
-	if len(req.Update) == 0 && len(req.Remove) == 0 && len(req.Add) == 0 && req.TaxMinor == nil && req.TipMinor == nil {
+	if req.Description == nil && len(req.Update) == 0 && len(req.Remove) == 0 && len(req.Add) == 0 && req.TaxMinor == nil && req.TipMinor == nil {
 		return n, errors.New("nothing to change")
+	}
+	if req.Description != nil {
+		d, err := text(*req.Description, "description")
+		if err != nil {
+			return n, err
+		}
+		n.Description = &d
 	}
 
 	seen := map[uuid.UUID]bool{}
@@ -174,7 +185,7 @@ func (h *Handler) payerPrefix(w http.ResponseWriter, r *http.Request, action str
 	return user, groupID, expenseID, true
 }
 
-// edit changes the items, tax and tip of an expense that is being reviewed
+// edit changes the name, items, tax and tip of an expense that is being reviewed
 // (`needs_review`) or claimed (`claiming`). Payer only.
 //
 // Order of checks: path ids and authorization without a write lock, the
@@ -191,7 +202,8 @@ func (h *Handler) payerPrefix(w http.ResponseWriter, r *http.Request, action str
 // A claim says "I will pay my share of this item at this price", so claims on an
 // item whose price changed, and on an item removed, are deleted in the same
 // transaction. A description-only change keeps them. Tax and tip are not claimed
-// (they are prorated at finalize), so changing them touches no claim.
+// (they are prorated at finalize), and the name is not money, so changing those
+// touches no claim.
 func (h *Handler) edit(w http.ResponseWriter, r *http.Request) {
 	user, groupID, expenseID, ok := h.payerPrefix(w, r, "edit")
 	if !ok {
@@ -377,14 +389,19 @@ func (h *Handler) doEdit(ctx context.Context, tx pgx.Tx, payerID, groupID, expen
 			return idempotency.Result{}, fmt.Errorf("insert items: %w", err)
 		}
 	}
+	var name pgtype.Text // null keeps the name
+	if n.Description != nil {
+		name = pgtype.Text{String: *n.Description, Valid: true}
+	}
 	// Last, like MarkExpenseFinalized: conditional on the version read under the lock.
-	if got, err := q.MarkExpenseEdited(ctx, db.MarkExpenseEditedParams{ID: expenseID, TaxMinor: tax, TipMinor: tip, Version: locked.Version}); err != nil || got != 1 {
+	if got, err := q.MarkExpenseEdited(ctx, db.MarkExpenseEditedParams{ID: expenseID, TaxMinor: tax, TipMinor: tip, Description: name, Version: locked.Version}); err != nil || got != 1 {
 		return idempotency.Result{}, fmt.Errorf("mark edited: rows=%d err=%v", got, err)
 	}
 
 	if err := h.audit(ctx, q, payerID, groupID, "expense.items_edited", map[string]any{
 		"expense_id": expenseID, "base_version": n.Version, "version": locked.Version + 1,
 		"added": len(n.Add), "updated": len(changes), "removed": len(n.Remove), "claims_removed": claimsRemoved,
+		"renamed": n.Description != nil, // whether a name was sent; never the text
 	}); err != nil {
 		return idempotency.Result{}, fmt.Errorf("audit: %w", err)
 	}

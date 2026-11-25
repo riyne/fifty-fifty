@@ -149,7 +149,7 @@ erDiagram
         uuid group_id FK
         uuid payer_id "a member of the group"
         text status "parsing, needs_review, claiming, finalized, void"
-        int version "optimistic lock for item edits"
+        int version "optimistic lock for edits"
         bigint tax_minor
         bigint tip_minor
     }

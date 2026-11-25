@@ -368,17 +368,18 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
     patch:
-      summary: Edit an expense's items, tax and tip (payer only). Requires Idempotency-Key.
+      summary: Edit an expense's name, items, tax and tip (payer only). Requires Idempotency-Key.
       description: >
         For an expense in `needs_review` (a receipt that was read but needs checking) or `claiming`.
         `version` is required and must be the version the client last read: if the expense has changed
         since, the answer is 409 `version_conflict` and nothing is applied, so two edits made from the
         same version cannot overwrite each other. Claims do not change the version. Any combination of
-        `update` (change the description and/or price of existing items), `remove` (delete items),
+        `description` (the expense's name), `update` (change the description and/or price of existing items), `remove` (delete items),
         `add` (new items, placed after the existing ones) and `tax_minor` / `tip_minor` may be sent;
         everything applies in one transaction and the version goes up by one. **A claim is a promise
         to pay your share at a price, so the claims on an item are deleted when its price changes and
-        when it is removed**; a description-only change keeps them, and tax and tip carry no claims.
+        when it is removed**; a description-only change keeps them, and the name, tax and tip carry no
+        claims.
         The edit waits for claims in flight. A `claiming` expense must stay finalizable (at least
         one item; tax and tip 0 if every item is free, as at creation); a `needs_review` one is a
         draft and may be emptied (confirm checks). At most 100 items. Only a `needs_review` or
@@ -402,6 +403,7 @@ paths:
               required: [version]
               properties:
                 version: { type: integer, format: int32, minimum: 1, description: The version of the expense being edited. }
+                description: { type: string, minLength: 1, maxLength: 200, description: "The expense's new name, trimmed before validation. Left out: the name stays." }
                 update:
                   type: array
                   maxItems: 100

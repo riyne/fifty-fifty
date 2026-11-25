@@ -693,26 +693,30 @@ func (q *Queries) MarkExpenseConfirmed(ctx context.Context, arg MarkExpenseConfi
 }
 
 const markExpenseEdited = `-- name: MarkExpenseEdited :execrows
-UPDATE expenses SET version = version + 1, tax_minor = $2, tip_minor = $3
-WHERE id = $1 AND version = $4 AND status IN ('needs_review', 'claiming')
+UPDATE expenses SET version = version + 1, tax_minor = $1, tip_minor = $2,
+    description = COALESCE($3::text, description)
+WHERE id = $4 AND version = $5 AND status IN ('needs_review', 'claiming')
 `
 
 type MarkExpenseEditedParams struct {
-	ID       uuid.UUID
-	TaxMinor int64
-	TipMinor int64
-	Version  int32
+	TaxMinor    int64
+	TipMinor    int64
+	Description pgtype.Text
+	ID          uuid.UUID
+	Version     int32
 }
 
-// MarkExpenseEdited bumps the version and writes tax and tip. It is the LAST write of
+// MarkExpenseEdited bumps the version and writes tax, tip and, when one is given, the
+// expense's new name (null keeps the one it has). It is the LAST write of
 // an edit and is conditional on the version the edit read under the lock and on an
 // editable status, so if the lock were somehow missing an edit that lost a race
 // moves no row and the whole transaction rolls back.
 func (q *Queries) MarkExpenseEdited(ctx context.Context, arg MarkExpenseEditedParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markExpenseEdited,
-		arg.ID,
 		arg.TaxMinor,
 		arg.TipMinor,
+		arg.Description,
+		arg.ID,
 		arg.Version,
 	)
 	if err != nil {

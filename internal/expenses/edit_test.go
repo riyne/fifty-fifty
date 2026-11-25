@@ -51,7 +51,7 @@ func (w *world) snapshot(t testing.TB, expenseID string) string {
 	t.Helper()
 	var s string
 	err := w.s.Pool.QueryRow(context.Background(), `
-		SELECT e.version::text || '/' || e.status || '/' || e.tax_minor || '/' || e.tip_minor || '/' ||
+		SELECT e.version::text || '/' || e.description || '/' || e.status || '/' || e.tax_minor || '/' || e.tip_minor || '/' ||
 		       coalesce((SELECT string_agg(i.id || ':' || i.position || ':' || i.description || ':' || i.price_minor, ',' ORDER BY i.position) FROM expense_items i WHERE i.expense_id = e.id), '') || '/' ||
 		       coalesce((SELECT string_agg(c.item_id || ':' || c.member_id, ',' ORDER BY c.item_id, c.member_id) FROM claims c WHERE c.expense_id = e.id), '') || '/' ||
 		       (SELECT count(*) FROM audit_events a WHERE a.data->>'expense_id' = e.id::text)
@@ -180,6 +180,91 @@ func TestEdit_TaxAndTipOnlyTouchNoClaims(t *testing.T) {
 	}
 	if after := w.claimRows(t, exp); strings.Join(after, ",") != strings.Join(before, ",") {
 		t.Errorf("claims changed by a tax edit: %v -> %v", before, after)
+	}
+}
+
+// Renaming touches the name and the version, and nothing about the money or the claims.
+func TestEdit_Rename(t *testing.T) {
+	for _, status := range []string{"claiming", "needs_review"} {
+		t.Run(status, func(t *testing.T) {
+			w := newWorld(t)
+			exp, items := w.newExpense(t, w.member, goodBody)
+			w.put(t, w.owner, w.group, exp, items[0])
+			w.setStatus(t, exp, status)
+			claims := w.claimRows(t, exp)
+			was := w.get(t, w.member, exp)
+
+			r := w.patch(t, w.member, w.group, exp, `{"version":1,"description":"  Thai dinner "}`, uuid.NewString())
+			if r.Status != 200 {
+				t.Fatalf("rename = %d: %s", r.Status, r.Body)
+			}
+			now := w.get(t, w.member, exp)
+			if now.Description != "Thai dinner" || now.Version != 2 || now.Status != status {
+				t.Errorf("name/version/status = %q/%d/%s, want Thai dinner/2/%s", now.Description, now.Version, now.Status, status)
+			}
+			if now.TaxMinor != was.TaxMinor || now.TipMinor != was.TipMinor || now.TotalMinor != was.TotalMinor || len(now.Items) != len(was.Items) {
+				t.Errorf("a rename changed the amounts or items: %+v -> %+v", was, now)
+			}
+			if after := w.claimRows(t, exp); len(claims) != 1 || strings.Join(after, ",") != strings.Join(claims, ",") {
+				t.Errorf("claims changed by a rename: %v -> %v", claims, after)
+			}
+			if n := w.s.QueryInt(t, `SELECT count(*) FROM audit_events WHERE kind = 'expense.items_edited' AND data->>'expense_id' = $1 AND (data->>'renamed')::bool AND data::text NOT LIKE '%Thai%'`, exp); n != 1 {
+				t.Errorf("audit events with renamed and without the text = %d, want 1", n)
+			}
+
+			// An edit that sends no name keeps the one it has.
+			if r := w.patch(t, w.member, w.group, exp, `{"version":2,"tip_minor":7}`, uuid.NewString()); r.Status != 200 {
+				t.Fatalf("edit = %d: %s", r.Status, r.Body)
+			}
+			if e := w.get(t, w.member, exp); e.Description != "Thai dinner" || e.TipMinor != 7 {
+				t.Errorf("after an edit without a name: %q tip %d", e.Description, e.TipMinor)
+			}
+			if n := w.s.QueryInt(t, `SELECT count(*) FROM audit_events WHERE kind = 'expense.items_edited' AND data->>'expense_id' = $1 AND NOT (data->>'renamed')::bool`, exp); n != 1 {
+				t.Errorf("audit events without renamed = %d, want 1", n)
+			}
+		})
+	}
+}
+
+func TestEdit_RenameRefused(t *testing.T) {
+	w := newWorld(t)
+	exp, _ := w.newExpense(t, w.member, goodBody)
+	before := w.snapshot(t, exp)
+	body := `{"version":1,"description":"renamed"}`
+	if r := w.patch(t, w.owner, w.group, exp, body, uuid.NewString()); r.Status != 403 { // the group owner is not the payer
+		t.Errorf("rename by the owner = %d, want 403", r.Status)
+	}
+	if r := w.patch(t, w.member, w.group, exp, `{"version":2,"description":"renamed"}`, uuid.NewString()); r.Status != 409 || !strings.Contains(string(r.Body), "version_conflict") {
+		t.Errorf("rename at another version = %d %s, want 409 version_conflict", r.Status, r.Body)
+	}
+	if w.snapshot(t, exp) != before {
+		t.Error("a refused rename changed state")
+	}
+	w.s.Exec(t, `UPDATE expenses SET status = 'finalized', finalized_at = now() WHERE id = $1`, exp)
+	before = w.snapshot(t, exp)
+	if r := w.patch(t, w.member, w.group, exp, body, uuid.NewString()); r.Status != 409 || !strings.Contains(string(r.Body), "invalid_state") {
+		t.Errorf("rename of a finalized expense = %d %s, want 409 invalid_state", r.Status, r.Body)
+	}
+	if w.snapshot(t, exp) != before {
+		t.Error("a refused rename changed a finalized expense")
+	}
+}
+
+func TestEdit_RenameIdempotency(t *testing.T) {
+	w := newWorld(t)
+	exp, _ := w.newExpense(t, w.member, goodBody)
+	key := uuid.NewString()
+	if r := w.patch(t, w.member, w.group, exp, `{"version":1,"description":"one"}`, key); r.Status != 200 {
+		t.Fatalf("rename = %d: %s", r.Status, r.Body)
+	}
+	if r := w.patch(t, w.member, w.group, exp, `{"description":" one ","version":1}`, key); r.Status != 200 || r.Header.Get("Idempotent-Replayed") != "true" {
+		t.Errorf("the same rename again = %d replayed=%q, want the stored 200", r.Status, r.Header.Get("Idempotent-Replayed"))
+	}
+	if r := w.patch(t, w.member, w.group, exp, `{"version":1,"description":"two"}`, key); r.Status != 422 {
+		t.Errorf("the key with another name = %d, want 422", r.Status)
+	}
+	if e := w.get(t, w.member, exp); e.Description != "one" || e.Version != 2 {
+		t.Errorf("name/version = %q/%d, want one/2", e.Description, e.Version)
 	}
 }
 
@@ -336,6 +421,9 @@ func TestEdit_Validation(t *testing.T) {
 		"negative tax":        `{"version":1,"tax_minor":-1}`,
 		"tax as string":       `{"version":1,"tax_minor":"1"}`,
 		"trailing data":       `{"version":1,"tip_minor":1} {}`,
+		"empty name":          `{"version":1,"description":"  "}`,
+		"long name":           fmt.Sprintf(`{"version":1,"description":%q}`, long),
+		"name as number":      `{"version":1,"description":5}`,
 	} {
 		before := w.snapshot(t, exp)
 		key := uuid.NewString()

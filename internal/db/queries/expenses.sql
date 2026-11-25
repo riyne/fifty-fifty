@@ -214,13 +214,15 @@ DELETE FROM claims WHERE expense_id = sqlc.arg(expense_id) AND item_id = ANY(sql
 -- name: DeleteExpenseItems :execrows
 DELETE FROM expense_items WHERE expense_id = sqlc.arg(expense_id) AND id = ANY(sqlc.arg(item_ids)::uuid[]);
 
--- MarkExpenseEdited bumps the version and writes tax and tip. It is the LAST write of
+-- MarkExpenseEdited bumps the version and writes tax, tip and, when one is given, the
+-- expense's new name (null keeps the one it has). It is the LAST write of
 -- an edit and is conditional on the version the edit read under the lock and on an
 -- editable status, so if the lock were somehow missing an edit that lost a race
 -- moves no row and the whole transaction rolls back.
 -- name: MarkExpenseEdited :execrows
-UPDATE expenses SET version = version + 1, tax_minor = $2, tip_minor = $3
-WHERE id = $1 AND version = $4 AND status IN ('needs_review', 'claiming');
+UPDATE expenses SET version = version + 1, tax_minor = sqlc.arg(tax_minor), tip_minor = sqlc.arg(tip_minor),
+    description = COALESCE(sqlc.narg(description)::text, description)
+WHERE id = sqlc.arg(id) AND version = sqlc.arg(version) AND status IN ('needs_review', 'claiming');
 
 -- MarkExpenseConfirmed moves a reviewed expense to claiming. Conditional like
 -- MarkExpenseEdited.

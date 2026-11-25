@@ -44,6 +44,11 @@ export function canReview(expense: Pick<Expense, "status" | "payer_id">, meId: s
   return expense.status === "needs_review" && expense.payer_id === meId;
 }
 
+/** Only the payer edits (the name, the items), and only before the expense is finalized. */
+export function canEdit(expense: Pick<Expense, "status" | "payer_id">, meId: string): boolean {
+  return (expense.status === "needs_review" || expense.status === "claiming") && expense.payer_id === meId;
+}
+
 export function canFinalize(expense: Pick<Expense, "status" | "payer_id">, meId: string): boolean {
   return expense.status === "claiming" && expense.payer_id === meId;
 }

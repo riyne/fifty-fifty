@@ -1,4 +1,4 @@
-import { canClaim, canFinalize, canReview, canVoid, claimSentence, finalizeBody, statusLabel, statusShort, unclaimedCount } from "./expenses";
+import { canClaim, canEdit, canFinalize, canReview, canVoid, claimSentence, finalizeBody, statusLabel, statusShort, unclaimedCount } from "./expenses";
 import type { ExpenseStatus } from "./types";
 
 const item = (...claimed_by: string[]) => ({ claimed_by });
@@ -17,6 +17,11 @@ describe("what an expense offers", () => {
       expect(canFinalize({ status, payer_id: "a" }, "a")).toBe(status === "claiming");
       expect(canFinalize({ status, payer_id: "a" }, "b")).toBe(false);
     }
+  });
+
+  it("lets only the payer edit, and only before the expense is finalized", () => {
+    expect(statuses.filter((status) => canEdit({ status, payer_id: "a" }, "a"))).toEqual(["needs_review", "claiming"]);
+    expect(statuses.filter((status) => canEdit({ status, payer_id: "a" }, "b"))).toEqual([]);
   });
 
   it("lets only the payer review, and only a receipt waiting for review", () => {
