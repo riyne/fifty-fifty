@@ -3,8 +3,11 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { ActivityIndicator, useColorScheme, View } from "react-native";
 
+import { applyStoredAppearance } from "../appearance";
 import { session, useSession } from "../auth";
 import { useColors } from "../ui/theme";
+
+applyStoredAppearance(); // once, before the first screen is drawn
 
 export default function RootLayout() {
   const state = useSession();

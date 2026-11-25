@@ -1,4 +1,4 @@
-import { buildEdit, draftFrom, draftTotal, minorToInput, parseMinor, type Draft } from "./review";
+import { buildEdit, draftFrom, draftTotal, itemsLosingClaims, minorToInput, parseMinor, type Draft } from "./review";
 
 const item = (id: string, description: string, price_minor: number) => ({ id, position: 0, description, price_minor, claimed_by: [] });
 const expense = {
@@ -158,5 +158,24 @@ describe("draftTotal", () => {
     const other = unchanged();
     other.tip = "";
     expect(draftTotal(other)).toBeNull();
+  });
+});
+
+describe("itemsLosingClaims", () => {
+  const claimed = { items: expense.items.map((i) => ({ ...i, claimed_by: i.id === "c" ? [] : ["someone"] })) };
+
+  it("names claimed items whose price changes or that are removed", () => {
+    expect(itemsLosingClaims(claimed, { update: [{ item_id: "a", price_minor: 1 }], remove: ["b"] })).toEqual(["Pasta", "Wine"]);
+  });
+
+  it("leaves out items nobody claimed, name changes, additions, tax and tip", () => {
+    expect(itemsLosingClaims(claimed, { update: [{ item_id: "c", price_minor: 1 }] })).toEqual([]);
+    expect(itemsLosingClaims(claimed, { update: [{ item_id: "a", description: "Penne" }] })).toEqual([]);
+    expect(itemsLosingClaims(claimed, { add: [{ description: "Tea", price_minor: 300 }], tax_minor: 1, tip_minor: 1 })).toEqual([]);
+    expect(itemsLosingClaims(claimed, {})).toEqual([]);
+  });
+
+  it("counts a price set to zero as a change", () => {
+    expect(itemsLosingClaims(claimed, { update: [{ item_id: "a", price_minor: 0 }] })).toEqual(["Pasta"]);
   });
 });

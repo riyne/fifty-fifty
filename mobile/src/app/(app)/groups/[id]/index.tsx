@@ -1,5 +1,4 @@
-import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback } from "react";
+import { router, Stack, useLocalSearchParams } from "expo-router";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
 import { unwrap } from "../../../../api/client";
@@ -11,6 +10,7 @@ import { balanceParts, transferSentence } from "../../../../api/sentences";
 import { settlementTitle, statusWord } from "../../../../api/settlements";
 import type { ExpenseSummary, SettlementStatus } from "../../../../api/types";
 import { useLoad } from "../../../../hooks/useLoad";
+import { useReloadOnReturn } from "../../../../hooks/useReloadOnReturn";
 import { Avatar } from "../../../../ui/Avatar";
 import { Button } from "../../../../ui/Button";
 import { EmptyState } from "../../../../ui/EmptyState";
@@ -59,12 +59,7 @@ export default function GroupScreen() {
     return { group, balances, expenses, settlements, me };
   });
 
-  // No spinner: coming back from an expense updates the numbers in place instead of moving the screen.
-  useFocusEffect(
-    useCallback(() => {
-      void reload({ spinner: false });
-    }, [reload]),
-  );
+  useReloadOnReturn(reload);
 
   return (
     <LoadGate load={state} onRetry={reload}>

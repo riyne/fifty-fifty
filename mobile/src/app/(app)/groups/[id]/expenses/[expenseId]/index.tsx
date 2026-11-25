@@ -1,7 +1,7 @@
 import * as Haptics from "expo-haptics";
-import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { router, Stack, useLocalSearchParams } from "expo-router";
+import { useRef, useState } from "react";
+import { ActionSheetIOS, ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
 import { unwrap } from "../../../../../../api/client";
 import { ApiError, describeError } from "../../../../../../api/errors";
@@ -20,6 +20,7 @@ import { api } from "../../../../../../api/instance";
 import { createActionKeys } from "../../../../../../api/keys";
 import { formatMinor, formatMoney } from "../../../../../../api/money";
 import { useLoad } from "../../../../../../hooks/useLoad";
+import { useReloadOnReturn } from "../../../../../../hooks/useReloadOnReturn";
 import { usePolling } from "../../../../../../hooks/usePolling";
 import type { Expense } from "../../../../../../api/types";
 import { Avatar } from "../../../../../../ui/Avatar";
@@ -53,11 +54,7 @@ export default function ExpenseScreen() {
     return { group: groupDetail, balances, expense: detail, me };
   });
 
-  useFocusEffect(
-    useCallback(() => {
-      void reload({ spinner: false });
-    }, [reload]),
-  );
+  useReloadOnReturn(reload);
 
   // A receipt that was just uploaded is `parsing` until a worker has read it: look again every 2 s
   // (without the refresh spinner) for up to a minute, then leave it to pull to refresh.
@@ -216,6 +213,20 @@ export default function ExpenseScreen() {
           );
         }
 
+        const openReview = () => router.push({ pathname: "/groups/[id]/expenses/[expenseId]/review", params: { id, expenseId } });
+
+        // While it waits for review the items have their own button, so the pencil only renames.
+        function edit() {
+          if (!claiming) {
+            askName();
+            return;
+          }
+          ActionSheetIOS.showActionSheetWithOptions({ options: ["Rename", "Fix items", "Cancel"], cancelButtonIndex: 2 }, (index) => {
+            if (index === 0) askName();
+            if (index === 1) openReview();
+          });
+        }
+
         /** Who the item is drawn as claimed by: the api's answer, with this person's own taps on top. */
         const claimersOf = (item: Expense["items"][number]) => {
           const mine = drawn.get(item.id);
@@ -234,11 +245,11 @@ export default function ExpenseScreen() {
                   : () => (
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel="Rename"
+                        accessibilityLabel={claiming ? "Rename or fix items" : "Rename"}
                         hitSlop={8}
                         style={styles.headerButton}
-                        disabled={busy !== null}
-                        onPress={askName}
+                        disabled={busy !== null || drawn.size > 0} // the warning about claims is built from loaded ones
+                        onPress={edit}
                       >
                         <Icon name="pencil" size={20} tone="accent" />
                       </Pressable>
@@ -360,7 +371,7 @@ export default function ExpenseScreen() {
                 <Button
                   grow
                   title="Review the items"
-                  onPress={() => router.push({ pathname: "/groups/[id]/expenses/[expenseId]/review", params: { id, expenseId } })}
+                  onPress={openReview}
                 />
               </Footer>
             )}

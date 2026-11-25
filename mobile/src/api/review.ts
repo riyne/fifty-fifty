@@ -1,8 +1,9 @@
 import type { components, paths } from "./schema";
 import type { Expense } from "./types";
 
-// The payer's review of a receipt the worker could not finish (status `needs_review`): fix the
-// items, tax and tip, then confirm. This file turns what the person typed into the PATCH body
+// The payer's corrections to an expense: the review of a receipt the worker could not finish (status
+// `needs_review`: fix the items, tax and tip, then confirm) and later fixes while it is open for
+// claims. This file turns what the person typed into the PATCH body
 // the api wants, apart from the screen so it can be tested. Money is typed as text ("12.50")
 // and becomes integer minor units by string handling only, never through a float.
 
@@ -121,6 +122,17 @@ export function buildEdit(
   if (tax !== expense.tax_minor) body.tax_minor = tax;
   if (tip !== expense.tip_minor) body.tip_minor = tip;
   return { ok: true, body: Object.keys(body).length === 0 ? null : body };
+}
+
+/**
+ * The names of the items that lose their claims if `body` is sent: the api deletes the claims on an
+ * item whose price changes and on one that is removed. From the claims the screen loaded; somebody
+ * may claim another one before the edit arrives.
+ */
+export function itemsLosingClaims(expense: Pick<Expense, "items">, body: EditBody): string[] {
+  const affected = new Set(body.remove ?? []);
+  for (const change of body.update ?? []) if (change.price_minor !== undefined) affected.add(change.item_id);
+  return expense.items.filter((item) => affected.has(item.id) && item.claimed_by.length > 0).map((item) => item.description);
 }
 
 /** subtotal + tax + tip of what is typed, or null while any of it does not parse. */

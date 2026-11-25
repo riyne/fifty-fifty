@@ -240,7 +240,7 @@ The real API was called by hand in four places. Two six-call smoke tests came fi
 **Not shown:** performance of deep pages (not benchmarked), that the cursor is tamper-proof (it only chooses a starting point among rows the caller may already see), a consistent snapshot across pages. The app shows at most 5,000 items of a list.
 
 ### 18. The iOS app
-React Native (Expo) client for the whole flow against the api: sign in, groups and join codes, expenses with claim, finalize and void, add a receipt from the photo library, review and confirm, a simulated settlement followed to a final state. Typed from `api/openapi.yaml` with a drift check; 153 Jest tests cover the pure logic (session and token refresh, money parsing by integer arithmetic, idempotency-key helpers, what each screen offers). Run by hand on the iOS Simulator against the mock LLM and mock payment provider.
+React Native (Expo) client for the whole flow against the api: sign in, groups and join codes, expenses with claim, finalize and void, add a receipt from the photo library, review and confirm, a simulated settlement followed to a final state. Typed from `api/openapi.yaml` with a drift check; 159 Jest tests cover the pure logic (session and token refresh, money parsing by integer arithmetic, idempotency-key helpers, what each screen offers). Run by hand on the iOS Simulator against the mock LLM and mock payment provider.
 
 **Not shown:** a full flow-by-flow run since the screens were redesigned (they were looked through by hand), haptics (the Simulator has none), Android, a physical device, the camera, automated UI tests, HEIC or very large photos. The screens are not run in CI.
 

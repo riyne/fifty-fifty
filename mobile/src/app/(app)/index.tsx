@@ -1,14 +1,13 @@
-import { router, Stack, useFocusEffect } from "expo-router";
-import { useCallback } from "react";
-import { ActionSheetIOS, FlatList, Pressable, StyleSheet, View } from "react-native";
+import { router, Stack } from "expo-router";
+import { FlatList, Pressable, StyleSheet, View } from "react-native";
 
 import { unwrap } from "../../api/client";
 import { api } from "../../api/instance";
 import { collectPages } from "../../api/pages";
 import { balanceParts } from "../../api/sentences";
-import { session } from "../../auth";
 import { useGroupBalances } from "../../hooks/useGroupBalances";
 import { useLoad } from "../../hooks/useLoad";
+import { useReloadOnReturn } from "../../hooks/useReloadOnReturn";
 import { Avatar } from "../../ui/Avatar";
 import { Button } from "../../ui/Button";
 import { EmptyState } from "../../ui/EmptyState";
@@ -34,22 +33,7 @@ export default function Groups() {
   const ready = state.status === "ready" ? state.data : null;
   const balances = useGroupBalances(ready?.groups ?? null, ready?.me.id ?? null);
 
-  // Runs when the screen is first shown and every time it comes back into view (after creating
-  // or joining a group), so the list is never stale. No spinner: coming back must not move the list.
-  useFocusEffect(
-    useCallback(() => {
-      void reload({ spinner: false });
-    }, [reload]),
-  );
-
-  function account(name: string) {
-    ActionSheetIOS.showActionSheetWithOptions(
-      { title: `Signed in as ${name}`, options: ["Sign out", "Cancel"], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
-      (index) => {
-        if (index === 0) void session.signOut();
-      },
-    );
-  }
+  useReloadOnReturn(reload);
 
   return (
     <LoadGate load={state} onRetry={reload}>
@@ -58,7 +42,7 @@ export default function Groups() {
           <Stack.Screen
             options={{
               headerRight: () => (
-                <Pressable accessibilityRole="button" accessibilityLabel="Account" hitSlop={8} style={styles.account} onPress={() => account(me.display_name)}>
+                <Pressable accessibilityRole="button" accessibilityLabel="Settings and sign out" hitSlop={8} style={styles.account} onPress={() => router.push({ pathname: "/settings", params: { name: me.display_name } })}>
                   <Icon name="person.crop.circle" size={24} tone="accent" />
                 </Pressable>
               ),

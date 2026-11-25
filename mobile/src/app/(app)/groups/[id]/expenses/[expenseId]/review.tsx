@@ -1,14 +1,14 @@
-import { router, useLocalSearchParams } from "expo-router";
+import { router, Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 
 import { unwrap } from "../../../../../../api/client";
 import { ApiError, describeError } from "../../../../../../api/errors";
-import { canReview } from "../../../../../../api/expenses";
+import { canEdit, canReview } from "../../../../../../api/expenses";
 import { api } from "../../../../../../api/instance";
 import { createActionKeys } from "../../../../../../api/keys";
 import { formatMoney } from "../../../../../../api/money";
-import { buildEdit, draftFrom, draftTotal, MAX_ITEMS, type Draft, type EditBody } from "../../../../../../api/review";
+import { buildEdit, draftFrom, draftTotal, itemsLosingClaims, MAX_ITEMS, type Draft, type EditBody } from "../../../../../../api/review";
 import type { Expense } from "../../../../../../api/types";
 import { useLoad } from "../../../../../../hooks/useLoad";
 import { Button } from "../../../../../../ui/Button";
@@ -24,7 +24,8 @@ import { Txt } from "../../../../../../ui/Txt";
 
 // The payer's review of a receipt that needs checking: fix the items, tax and tip, then confirm,
 // which opens the expense for claims. One button does both calls: the edit (only when something
-// changed) and then the confirm with the version the edit returned.
+// changed) and then the confirm with the version the edit returned. While an expense is open for
+// claims the payer can come back here to fix a mistake: the same form, sending only the edit.
 
 export default function ReviewScreen() {
   const { id, expenseId } = useLocalSearchParams<{ id: string; expenseId: string }>();
@@ -66,14 +67,16 @@ export default function ReviewScreen() {
         editKeys.answered();
         version = edited.version;
       }
-      await unwrap(
-        api.POST("/v1/groups/{id}/expenses/{expenseId}/confirm", {
-          params: { path, header: { "Idempotency-Key": confirmKeys.keyFor(String(version)) } },
-          body: { version },
-        }),
-      );
-      confirmKeys.answered();
-      router.back(); // the expense screen reloads when it comes back and shows it open for claims
+      if (base.status === "needs_review") {
+        await unwrap(
+          api.POST("/v1/groups/{id}/expenses/{expenseId}/confirm", {
+            params: { path, header: { "Idempotency-Key": confirmKeys.keyFor(String(version)) } },
+            body: { version },
+          }),
+        );
+        confirmKeys.answered();
+      }
+      router.back(); // the expense screen reloads when it comes back
     } catch (e) {
       // A stored answer (anything below 500) is replayed for the same key: a new tap needs a new key.
       if (e instanceof ApiError && e.status < 500) {
@@ -93,22 +96,29 @@ export default function ReviewScreen() {
   return (
     <LoadGate load={state} onRetry={reload}>
       {({ expense, me }) =>
-        !canReview(expense, me.id) ? (
+        !canEdit(expense, me.id) ? (
           <View style={styles.center}>
             <EmptyState
               icon="checkmark.circle"
-              title="Nothing to review"
+              title="Nothing to change"
               hint={
                 expense.payer_id !== me.id
-                  ? "Only the person who paid can review this expense."
-                  : "This expense is not waiting for review any more."
+                  ? "Only the person who paid can change this expense."
+                  : "This expense can not be changed any more."
               }
             />
             <Button title="Back" onPress={() => router.back()} />
           </View>
         ) : (
           // keyed by version: after a reload that changed the expense the form starts again from it
-          <ReviewForm key={expense.version} expense={expense} busy={busy} error={error} onSubmit={submit} />
+          <ReviewForm
+            key={expense.version}
+            expense={expense}
+            reviewing={canReview(expense, me.id)}
+            busy={busy}
+            error={error}
+            onSubmit={submit}
+          />
         )
       }
     </LoadGate>
@@ -117,11 +127,14 @@ export default function ReviewScreen() {
 
 function ReviewForm({
   expense,
+  reviewing,
   busy,
   error,
   onSubmit,
 }: {
   expense: Expense;
+  /** True for the review that ends in a confirm, false for a fix while the expense is open for claims. */
+  reviewing: boolean;
   busy: boolean;
   error: string | null;
   onSubmit: (base: Expense, edit: EditBody | null) => void;
@@ -145,12 +158,26 @@ function ReviewForm({
       return;
     }
     setProblems([]);
-    onSubmit(expense, built.body);
+    const { body } = built;
+    const losing = reviewing || body === null ? [] : itemsLosingClaims(expense, body);
+    if (losing.length === 0) {
+      onSubmit(expense, body);
+      return;
+    }
+    Alert.alert(
+      "Clear claims?",
+      `Changing a price or removing an item clears who claimed it: ${losing.join(", ")}. They will have to claim it again.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Save and clear", style: "destructive", onPress: () => onSubmit(expense, body) },
+      ],
+    );
   }
 
   const shown = problems.length > 0 ? problems : error !== null ? [error] : [];
   return (
     <>
+      <Stack.Screen options={{ title: reviewing ? "Review items" : "Fix items" }} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic" // start below the translucent iOS header
         automaticallyAdjustKeyboardInsets
@@ -159,7 +186,9 @@ function ReviewForm({
         contentContainerStyle={styles.container}
       >
         <Txt tone="secondary">
-          Check each line against the receipt. Nobody can claim items until you confirm. The photo itself is not shown here.
+          {reviewing
+            ? "Check each line against the receipt. Nobody can claim items until you confirm. The photo itself is not shown here."
+            : "Fix what was read wrong. Changing a price or removing an item clears who claimed it; names, tax and tip do not."}
         </Txt>
 
         {draft.items.map((item, index) => (
@@ -239,7 +268,7 @@ function ReviewForm({
         <ErrorBar text={[...shown.slice(0, 3), ...(shown.length > 3 ? [`And ${shown.length - 3} more.`] : [])].join("\n")} />
       )}
       <Footer>
-        <Button grow title="Confirm items" onPress={confirm} busy={busy} />
+        <Button grow title={reviewing ? "Confirm items" : "Save changes"} onPress={confirm} busy={busy} />
       </Footer>
     </>
   );

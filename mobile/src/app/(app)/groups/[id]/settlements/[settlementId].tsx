@@ -1,11 +1,11 @@
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback } from "react";
+import { useLocalSearchParams } from "expo-router";
 import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 
 import { unwrap } from "../../../../../api/client";
 import { api } from "../../../../../api/instance";
 import { isOpen, settlementTitle, statusLine, statusWord } from "../../../../../api/settlements";
 import { useLoad } from "../../../../../hooks/useLoad";
+import { useReloadOnReturn } from "../../../../../hooks/useReloadOnReturn";
 import { usePolling } from "../../../../../hooks/usePolling";
 import { Icon } from "../../../../../ui/Icon";
 import { LoadGate } from "../../../../../ui/LoadGate";
@@ -28,11 +28,7 @@ export default function SettlementScreen() {
     return { settlement, balances, me };
   });
 
-  useFocusEffect(
-    useCallback(() => {
-      void reload({ spinner: false });
-    }, [reload]),
-  );
+  useReloadOnReturn(reload);
 
   const open = state.status === "ready" && isOpen(state.data.settlement.status);
   const { gaveUp, restart } = usePolling(open, () => void reload({ silent: true }), 2000, 60_000);
